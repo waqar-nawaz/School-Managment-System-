@@ -10,25 +10,42 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
   standalone: true,
   imports: [FormsModule, RouterLink, IconComponent],
   template: `
-    <h2 class="auth-title">Sign in</h2>
+    <div class="auth-head">
+      <h2 class="auth-title">Welcome back</h2>
+      <p class="auth-sub">Sign in to continue to your dashboard</p>
+    </div>
     <form (ngSubmit)="submit(f)" #f="ngForm">
       <div class="form-group">
         <label>Email or username</label>
-        <input type="text" class="form-control" name="identifier" [(ngModel)]="model.identifier" required #identifier="ngModel" />
+        <div class="input-icon">
+          <span class="input-icon-lead"><app-icon name="user" [size]="16" /></span>
+          <input
+            type="text"
+            class="form-control has-icon"
+            name="identifier"
+            [(ngModel)]="model.identifier"
+            required
+            #identifier="ngModel"
+            autocomplete="username"
+            placeholder="you@school.local" />
+        </div>
         @if (f.submitted && identifier.invalid) {
           <div class="field-error">Email or username is required</div>
         }
       </div>
       <div class="form-group">
         <label>Password</label>
-        <div class="password-box">
+        <div class="password-box input-icon">
+          <span class="input-icon-lead"><app-icon name="lock" [size]="16" /></span>
           <input
             [type]="showPassword ? 'text' : 'password'"
-            class="form-control"
+            class="form-control has-icon"
             name="password"
             [(ngModel)]="model.password"
             required
-            #password="ngModel" />
+            #password="ngModel"
+            autocomplete="current-password"
+            placeholder="••••••••" />
           <button
             type="button"
             class="password-toggle"
@@ -41,19 +58,17 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           <div class="field-error">Password is required</div>
         }
       </div>
-      <div class="form-row">
+      <div class="auth-row">
         <label class="form-check">
           <input type="checkbox" class="form-checkbox" name="rememberMe" [(ngModel)]="model.rememberMe" />
           Remember me
         </label>
+        <a routerLink="/auth/forgot-password">Forgot password?</a>
       </div>
-      <button type="submit" class="btn btn-primary btn-block" [disabled]="busy">
+      <button type="submit" class="btn btn-primary btn-block btn-lg" [disabled]="busy">
         <app-icon name="log-in" [size]="16" /> {{ busy ? 'Signing in…' : 'Sign in' }}
       </button>
     </form>
-    <p class="auth-actions">
-      <a routerLink="/auth/forgot-password">Forgot password?</a>
-    </p>
   `,
 })
 export class LoginComponent {

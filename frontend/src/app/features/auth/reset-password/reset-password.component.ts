@@ -10,7 +10,10 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
   standalone: true,
   imports: [FormsModule, RouterLink, IconComponent],
   template: `
-    <h2 class="auth-title">New password</h2>
+    <div class="auth-head">
+      <h2 class="auth-title">Set a new password</h2>
+      <p class="auth-sub">Choose a strong password to secure your account</p>
+    </div>
     <form (ngSubmit)="submit(f)" #f="ngForm">
       <div class="form-group">
         <label>Reset token</label>
@@ -42,7 +45,9 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           <div class="field-error">Password must be at least 8 characters</div>
         }
       </div>
-      <button type="submit" class="btn btn-primary btn-block" [disabled]="busy">{{ busy ? 'Saving…' : 'Save password' }}</button>
+      <button type="submit" class="btn btn-primary btn-block btn-lg" [disabled]="busy">
+        <app-icon name="check" [size]="16" /> {{ busy ? 'Saving…' : 'Save password' }}
+      </button>
     </form>
     <p class="auth-actions">
       <a routerLink="/auth/login">Back to sign in</a>

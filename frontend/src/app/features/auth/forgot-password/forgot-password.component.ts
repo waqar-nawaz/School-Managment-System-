@@ -3,13 +3,17 @@ import { FormsModule, NgForm } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../../core/services/api.service';
 import { ToastService } from '../../../core/services/toast.service';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-forgot-password',
   standalone: true,
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, IconComponent],
   template: `
-    <h2 class="auth-title">Reset password</h2>
+    <div class="auth-head">
+      <h2 class="auth-title">Reset password</h2>
+      <p class="auth-sub">Enter your email and we'll send a reset link</p>
+    </div>
     <form (ngSubmit)="submit(f)" #f="ngForm">
       <div class="form-group">
         <label>Email address</label>
@@ -18,7 +22,9 @@ import { ToastService } from '../../../core/services/toast.service';
           <div class="field-error">Enter a valid email address</div>
         }
       </div>
-      <button type="submit" class="btn btn-primary btn-block" [disabled]="busy">{{ busy ? 'Sending…' : 'Send reset link' }}</button>
+      <button type="submit" class="btn btn-primary btn-block btn-lg" [disabled]="busy">
+        <app-icon name="mail" [size]="16" /> {{ busy ? 'Sending…' : 'Send reset link' }}
+      </button>
     </form>
     @if (sent) {
       <p class="form-hint">If an account exists for this email, a reset link has been sent.</p>
