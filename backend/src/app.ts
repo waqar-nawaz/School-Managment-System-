@@ -71,7 +71,9 @@ if (frontendDist) {
     if (req.path.startsWith("/api") || req.path.startsWith("/health") || req.path.startsWith("/uploads")) {
       return next();
     }
-    return res.sendFile(path.join(frontendDist, "index.html"));
+    return res.sendFile(path.join(frontendDist, "index.html"), {
+      headers: { "Cache-Control": "no-cache, no-store, must-revalidate" },
+    });
   });
 } else {
   logger.error(`Angular frontend build not found. Checked: ${frontendCandidates.join(", ")}`);

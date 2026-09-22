@@ -16,9 +16,10 @@ export class ToastService {
   private readonly toastsSubject = new BehaviorSubject<Toast[]>([]);
   toasts$: Observable<Toast[]> = this.toastsSubject.asObservable();
 
-  show(message: string, type: ToastType = 'info'): void {
+  show(message: unknown, type: ToastType = 'info'): void {
     const id = ++toastId;
-    const toast: Toast = { id, message, type };
+    const text = typeof message === 'string' ? message : message == null ? '' : JSON.stringify(message);
+    const toast: Toast = { id, message: text || 'Something went wrong', type };
     this.toastsSubject.next([...this.toastsSubject.getValue(), toast]);
     setTimeout(() => this.remove(id), 3500);
   }
