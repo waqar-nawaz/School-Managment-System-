@@ -53,10 +53,18 @@ app.use("/api", apiLimiter);
 app.use("/api", routes);
 
 // Serve the built Angular SPA (same origin -> /api calls work without CORS).
-// Resolved relative to this file so it works from any working directory
-// (Render runs from repo root, Railway/local from backend/).
-const frontendDist = path.resolve(__dirname, "..", "..", "frontend", "dist", "sms-frontend");
-if (fs.existsSync(path.join(frontendDist, "index.html"))) {
+// Angular/CLI versions can place the browser build either directly under
+// dist/sms-frontend or under dist/sms-frontend/browser, so detect both.
+// This also keeps asset requests (CSS/JS) on the real static directory
+// instead of accidentally falling through to index.html.
+const frontendCandidates = [
+  path.resolve(__dirname, "..", "..", "frontend", "dist", "sms-frontend"),
+  path.resolve(__dirname, "..", "..", "frontend", "dist", "sms-frontend", "browser"),
+];
+const frontendDist = frontendCandidates.find((dir) => fs.existsSync(path.join(dir, "index.html")));
+
+if (frontendDist) {
+  logger.info(`Serving Angular frontend from ${frontendDist}`);
   app.use(express.static(frontendDist, { maxAge: "1h", index: false }));
   app.get("*", (req, res, next) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/health") || req.path.startsWith("/uploads")) {
@@ -64,6 +72,8 @@ if (fs.existsSync(path.join(frontendDist, "index.html"))) {
     }
     return res.sendFile(path.join(frontendDist, "index.html"));
   });
+} else {
+  logger.error(`Angular frontend build not found. Checked: ${frontendCandidates.join(", ")}`);
 }
 
 app.use(notFoundHandler);
