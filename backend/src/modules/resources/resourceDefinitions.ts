@@ -1,0 +1,76 @@
+import {
+  Role, Permission, Branch, AcademicYear, Term, SchoolClass, Section, Subject,
+  ClassSubject, Enrolment, Parent, Teacher, Staff, Exam, ExamSchedule, ExamResult,
+  ReportCard, Assignment, Submission, GradebookEntry, GradeScale, Timetable, Period,
+  FeeType, Expense, PayrollItem, Payslip, LeaveRequest, Book, BookCopy, BookFine,
+  Route, RouteStop, Vehicle, DriverAssignment, StudentTransport, Hostel, Room, Bed,
+  HostelAllocation, Event, Notice, Announcement, Message, Notification, Syllabus,
+  LessonPlan, HealthRecord, DisciplineRecord, Complaint, InventoryItem, Asset,
+  AuditLog, VisitorLog,
+} from "../../models";
+
+export interface ResourceDefinition {
+  path: string;
+  model: any;
+  searchable: string[];
+  permission: string; // module name used for :read/:create/:update/:delete
+  defaultSort?: [string, "ASC" | "DESC"];
+  readonly?: boolean; // no write operations exposed
+}
+
+export const RESOURCES: ResourceDefinition[] = [
+  { path: "roles", model: Role, searchable: ["name", "label", "description"], permission: "roles" },
+  { path: "permissions", model: Permission, searchable: ["key", "label", "category"], permission: "permissions" },
+  { path: "branches", model: Branch, searchable: ["name", "code", "city", "email"], permission: "branches" },
+  { path: "academic-years", model: AcademicYear, searchable: ["name"], permission: "academic" },
+  { path: "terms", model: Term, searchable: ["name"], permission: "academic" },
+  { path: "classes", model: SchoolClass, searchable: ["name", "level"], permission: "classes" },
+  { path: "sections", model: Section, searchable: ["name"], permission: "sections" },
+  { path: "subjects", model: Subject, searchable: ["name", "code"], permission: "subjects" },
+  { path: "class-subjects", model: ClassSubject, searchable: [], permission: "subjects" },
+  { path: "enrolments", model: Enrolment, searchable: ["rollNo", "status"], permission: "students" },
+  { path: "parents", model: Parent, searchable: ["fullName", "phone", "email"], permission: "students" },
+  { path: "teachers", model: Teacher, searchable: ["staffNo", "firstName", "lastName", "email"], permission: "teachers" },
+  { path: "staff", model: Staff, searchable: ["staffNo", "firstName", "lastName", "department"], permission: "staff" },
+  { path: "exams", model: Exam, searchable: ["name", "examType", "status"], permission: "exams" },
+  { path: "exam-schedules", model: ExamSchedule, searchable: ["room", "startTime"], permission: "exams" },
+  { path: "exam-results", model: ExamResult, searchable: ["grade", "remarks"], permission: "exam-results" },
+  { path: "report-cards", model: ReportCard, searchable: ["grade"], permission: "exam-results" },
+  { path: "assignments", model: Assignment, searchable: ["title", "description"], permission: "assignments" },
+  { path: "submissions", model: Submission, searchable: ["status"], permission: "assignments" },
+  { path: "gradebook", model: GradebookEntry, searchable: ["grade"], permission: "gradebook" },
+  { path: "grade-scales", model: GradeScale, searchable: ["name", "grade"], permission: "gradebook" },
+  { path: "timetable", model: Timetable, searchable: ["name"], permission: "timetable" },
+  { path: "periods", model: Period, searchable: ["dayOfWeek", "room"], permission: "timetable" },
+  { path: "fee-types", model: FeeType, searchable: ["name", "category"], permission: "fees" },
+  { path: "expenses", model: Expense, searchable: ["title", "category", "status"], permission: "expenses" },
+  { path: "payroll", model: PayrollItem, searchable: ["month", "status"], permission: "payroll" },
+  { path: "payslips", model: Payslip, searchable: ["payslipNo"], permission: "payroll" },
+  { path: "leaves", model: LeaveRequest, searchable: ["leaveType", "status"], permission: "leaves" },
+  { path: "books", model: Book, searchable: ["title", "author", "isbn", "category"], permission: "library" },
+  { path: "book-copies", model: BookCopy, searchable: ["accessionNo", "status"], permission: "library" },
+  { path: "book-fines", model: BookFine, searchable: ["receiptNo", "status"], permission: "library" },
+  { path: "routes", model: Route, searchable: ["name", "startPoint", "endPoint"], permission: "routes" },
+  { path: "route-stops", model: RouteStop, searchable: ["name"], permission: "routes" },
+  { path: "vehicles", model: Vehicle, searchable: ["registrationNo", "model"], permission: "routes" },
+  { path: "driver-assignments", model: DriverAssignment, searchable: [], permission: "routes" },
+  { path: "student-transport", model: StudentTransport, searchable: [], permission: "routes" },
+  { path: "hostels", model: Hostel, searchable: ["name", "wardenName"], permission: "hostels" },
+  { path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "hostels" },
+  { path: "beds", model: Bed, searchable: ["bedNo"], permission: "hostels" },
+  { path: "hostel-allocations", model: HostelAllocation, searchable: ["status"], permission: "hostels" },
+  { path: "events", model: Event, searchable: ["title", "category", "venue"], permission: "events" },
+  { path: "notices", model: Notice, searchable: ["title", "type"], permission: "notices" },
+  { path: "announcements", model: Announcement, searchable: ["title", "priority"], permission: "announcements" },
+  { path: "messages", model: Message, searchable: ["subject"], permission: "messages" },
+  { path: "notifications", model: Notification, searchable: ["title"], permission: "notifications", readonly: true },
+  { path: "syllabus", model: Syllabus, searchable: ["title"], permission: "syllabus" },
+  { path: "lesson-plans", model: LessonPlan, searchable: ["title"], permission: "lesson-plans" },
+  { path: "health-records", model: HealthRecord, searchable: ["bloodGroup"], permission: "health-records", readonly: true },
+  { path: "discipline-records", model: DisciplineRecord, searchable: ["title", "type", "status"], permission: "discipline-records" },
+  { path: "complaints", model: Complaint, searchable: ["title", "category", "status"], permission: "complaints" },
+  { path: "inventory", model: InventoryItem, searchable: ["name", "sku", "category"], permission: "inventory" },
+  { path: "assets", model: Asset, searchable: ["name", "assetCode", "category"], permission: "inventory" },
+  { path: "audit-logs", model: AuditLog, searchable: ["action", "entity"], permission: "audit-logs", readonly: true },
+  { path: "visitor-logs", model: VisitorLog, searchable: ["visitorName", "purpose"], permission: "visitors" },
+];
