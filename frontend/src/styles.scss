@@ -119,6 +119,14 @@ body.dark-theme .btn-ghost-danger:hover { background: rgba(192, 57, 43, 0.2); }
 }
 .card-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.9rem; }
 .card-toolbar { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+.search-box { position: relative; flex: 1 1 240px; max-width: 340px; }
+.search-box .form-control { padding-right: 2.1rem; }
+.search-clear {
+  position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%);
+  display: inline-grid; place-items: center; width: 22px; height: 22px;
+  border: none; border-radius: 50%; background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.search-clear:hover { background: var(--neutral-100); color: var(--text); }
 .center-card { max-width: 460px; margin: 4rem auto; text-align: center; display: flex; flex-direction: column; gap: 0.9rem; align-items: center; }
 
 /* ---------- Forms ---------- */

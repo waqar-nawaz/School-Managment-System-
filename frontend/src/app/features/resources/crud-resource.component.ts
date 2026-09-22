@@ -49,17 +49,19 @@ interface Row {
 
       <div class="card">
         <div class="card-toolbar">
-          <input
-            type="text"
-            class="form-control"
-            style="max-width:320px"
-            placeholder="Search {{ config.label.toLowerCase() }}…"
-            (input)="onSearch($event)" />
-          <select class="form-control" style="max-width:140px" [ngModel]="pageSize" (ngModelChange)="setPageSize($event)">
-            @for (size of [10, 20, 50, 100]; track size) {
-              <option [ngValue]="size">{{ size }} / page</option>
+          <div class="search-box">
+            <input
+              type="text"
+              class="form-control"
+              placeholder="Search {{ config.label.toLowerCase() }}…"
+              [value]="searchText"
+              (input)="onSearch($event)" />
+            @if (searchText) {
+              <button type="button" class="search-clear" (click)="clearSearch()" aria-label="Clear search">
+                <app-icon name="x" [size]="14" />
+              </button>
             }
-          </select>
+          </div>
         </div>
 
         <div class="table-responsive">
@@ -106,8 +108,17 @@ interface Row {
         <div class="pagination-bar">
           <span>Page {{ page }} of {{ totalPages || 1 }} ({{ total }} records)</span>
           <div class="page-actions">
-            <button class="btn btn-sm btn-ghost" [disabled]="page <= 1" (click)="setPage(page - 1)">Prev</button>
-            <button class="btn btn-sm btn-ghost" [disabled]="page >= totalPages" (click)="setPage(page + 1)">Next</button>
+            <select class="form-control form-control-sm" style="max-width:130px" [ngModel]="pageSize" (ngModelChange)="setPageSize($event)">
+              @for (size of [10, 20, 50, 100]; track size) {
+                <option [ngValue]="size">{{ size }} / page</option>
+              }
+            </select>
+            <button class="btn btn-sm btn-ghost" [disabled]="page <= 1" (click)="setPage(page - 1)">
+              <app-icon name="chevron-left" [size]="14" /> Prev
+            </button>
+            <button class="btn btn-sm btn-ghost" [disabled]="page >= totalPages" (click)="setPage(page + 1)">
+              Next <app-icon name="chevron-right" [size]="14" />
+            </button>
           </div>
         </div>
       </div>
@@ -196,6 +207,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   page = 1;
   pageSize = 10;
   search = '';
+  searchText = '';
   showForm = false;
   editingId: number | null = null;
   formTitle = 'Create';
@@ -244,7 +256,13 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   }
 
   onSearch(event: Event): void {
-    this.search$.next((event.target as HTMLInputElement).value);
+    this.searchText = (event.target as HTMLInputElement).value;
+    this.search$.next(this.searchText);
+  }
+
+  clearSearch(): void {
+    this.searchText = '';
+    this.search$.next('');
   }
 
   trackRow(index: number, row: Row): number | string {

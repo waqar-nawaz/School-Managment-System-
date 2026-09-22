@@ -27,7 +27,14 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
 
     <div class="card">
       <div class="card-toolbar">
-        <input class="form-control" style="max-width:300px" placeholder="Search…" [(ngModel)]="search" (ngModelChange)="debouncedLoad()" />
+        <div class="search-box">
+          <input class="form-control" placeholder="Search…" [(ngModel)]="search" (ngModelChange)="debouncedLoad()" />
+          @if (search) {
+            <button type="button" class="search-clear" (click)="clearSearch()" aria-label="Clear search">
+              <app-icon name="x" [size]="14" />
+            </button>
+          }
+        </div>
         <select class="form-control" style="max-width:160px" [(ngModel)]="roleFilter" (ngModelChange)="load()">
           <option value="">All roles</option>
           @for (r of ROLES; track r) { <option [value]="r">{{ r }}</option> }
@@ -196,6 +203,12 @@ export class UsersComponent implements OnInit {
       },
       error: () => {},
     });
+  }
+
+  clearSearch(): void {
+    this.search = '';
+    this.page = 1;
+    this.load();
   }
 
   debouncedLoad(): void {

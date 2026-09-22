@@ -33,7 +33,14 @@ const STATUSES = ['enquiry', 'applied', 'test', 'interview', 'accepted', 'reject
 
     <div class="card">
       <div class="card-toolbar">
-        <input class="form-control" style="max-width:300px" placeholder="Search application…" [(ngModel)]="search" (ngModelChange)="load()" />
+        <div class="search-box">
+          <input class="form-control" placeholder="Search application…" [(ngModel)]="search" (ngModelChange)="load()" />
+          @if (search) {
+            <button type="button" class="search-clear" (click)="clearSearch()" aria-label="Clear search">
+              <app-icon name="x" [size]="14" />
+            </button>
+          }
+        </div>
         <select class="form-control" style="max-width:180px" [(ngModel)]="status" (ngModelChange)="load()">
           <option value="">All statuses</option>
           @for (s of STATUSES; track s) { <option [value]="s">{{ s | titlecase }}</option> }
@@ -84,6 +91,11 @@ export class AdmissionsComponent implements OnInit {
   ngOnInit(): void {
     this.load();
     this.loadPipeline();
+  }
+
+  clearSearch(): void {
+    this.search = '';
+    this.load();
   }
 
   load(): void {

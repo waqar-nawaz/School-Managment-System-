@@ -22,7 +22,14 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
 
     <div class="card">
       <div class="card-toolbar">
-        <input class="form-control" style="max-width:300px" placeholder="Search invoice no…" [(ngModel)]="search" (ngModelChange)="load()" />
+        <div class="search-box">
+          <input class="form-control" placeholder="Search invoice no…" [(ngModel)]="search" (ngModelChange)="load()" />
+          @if (search) {
+            <button type="button" class="search-clear" (click)="clearSearch()" aria-label="Clear search">
+              <app-icon name="x" [size]="14" />
+            </button>
+          }
+        </div>
       </div>
       <div class="table-responsive">
         <table class="table">
@@ -166,6 +173,11 @@ export class InvoicesComponent implements OnInit {
 
   badgeOf(s: string): string {
     return ({ paid: 'success', partial: 'warning', pending: 'info', overdue: 'danger', cancelled: '' } as Record<string, string>)[s] ?? '';
+  }
+
+  clearSearch(): void {
+    this.search = '';
+    this.load();
   }
 
   openGenerate(): void {
