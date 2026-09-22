@@ -21,7 +21,22 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
       </div>
       <div class="form-group">
         <label>Password</label>
-        <input type="password" class="form-control" name="password" [(ngModel)]="model.password" required #password="ngModel" />
+        <div class="password-box">
+          <input
+            [type]="showPassword ? 'text' : 'password'"
+            class="form-control"
+            name="password"
+            [(ngModel)]="model.password"
+            required
+            #password="ngModel" />
+          <button
+            type="button"
+            class="password-toggle"
+            (click)="showPassword = !showPassword"
+            [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'">
+            <app-icon [name]="showPassword ? 'eye-off' : 'eye'" [size]="16" />
+          </button>
+        </div>
         @if (f.submitted && password.invalid) {
           <div class="field-error">Password is required</div>
         }
@@ -44,6 +59,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
 export class LoginComponent {
   model = { identifier: '', password: '', rememberMe: true };
   busy = false;
+  showPassword = false;
 
   constructor(
     private readonly auth: AuthService,

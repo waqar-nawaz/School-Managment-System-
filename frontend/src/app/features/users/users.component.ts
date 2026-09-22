@@ -121,7 +121,23 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
               @if (!editing) {
                 <div class="form-group">
                   <label>Password *</label>
-                  <input type="password" class="form-control" name="password" [(ngModel)]="form.password" required minlength="8" #password="ngModel" />
+                  <div class="password-box">
+                    <input
+                      [type]="showPassword ? 'text' : 'password'"
+                      class="form-control"
+                      name="password"
+                      [(ngModel)]="form.password"
+                      required
+                      minlength="8"
+                      #password="ngModel" />
+                    <button
+                      type="button"
+                      class="password-toggle"
+                      (click)="showPassword = !showPassword"
+                      [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'">
+                      <app-icon [name]="showPassword ? 'eye-off' : 'eye'" [size]="16" />
+                    </button>
+                  </div>
                   @if (f.submitted && password.invalid) {
                     <div class="field-error">Password must be at least 8 characters</div>
                   }
@@ -171,6 +187,7 @@ export class UsersComponent implements OnInit {
   editing: boolean | null = null;
   form: Record<string, any> = {};
   saving = false;
+  showPassword = false;
   confirmUser: User | null = null;
   canCreate = false;
   canUpdate = false;
@@ -236,12 +253,14 @@ export class UsersComponent implements OnInit {
   openCreate(): void {
     this.editing = false;
     this.form = { role: 'staff', isActive: true };
+    this.showPassword = false;
     this.showForm = true;
   }
 
   openEdit(u: User): void {
     this.editing = true;
     this.form = { ...u };
+    this.showPassword = false;
     this.showForm = true;
   }
 

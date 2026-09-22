@@ -38,21 +38,67 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
       <form (ngSubmit)="changePassword(f)" #f="ngForm" style="max-width:420px">
         <div class="form-group">
           <label>Current password</label>
-          <input type="password" class="form-control" name="currentPassword" [(ngModel)]="pwForm.currentPassword" required #currentPassword="ngModel" />
+          <div class="password-box">
+            <input
+              [type]="showPw.current ? 'text' : 'password'"
+              class="form-control"
+              name="currentPassword"
+              [(ngModel)]="pwForm.currentPassword"
+              required
+              #currentPassword="ngModel" />
+            <button
+              type="button"
+              class="password-toggle"
+              (click)="showPw.current = !showPw.current"
+              [attr.aria-label]="showPw.current ? 'Hide password' : 'Show password'">
+              <app-icon [name]="showPw.current ? 'eye-off' : 'eye'" [size]="16" />
+            </button>
+          </div>
           @if (f.submitted && currentPassword.invalid) {
             <div class="field-error">Current password is required</div>
           }
         </div>
         <div class="form-group">
           <label>New password (min 8 chars)</label>
-          <input type="password" class="form-control" name="newPassword" [(ngModel)]="pwForm.newPassword" minlength="8" required #newPassword="ngModel" />
+          <div class="password-box">
+            <input
+              [type]="showPw.new ? 'text' : 'password'"
+              class="form-control"
+              name="newPassword"
+              [(ngModel)]="pwForm.newPassword"
+              minlength="8"
+              required
+              #newPassword="ngModel" />
+            <button
+              type="button"
+              class="password-toggle"
+              (click)="showPw.new = !showPw.new"
+              [attr.aria-label]="showPw.new ? 'Hide password' : 'Show password'">
+              <app-icon [name]="showPw.new ? 'eye-off' : 'eye'" [size]="16" />
+            </button>
+          </div>
           @if (f.submitted && newPassword.invalid) {
             <div class="field-error">New password must be at least 8 characters</div>
           }
         </div>
         <div class="form-group">
           <label>Confirm new password</label>
-          <input type="password" class="form-control" name="confirmPassword" [(ngModel)]="pwForm.confirmPassword" required #confirmPassword="ngModel" />
+          <div class="password-box">
+            <input
+              [type]="showPw.confirm ? 'text' : 'password'"
+              class="form-control"
+              name="confirmPassword"
+              [(ngModel)]="pwForm.confirmPassword"
+              required
+              #confirmPassword="ngModel" />
+            <button
+              type="button"
+              class="password-toggle"
+              (click)="showPw.confirm = !showPw.confirm"
+              [attr.aria-label]="showPw.confirm ? 'Hide password' : 'Show password'">
+              <app-icon [name]="showPw.confirm ? 'eye-off' : 'eye'" [size]="16" />
+            </button>
+          </div>
           @if (f.submitted && (confirmPassword.invalid || pwMismatch)) {
             <div class="field-error">{{ confirmPassword.invalid ? 'Please confirm your new password' : 'Passwords do not match' }}</div>
           }
@@ -68,6 +114,7 @@ export class ProfileComponent implements OnInit {
   pwForm = { currentPassword: '', newPassword: '', confirmPassword: '' };
   busy = false;
   pwMismatch = false;
+  showPw = { current: false, new: false, confirm: false };
 
   constructor(
     readonly auth: AuthService,

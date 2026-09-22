@@ -3,11 +3,12 @@ import { FormsModule, NgForm } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../../core/services/api.service';
 import { ToastService } from '../../../core/services/toast.service';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-reset-password',
   standalone: true,
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, IconComponent],
   template: `
     <h2 class="auth-title">New password</h2>
     <form (ngSubmit)="submit(f)" #f="ngForm">
@@ -20,7 +21,23 @@ import { ToastService } from '../../../core/services/toast.service';
       </div>
       <div class="form-group">
         <label>New password</label>
-        <input type="password" class="form-control" name="password" [(ngModel)]="password" minlength="8" required #passwordCtrl="ngModel" />
+        <div class="password-box">
+          <input
+            [type]="showPassword ? 'text' : 'password'"
+            class="form-control"
+            name="password"
+            [(ngModel)]="password"
+            minlength="8"
+            required
+            #passwordCtrl="ngModel" />
+          <button
+            type="button"
+            class="password-toggle"
+            (click)="showPassword = !showPassword"
+            [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'">
+            <app-icon [name]="showPassword ? 'eye-off' : 'eye'" [size]="16" />
+          </button>
+        </div>
         @if (f.submitted && passwordCtrl.invalid) {
           <div class="field-error">Password must be at least 8 characters</div>
         }
@@ -36,6 +53,7 @@ export class ResetPasswordComponent {
   token = '';
   password = '';
   busy = false;
+  showPassword = false;
 
   constructor(
     private readonly api: ApiService,
