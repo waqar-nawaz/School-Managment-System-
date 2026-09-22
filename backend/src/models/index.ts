@@ -157,7 +157,6 @@ export function defineAssociations(): void {
   // People
   User.hasOne(Student, { as: "student", foreignKey: "userId" });
   User.hasOne(Parent, { as: "parent", foreignKey: "userId" });
-  Parent.belongsTo(User, { as: "user", foreignKey: "userId" });
   User.hasOne(Teacher, { as: "teacher", foreignKey: "userId" });
   Teacher.belongsTo(User, { as: "user", foreignKey: "userId" });
   User.hasOne(Staff, { as: "staff", foreignKey: "userId" });
