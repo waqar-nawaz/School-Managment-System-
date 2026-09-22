@@ -70,7 +70,7 @@ interface Row {
               </tr>
             </thead>
             <tbody>
-              @for (row of rows; track row.id ?? $index) {
+              @for (row of rows; track trackRow($index, row)) {
                 <tr>
                   @for (col of config.columns; track col.key) {
                     <td>
@@ -230,6 +230,10 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
 
   onSearch(event: Event): void {
     this.search$.next((event.target as HTMLInputElement).value);
+  }
+
+  trackRow(index: number, row: Row): number | string {
+    return row.id ?? index;
   }
 
   setPageSize(size: number): void {
