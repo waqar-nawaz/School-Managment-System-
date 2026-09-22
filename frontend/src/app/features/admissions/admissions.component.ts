@@ -3,13 +3,14 @@ import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
+import { IconComponent } from '../../shared/components/icon/icon.component';
 
 const STATUSES = ['enquiry', 'applied', 'test', 'interview', 'accepted', 'rejected', 'waitlisted', 'enrolled', 'withdrawn'];
 
 @Component({
   selector: 'app-admissions',
   standalone: true,
-  imports: [FormsModule, CommonModule],
+  imports: [FormsModule, CommonModule, IconComponent],
   template: `
     <div class="page-header">
       <div>
@@ -17,7 +18,7 @@ const STATUSES = ['enquiry', 'applied', 'test', 'interview', 'accepted', 'reject
         <p class="page-subtitle">Application pipeline</p>
       </div>
       <div class="page-actions">
-        <button class="btn btn-ghost" (click)="load()">Refresh</button>
+        <button class="btn btn-ghost" (click)="load()"><app-icon name="refresh" [size]="15" /> Refresh</button>
       </div>
     </div>
 

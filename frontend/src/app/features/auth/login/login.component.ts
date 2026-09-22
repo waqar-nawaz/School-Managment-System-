@@ -3,11 +3,12 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, IconComponent],
   template: `
     <h2 class="auth-title">Sign in</h2>
     <form (ngSubmit)="submit()" #f="ngForm">
@@ -25,7 +26,9 @@ import { ToastService } from '../../../core/services/toast.service';
           Remember me
         </label>
       </div>
-      <button type="submit" class="btn btn-primary btn-block" [disabled]="busy">{{ busy ? 'Signing in…' : 'Sign in' }}</button>
+      <button type="submit" class="btn btn-primary btn-block" [disabled]="busy">
+        <app-icon name="log-in" [size]="16" /> {{ busy ? 'Signing in…' : 'Sign in' }}
+      </button>
     </form>
     <p class="auth-actions">
       <a routerLink="/auth/forgot-password">Forgot password?</a>

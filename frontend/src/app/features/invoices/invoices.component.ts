@@ -3,11 +3,12 @@ import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
+import { IconComponent } from '../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-invoices',
   standalone: true,
-  imports: [FormsModule, CommonModule],
+  imports: [FormsModule, CommonModule, IconComponent],
   template: `
     <div class="page-header">
       <div>
@@ -15,7 +16,7 @@ import { ToastService } from '../../core/services/toast.service';
         <p class="page-subtitle">Billing and receipts</p>
       </div>
       <div class="page-actions">
-        <button class="btn btn-primary" (click)="openGenerate()">+ Generate invoice</button>
+        <button class="btn btn-primary" (click)="openGenerate()"><app-icon name="plus" [size]="15" /> Generate invoice</button>
       </div>
     </div>
 
@@ -41,7 +42,7 @@ import { ToastService } from '../../core/services/toast.service';
                 <td><span class="badge badge-{{ badgeOf(inv.status) }}">{{ inv.status }}</span></td>
                 <td style="text-align:right">
                   @if (inv.status !== 'paid' && inv.status !== 'cancelled') {
-                    <button class="btn btn-sm btn-primary" (click)="openPay(inv)">Pay</button>
+                    <button class="btn btn-sm btn-primary" (click)="openPay(inv)"><app-icon name="credit-card" [size]="14" /> Pay</button>
                   }
                 </td>
               </tr>
@@ -71,8 +72,10 @@ import { ToastService } from '../../core/services/toast.service';
               <input class="form-control" placeholder="e.g. 1,2,3" [(ngModel)]="genForm.feeTypeIdsRaw" name="feeTypeIdsRaw" />
             </div>
             <div class="modal-actions">
-              <button type="button" class="btn btn-ghost" (click)="showGenerate = false">Cancel</button>
-              <button type="submit" class="btn btn-primary" [disabled]="busy">{{ busy ? 'Generating…' : 'Generate' }}</button>
+              <button type="button" class="btn btn-ghost" (click)="showGenerate = false"><app-icon name="x" [size]="14" /> Cancel</button>
+              <button type="submit" class="btn btn-primary" [disabled]="busy">
+                <app-icon name="check" [size]="14" /> {{ busy ? 'Generating…' : 'Generate' }}
+              </button>
             </div>
           </form>
         </div>
@@ -93,8 +96,10 @@ import { ToastService } from '../../core/services/toast.service';
             </div>
             <div class="form-group"><label>Reference</label><input class="form-control" [(ngModel)]="payForm.reference" name="reference" /></div>
             <div class="modal-actions">
-              <button type="button" class="btn btn-ghost" (click)="payTarget = null">Cancel</button>
-              <button type="submit" class="btn btn-primary" [disabled]="busy">{{ busy ? 'Recording…' : 'Record payment' }}</button>
+              <button type="button" class="btn btn-ghost" (click)="payTarget = null"><app-icon name="x" [size]="14" /> Cancel</button>
+              <button type="submit" class="btn btn-primary" [disabled]="busy">
+                <app-icon name="check" [size]="14" /> {{ busy ? 'Recording…' : 'Record payment' }}
+              </button>
             </div>
           </form>
         </div>

@@ -1,11 +1,12 @@
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { IconComponent } from '../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-reports',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, IconComponent],
   template: `
     <div class="page-header">
       <div>
@@ -51,7 +52,7 @@ import { ApiService } from '../../core/services/api.service';
         <h3 class="card-title">Exam performance</h3>
         <div class="form-row" style="gap:8px">
           <input type="number" class="form-control" style="max-width:160px" placeholder="Exam ID" [(ngModel)]="examId" />
-          <button class="btn btn-primary" (click)="loadExam()">Run</button>
+          <button class="btn btn-primary" (click)="loadExam()"><app-icon name="bar-chart" [size]="15" /> Run</button>
         </div>
         @if (perf) {
           <div class="stat-grid stat-grid-sm">

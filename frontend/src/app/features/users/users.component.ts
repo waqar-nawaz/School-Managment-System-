@@ -6,11 +6,12 @@ import { PermissionService } from '../../core/services/permission.service';
 import { User } from '../../core/models/user.model';
 import { USER_ROLES } from '../../core/constants/roles';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
+import { IconComponent } from '../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-users',
   standalone: true,
-  imports: [FormsModule, ConfirmDialogComponent],
+  imports: [FormsModule, ConfirmDialogComponent, IconComponent],
   template: `
     <div class="page-header">
       <div>
@@ -18,7 +19,9 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
         <p class="page-subtitle">System accounts and roles</p>
       </div>
       <div class="page-actions">
-        @if (canCreate) { <button class="btn btn-primary" (click)="openCreate()">+ Add user</button> }
+        @if (canCreate) {
+          <button class="btn btn-primary" (click)="openCreate()"><app-icon name="plus" [size]="15" /> Add user</button>
+        }
       </div>
     </div>
 
@@ -45,12 +48,21 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
                 <td>{{ u.phone || '—' }}</td>
                 <td>@if (u.isActive) {<span class="badge badge-success">Active</span>} @else {<span class="badge badge-danger">Disabled</span>}</td>
                 <td style="text-align:right;white-space:nowrap">
-                  @if (canUpdate) { <button class="btn btn-sm btn-ghost" (click)="openEdit(u)">Edit</button> }
-                  @if (canUpdate) { <button class="btn btn-sm btn-ghost" (click)="resetPassword(u)">Reset PW</button> }
                   @if (canUpdate) {
-                    <button class="btn btn-sm btn-ghost" (click)="toggleStatus(u)">{{ u.isActive ? 'Disable' : 'Enable' }}</button>
+                    <button class="btn btn-sm btn-ghost" (click)="openEdit(u)"><app-icon name="edit" [size]="14" /> Edit</button>
                   }
-                  @if (canDelete) { <button class="btn btn-sm btn-ghost-danger" (click)="askDelete(u)">Delete</button> }
+                  @if (canUpdate) {
+                    <button class="btn btn-sm btn-ghost" (click)="resetPassword(u)"><app-icon name="lock" [size]="14" /> Reset PW</button>
+                  }
+                  @if (canUpdate) {
+                    <button class="btn btn-sm btn-ghost" (click)="toggleStatus(u)">
+                      <app-icon [name]="u.isActive ? 'x' : 'check'" [size]="14" />
+                      {{ u.isActive ? 'Disable' : 'Enable' }}
+                    </button>
+                  }
+                  @if (canDelete) {
+                    <button class="btn btn-sm btn-ghost-danger" (click)="askDelete(u)"><app-icon name="trash" [size]="14" /> Delete</button>
+                  }
                 </td>
               </tr>
             } @empty {
@@ -62,8 +74,12 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
       <div class="pagination-bar">
         <span>Page {{ page }} of {{ totalPages || 1 }} ({{ total }})</span>
         <div class="page-actions">
-          <button class="btn btn-sm btn-ghost" [disabled]="page <= 1" (click)="prevPage()">Prev</button>
-          <button class="btn btn-sm btn-ghost" [disabled]="page >= totalPages" (click)="nextPage()">Next</button>
+          <button class="btn btn-sm btn-ghost" [disabled]="page <= 1" (click)="prevPage()">
+            <app-icon name="chevron-left" [size]="14" /> Prev
+          </button>
+          <button class="btn btn-sm btn-ghost" [disabled]="page >= totalPages" (click)="nextPage()">
+            Next <app-icon name="chevron-right" [size]="14" />
+          </button>
         </div>
       </div>
     </div>
@@ -98,8 +114,10 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
               </div>
             </div>
             <div class="modal-actions">
-              <button type="button" class="btn btn-ghost" (click)="showForm = false">Cancel</button>
-              <button type="submit" class="btn btn-primary" [disabled]="saving">{{ saving ? 'Saving…' : 'Save' }}</button>
+              <button type="button" class="btn btn-ghost" (click)="showForm = false"><app-icon name="x" [size]="14" /> Cancel</button>
+              <button type="submit" class="btn btn-primary" [disabled]="saving">
+                <app-icon name="check" [size]="14" /> {{ saving ? 'Saving…' : 'Save' }}
+              </button>
             </div>
           </form>
         </div>

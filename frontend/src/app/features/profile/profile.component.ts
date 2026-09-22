@@ -4,11 +4,12 @@ import { CommonModule } from '@angular/common';
 import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
+import { IconComponent } from '../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [FormsModule, CommonModule],
+  imports: [FormsModule, CommonModule, IconComponent],
   template: `
     <div class="page-header">
       <div>
@@ -47,7 +48,9 @@ import { ToastService } from '../../core/services/toast.service';
           <label>Confirm new password</label>
           <input type="password" class="form-control" name="confirmPassword" [(ngModel)]="pwForm.confirmPassword" required />
         </div>
-        <button type="submit" class="btn btn-primary" [disabled]="busy">{{ busy ? 'Updating…' : 'Update password' }}</button>
+        <button type="submit" class="btn btn-primary" [disabled]="busy">
+          <app-icon name="check" [size]="15" /> {{ busy ? 'Updating…' : 'Update password' }}
+        </button>
       </form>
     </div>
   `,

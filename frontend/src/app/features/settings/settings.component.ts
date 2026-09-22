@@ -2,11 +2,12 @@ import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
+import { IconComponent } from '../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, IconComponent],
   template: `
     <div class="page-header">
       <div>
@@ -14,8 +15,8 @@ import { ToastService } from '../../core/services/toast.service';
         <p class="page-subtitle">Key–value configuration</p>
       </div>
       <div class="page-actions">
-        <button class="btn btn-primary" (click)="addSetting()">+ Add setting</button>
-        <button class="btn btn-ghost" (click)="load()">Refresh</button>
+        <button class="btn btn-primary" (click)="addSetting()"><app-icon name="plus" [size]="15" /> Add setting</button>
+        <button class="btn btn-ghost" (click)="load()"><app-icon name="refresh" [size]="15" /> Refresh</button>
       </div>
     </div>
 
@@ -28,7 +29,7 @@ import { ToastService } from '../../core/services/toast.service';
           <option value="finance">finance</option>
           <option value="transport">transport</option>
         </select>
-        <button class="btn btn-ghost" (click)="saveAll()">Save all</button>
+        <button class="btn btn-ghost" (click)="saveAll()"><app-icon name="check" [size]="15" /> Save all</button>
       </div>
       <div class="table-responsive">
         <table class="table">
@@ -39,7 +40,7 @@ import { ToastService } from '../../core/services/toast.service';
                 <td><code>{{ row.key }}</code></td>
                 <td><input class="form-control" [(ngModel)]="row.value" /></td>
                 <td><input type="checkbox" class="form-checkbox" [(ngModel)]="row.isPublic" /></td>
-                <td><button class="btn btn-sm btn-ghost-danger" (click)="remove(row)">✕</button></td>
+                <td><button class="btn btn-sm btn-ghost-danger" (click)="remove(row)"><app-icon name="trash" [size]="14" /></button></td>
               </tr>
             } @empty {
               <tr><td colspan="4" class="empty-cell">No settings in this scope.</td></tr>
@@ -50,7 +51,7 @@ import { ToastService } from '../../core/services/toast.service';
       @if (rows.length) {
         <div class="pagination-bar">
           <span>{{ rows.length }} setting(s)</span>
-          <button class="btn btn-primary btn-sm" (click)="saveAll()">Save all</button>
+          <button class="btn btn-primary btn-sm" (click)="saveAll()"><app-icon name="check" [size]="14" /> Save all</button>
         </div>
       }
     </div>

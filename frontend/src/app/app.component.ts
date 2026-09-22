@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { ToastContainerComponent } from './shared/components/toast-container/toast-container.component';
+import { ThemeService } from './core/services/theme.service';
 
 @Component({
   selector: 'app-root',
@@ -11,4 +12,6 @@ import { ToastContainerComponent } from './shared/components/toast-container/toa
     <app-toast-container />
   `,
 })
-export class AppComponent {}
+export class AppComponent {
+  constructor(public readonly theme: ThemeService) {}
+}

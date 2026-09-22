@@ -9,6 +9,7 @@ import { FieldConfig, resolveResource, ResourceConfig } from './resource.config'
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
+import { IconComponent } from '../../shared/components/icon/icon.component';
 import { RouterLink } from '@angular/router';
 
 interface Row {
@@ -19,7 +20,7 @@ interface Row {
 @Component({
   selector: 'app-crud-resource',
   standalone: true,
-  imports: [FormsModule, CommonModule, ConfirmDialogComponent, RouterLink],
+  imports: [FormsModule, CommonModule, ConfirmDialogComponent, RouterLink, IconComponent],
   template: `
     @if (!config) {
       <div class="card">
@@ -34,12 +35,14 @@ interface Row {
           <p class="page-subtitle">Manage {{ config.label.toLowerCase() }}</p>
         </div>
         <div class="page-actions">
-          <button class="btn btn-ghost" (click)="load()">Refresh</button>
+          <button class="btn btn-ghost" (click)="load()"><app-icon name="refresh" [size]="15" /> Refresh</button>
           @if (canExport) {
-            <button class="btn btn-ghost" (click)="exportCsv()">Export CSV</button>
+            <button class="btn btn-ghost" (click)="exportCsv()"><app-icon name="download" [size]="15" /> Export CSV</button>
           }
           @if (config.canCreate !== false && canCreate) {
-            <button class="btn btn-primary" (click)="openCreate()">+ {{ config.createLabel ?? 'Add new' }}</button>
+            <button class="btn btn-primary" (click)="openCreate()">
+              <app-icon name="plus" [size]="15" /> {{ config.createLabel ?? 'Add new' }}
+            </button>
           }
         </div>
       </div>
@@ -86,10 +89,10 @@ interface Row {
                   }
                   <td style="text-align:right;white-space:nowrap">
                     @if (config.canCreate !== false && canEdit) {
-                      <button class="btn btn-sm btn-ghost" (click)="openEdit(row)">Edit</button>
+                      <button class="btn btn-sm btn-ghost" (click)="openEdit(row)"><app-icon name="edit" [size]="14" /> Edit</button>
                     }
                     @if (config.canCreate !== false && canDelete) {
-                      <button class="btn btn-sm btn-ghost-danger" (click)="askDelete(row)">Delete</button>
+                      <button class="btn btn-sm btn-ghost-danger" (click)="askDelete(row)"><app-icon name="trash" [size]="14" /> Delete</button>
                     }
                   </td>
                 </tr>
@@ -151,8 +154,10 @@ interface Row {
               <p class="form-hint">This module is read-only.</p>
             }
             <div class="modal-actions">
-              <button type="button" class="btn btn-ghost" (click)="closeForm()">Cancel</button>
-              <button type="submit" class="btn btn-primary" [disabled]="saving">{{ saving ? 'Saving…' : 'Save' }}</button>
+              <button type="button" class="btn btn-ghost" (click)="closeForm()"><app-icon name="x" [size]="14" /> Cancel</button>
+              <button type="submit" class="btn btn-primary" [disabled]="saving">
+                <app-icon name="check" [size]="14" /> {{ saving ? 'Saving…' : 'Save' }}
+              </button>
             </div>
           </form>
         </div>

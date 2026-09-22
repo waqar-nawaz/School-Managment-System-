@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
+import { IconComponent } from '../../shared/components/icon/icon.component';
 
 interface RegisterEntry {
   studentId: number;
@@ -14,7 +15,7 @@ interface RegisterEntry {
 @Component({
   selector: 'app-attendance',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, IconComponent],
   template: `
     <div class="page-header">
       <div>
@@ -28,7 +29,7 @@ interface RegisterEntry {
         <input type="number" class="form-control" style="max-width:140px" placeholder="Class ID" [(ngModel)]="classId" />
         <input type="number" class="form-control" style="max-width:140px" placeholder="Section ID (opt)" [(ngModel)]="sectionId" />
         <input type="date" class="form-control" style="max-width:170px" [(ngModel)]="date" />
-        <button class="btn btn-primary" (click)="loadRegister()">Load register</button>
+        <button class="btn btn-primary" (click)="loadRegister()"><app-icon name="search" [size]="15" /> Load register</button>
       </div>
 
       @if (entries.length) {
@@ -55,9 +56,11 @@ interface RegisterEntry {
           </table>
         </div>
         <div class="modal-actions" style="justify-content:flex-start">
-          <button class="btn btn-primary" [disabled]="saving" (click)="save()">{{ saving ? 'Saving…' : 'Save attendance' }}</button>
-          <button class="btn btn-ghost" (click)="markAll('present')">All present</button>
-          <button class="btn btn-ghost" (click)="markAll('absent')">All absent</button>
+          <button class="btn btn-primary" [disabled]="saving" (click)="save()">
+            <app-icon name="check" [size]="15" /> {{ saving ? 'Saving…' : 'Save attendance' }}
+          </button>
+          <button class="btn btn-ghost" (click)="markAll('present')"><app-icon name="check" [size]="15" /> All present</button>
+          <button class="btn btn-ghost" (click)="markAll('absent')"><app-icon name="x" [size]="15" /> All absent</button>
         </div>
       } @else {
         <p class="form-hint">Choose a class and date, then load the register.</p>
