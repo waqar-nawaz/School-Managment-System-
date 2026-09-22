@@ -16,13 +16,25 @@ export const createUserSchema = z.object({
   sendWelcome: z.boolean().default(true),
 });
 
+// Accepts numbers, numeric strings, "" and null (BIGINT ids often arrive as strings).
+const nullableId = z.preprocess(
+  (v) => {
+    if (v === "" || v === null || v === undefined) return null;
+    return typeof v === "string" ? Number(v) : v;
+  },
+  z.number().int().positive().nullable()
+);
+
 export const updateUserSchema = z.object({
   firstName: z.string().min(1).max(120).optional(),
   lastName: z.string().min(1).max(120).optional(),
-  phone: z.string().max(20).optional(),
+  username: z.string().min(3).max(120).optional(),
+  phone: z.string().max(20).nullish(),
   email: z.string().email().optional(),
-  gender: z.enum(["male", "female", "other"]).optional(),
-  branchId: z.number().int().positive().nullable().optional(),
+  gender: z.enum(["male", "female", "other"]).nullish(),
+  role: roleEnum.optional(),
+  isActive: z.boolean().optional(),
+  branchId: nullableId.optional(),
 });
 
 export const updateUserStatusSchema = z.object({

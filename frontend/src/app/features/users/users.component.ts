@@ -271,9 +271,26 @@ export class UsersComponent implements OnInit {
       return;
     }
     this.saving = true;
+
+    const payload: Record<string, unknown> = {
+      firstName: this.form['firstName'] ?? '',
+      lastName: this.form['lastName'] ?? '',
+      username: this.form['username'],
+      email: this.form['email'],
+      role: this.form['role'],
+      isActive: !!this.form['isActive'],
+      phone: this.form['phone'] ? this.form['phone'] : null,
+      gender: this.form['gender'] ? this.form['gender'] : null,
+      branchId:
+        this.form['branchId'] === null || this.form['branchId'] === undefined || this.form['branchId'] === ''
+          ? null
+          : Number(this.form['branchId']),
+    };
+    if (!this.editing) payload['password'] = this.form['password'];
+
     const req = this.editing
-      ? this.api.put(`/users/${this.form.id}`, this.form)
-      : this.api.post('/users', this.form);
+      ? this.api.put(`/users/${this.form['id']}`, payload)
+      : this.api.post('/users', payload);
     req.subscribe({
       next: () => {
         this.saving = false;
