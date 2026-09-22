@@ -171,6 +171,8 @@ table.table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .table tbody tr:hover { background: var(--row-hover); }
 .empty-cell { text-align: center; color: var(--text-muted); padding: 2rem 1rem !important; }
 .pagination-bar { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); flex-wrap: wrap; }
+.pagination-info { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.pagination-bar .page-actions { flex-wrap: nowrap; }
 
 /* ---------- Badges ---------- */
 .badge {
