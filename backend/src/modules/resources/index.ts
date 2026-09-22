@@ -3,8 +3,7 @@ import { authenticate } from "../../middlewares/authenticate";
 import { authorize } from "../../middlewares/authorize";
 import { createCrudController, CrudOptions } from "../../utils/crudFactory";
 import { asyncHandler } from "../../utils/asyncHandler";
-import { ApiResponse } from "../../utils/ApiResponse";
-import { parsePagination, buildPaginationMeta } from "../../utils/pagination";
+import { parsePagination } from "../../utils/pagination";
 import { RESOURCES, ResourceDefinition } from "./resourceDefinitions";
 import { writeAuditLog } from "../../services/audit.service";
 
@@ -57,7 +56,13 @@ function exportCsv(def: ResourceDefinition) {
     }
     const rows = await def.model.findAll({ where, limit: 5000, raw: true });
     if (!rows.length) {
-      return ApiResponse.success(res, 200, "No rows to export", null);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${def.path}-${Date.now()}.csv"`
+      );
+      res.send("");
+      return;
     }
     const headers = Object.keys(rows[0] as Record<string, unknown>);
     const escape = (v: unknown) => {

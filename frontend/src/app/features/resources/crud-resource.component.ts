@@ -36,7 +36,7 @@ interface Row {
         </div>
         <div class="page-actions">
           <button class="btn btn-ghost" (click)="load()"><app-icon name="refresh" [size]="15" /> Refresh</button>
-          @if (canExport) {
+          @if (canExport && rows.length) {
             <button class="btn btn-ghost" (click)="exportCsv()"><app-icon name="download" [size]="15" /> Export CSV</button>
           }
           @if (config.canCreate !== false && canCreate) {
@@ -385,21 +385,20 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   }
 
   exportCsv(): void {
-    this.api.get(`${this.config?.api}/export`).subscribe({
-      next: (res) => {
-        const csv = res?.data;
-        if (typeof csv !== 'string') {
-          this.toasts.error('Export failed');
-          return;
-        }
-        const blob = new Blob([csv], { type: 'text/csv' });
+    const api = this.config?.api;
+    if (!api) return;
+    this.api.download(`${api}/export`).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `${this.resourceKey}.csv`;
+        a.href = url;
+        a.download = `${this.resourceKey}-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(a.href);
+        a.remove();
+        URL.revokeObjectURL(url);
       },
-      error: () => {},
+      error: () => this.toasts.error('Export failed'),
     });
   }
 
