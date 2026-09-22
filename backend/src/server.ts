@@ -20,6 +20,8 @@ async function bootstrap(): Promise<void> {
     logger.info("Database connected and schema is ready");
   } catch (err) {
     app.locals.dbReady = false;
+    const e = err as { parent?: { code?: string }; code?: string; name?: string };
+    app.locals.dbError = e?.parent?.code || e?.code || e?.name || "unknown";
     logger.error(
       "Database unavailable - API routes will fail until DB_* env vars are set correctly. " +
         "The server is still starting so the service stays healthy.",

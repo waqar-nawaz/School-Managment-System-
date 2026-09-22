@@ -31,6 +31,7 @@ app.get("/health", (_req, res) =>
     success: true,
     message: "School Management API is healthy",
     database: app.locals.dbReady === true ? "connected" : "unavailable",
+    ...(app.locals.dbReady === true ? {} : { databaseError: app.locals.dbError || "unknown" }),
     uptime: process.uptime(),
   })
 );
