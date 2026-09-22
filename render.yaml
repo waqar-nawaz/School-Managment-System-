@@ -1,0 +1,67 @@
+# Render Blueprint - School Management System
+# One web service: Express API that also serves the built Angular SPA.
+# MySQL is NOT managed by Render; provide an external MySQL host (e.g. Aiven/MariaDB
+# free tier) and set DB_* values in the Render dashboard after first deploy.
+services:
+  - type: web
+    name: sms-api
+    runtime: node
+    plan: free
+    buildCommand: bash render-build.sh
+    startCommand: node backend/dist/server.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: RUN_SEEDERS
+        value: "true"
+      - key: CORS_ORIGIN
+        value: http://localhost:4200
+      - key: FRONTEND_URL
+        value: http://localhost:4200
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      # --- Required: external MySQL connection (set real values in dashboard) ---
+      - key: DB_HOST
+        value: ""
+        sync: false
+      - key: DB_PORT
+        value: "3306"
+        sync: false
+      - key: DB_NAME
+        value: ""
+        sync: false
+      - key: DB_USER
+        value: ""
+        sync: false
+      - key: DB_PASS
+        value: ""
+        sync: false
+      # --- Optional ---
+      - key: REDIS_HOST
+        value: ""
+        sync: false
+      - key: REDIS_PORT
+        value: "6379"
+        sync: false
+      - key: RUN_JOBS
+        value: "false"
+        sync: false
+      - key: SMTP_HOST
+        value: ""
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+        sync: false
+      - key: SMTP_USER
+        value: ""
+        sync: false
+      - key: SMTP_PASS
+        value: ""
+        sync: false
+      - key: MAIL_FROM
+        value: ""
+        sync: false

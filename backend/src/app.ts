@@ -5,6 +5,7 @@ import compression from "compression";
 import morgan from "morgan";
 import swaggerUi from "swagger-ui-express";
 import path from "path";
+import fs from "fs";
 
 import env from "./config";
 import { logger } from "./config/logger";
@@ -35,6 +36,19 @@ if (env.nodeEnv !== "production") {
 
 app.use("/api", apiLimiter);
 app.use("/api", routes);
+
+// Serve the built Angular SPA (same origin -> /api calls work without CORS).
+// Enabled whenever a production frontend build exists next to this backend.
+const frontendDist = path.resolve(process.cwd(), "..", "frontend", "dist", "sms-frontend", "browser");
+if (fs.existsSync(path.join(frontendDist, "index.html"))) {
+  app.use(express.static(frontendDist, { maxAge: "1h", index: false }));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/health") || req.path.startsWith("/uploads")) {
+      return next();
+    }
+    return res.sendFile(path.join(frontendDist, "index.html"));
+  });
+}
 
 app.use(notFoundHandler);
 app.use(errorHandler);

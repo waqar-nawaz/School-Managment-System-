@@ -11,7 +11,7 @@ async function bootstrap(): Promise<void> {
   await connectDatabase();
   await runSeeders();
 
-  if (env.nodeEnv !== "production") {
+  if (env.nodeEnv !== "production" || process.env.RUN_JOBS === "true") {
     startJobs();
   }
 
