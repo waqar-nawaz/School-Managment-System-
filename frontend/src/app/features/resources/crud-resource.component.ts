@@ -106,15 +106,13 @@ interface Row {
         </div>
 
         <div class="pagination-bar">
-          <div class="pagination-info">
-            <span>Page {{ page }} of {{ totalPages || 1 }} ({{ total }} records)</span>
-            <select class="form-control form-control-sm" style="max-width:120px" [ngModel]="pageSize" (ngModelChange)="setPageSize($event)">
-              @for (size of [10, 20, 50, 100]; track size) {
-                <option [ngValue]="size">{{ size }} / page</option>
-              }
-            </select>
-          </div>
-          <div class="page-actions">
+          <select class="form-control form-control-sm pagination-size" [ngModel]="pageSize" (ngModelChange)="setPageSize($event)">
+            @for (size of [10, 20, 50, 100]; track size) {
+              <option [ngValue]="size">{{ size }} / page</option>
+            }
+          </select>
+          <div class="pagination-right">
+            <span class="pagination-count">Page {{ page }} of {{ totalPages || 1 }} ({{ total }} records)</span>
             <button class="btn btn-sm btn-ghost" [disabled]="page <= 1" (click)="setPage(page - 1)">
               <app-icon name="chevron-left" [size]="14" /> Prev
             </button>

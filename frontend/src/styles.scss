@@ -186,9 +186,10 @@ table.table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .table tbody td { padding: 0.65rem 1rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .table tbody tr:hover { background: var(--row-hover); }
 .empty-cell { text-align: center; color: var(--text-muted); padding: 2rem 1rem !important; }
-.pagination-bar { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); flex-wrap: wrap; }
-.pagination-info { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-.pagination-bar .page-actions { flex-wrap: nowrap; }
+.pagination-bar { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); flex-wrap: nowrap; }
+.pagination-right { display: flex; align-items: center; gap: 0.75rem; flex-wrap: nowrap; margin-left: auto; }
+.pagination-count { white-space: nowrap; }
+select.form-control.pagination-size { width: auto; max-width: 130px; flex: 0 0 auto; }
 
 /* ---------- Badges ---------- */
 .badge {
