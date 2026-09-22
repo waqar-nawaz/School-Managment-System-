@@ -6,7 +6,7 @@ services:
   - type: web
     name: sms-api
     runtime: node
-    plan: free
+    plan: starter
     buildCommand: bash render-build.sh
     startCommand: node backend/dist/server.js
     healthCheckPath: /health

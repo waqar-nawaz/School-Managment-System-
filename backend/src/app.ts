@@ -38,8 +38,9 @@ app.use("/api", apiLimiter);
 app.use("/api", routes);
 
 // Serve the built Angular SPA (same origin -> /api calls work without CORS).
-// Enabled whenever a production frontend build exists next to this backend.
-const frontendDist = path.resolve(process.cwd(), "..", "frontend", "dist", "sms-frontend", "browser");
+// Resolved relative to this file so it works from any working directory
+// (Render runs from repo root, Railway/local from backend/).
+const frontendDist = path.resolve(__dirname, "..", "..", "frontend", "dist", "sms-frontend", "browser");
 if (fs.existsSync(path.join(frontendDist, "index.html"))) {
   app.use(express.static(frontendDist, { maxAge: "1h", index: false }));
   app.get("*", (req, res, next) => {
