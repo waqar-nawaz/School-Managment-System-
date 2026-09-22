@@ -43,9 +43,26 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
   ApiResponse.success(res, 200, "Password changed", null);
 });
 
+function resolveBaseUrl(req: Request): string {
+  const configured = process.env.FRONTEND_URL || "";
+  if (configured && !configured.includes("localhost")) return configured;
+  return `${req.protocol}://${req.get("host")}`;
+}
+
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
-  await authService.forgotPassword(req.body.email);
-  ApiResponse.success(res, 200, "If that email exists, a reset link has been sent", null);
+  const { resetUrl, mailed } = await authService.forgotPassword(
+    req.body.email,
+    resolveBaseUrl(req)
+  );
+  // When SMTP isn't configured and EXPOSE_RESET_LINK=true, hand the link back
+  // so it can still be used (handy for demos / first setup).
+  const expose = !mailed && process.env.EXPOSE_RESET_LINK === "true";
+  ApiResponse.success(
+    res,
+    200,
+    "If that email exists, a reset link has been sent",
+    expose ? { resetUrl } : null
+  );
 });
 
 export const resetPassword = asyncHandler(async (req: Request, res: Response) => {

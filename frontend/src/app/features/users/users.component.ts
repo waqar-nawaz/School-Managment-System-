@@ -59,7 +59,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                     <button class="btn btn-sm btn-ghost" (click)="openEdit(u)"><app-icon name="edit" [size]="14" /> Edit</button>
                   }
                   @if (canUpdate) {
-                    <button class="btn btn-sm btn-ghost" (click)="resetPassword(u)"><app-icon name="lock" [size]="14" /> Reset PW</button>
+                    <button class="btn btn-sm btn-ghost" (click)="openResetPassword(u)"><app-icon name="lock" [size]="14" /> Reset PW</button>
                   }
                   @if (canUpdate) {
                     <button class="btn btn-sm btn-ghost" (click)="toggleStatus(u)">
@@ -170,6 +170,81 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
       </div>
     }
 
+    @if (resetTarget) {
+      <div class="modal-backdrop">
+        <div class="modal">
+          <div class="modal-head">
+            <div class="modal-title">Reset password</div>
+            <button type="button" class="modal-close" (click)="resetTarget = null" aria-label="Close">
+              <app-icon name="x" [size]="16" />
+            </button>
+          </div>
+          <p class="form-hint" style="margin-bottom:1.1rem">
+            Set a new password for <strong>{{ resetTarget.email }}</strong>. The user can sign in with it right away.
+          </p>
+          <form (ngSubmit)="submitResetPassword(rf)" #rf="ngForm">
+            <div class="form-group">
+              <label>New password *</label>
+              <div class="password-box">
+                <input
+                  [type]="showResetPw ? 'text' : 'password'"
+                  class="form-control"
+                  name="newPassword"
+                  [(ngModel)]="resetPw.newPassword"
+                  required
+                  minlength="8"
+                  autocomplete="new-password"
+                  placeholder="At least 8 characters"
+                  #rpw="ngModel" />
+                <button
+                  type="button"
+                  class="password-toggle"
+                  (click)="showResetPw = !showResetPw"
+                  [attr.aria-label]="showResetPw ? 'Hide password' : 'Show password'">
+                  <app-icon [name]="showResetPw ? 'eye-off' : 'eye'" [size]="16" />
+                </button>
+              </div>
+              @if (rf.submitted && rpw.invalid) {
+                <div class="field-error">Password must be at least 8 characters</div>
+              }
+            </div>
+            <div class="form-group">
+              <label>Confirm password *</label>
+              <div class="password-box">
+                <input
+                  [type]="showResetPw ? 'text' : 'password'"
+                  class="form-control"
+                  name="confirm"
+                  [(ngModel)]="resetPw.confirm"
+                  required
+                  autocomplete="new-password"
+                  placeholder="Repeat the password"
+                  #rcpw="ngModel" />
+                <button
+                  type="button"
+                  class="password-toggle"
+                  (click)="showResetPw = !showResetPw"
+                  [attr.aria-label]="showResetPw ? 'Hide password' : 'Show password'">
+                  <app-icon [name]="showResetPw ? 'eye-off' : 'eye'" [size]="16" />
+                </button>
+              </div>
+              @if (rf.submitted && (rcpw.invalid || resetMismatch)) {
+                <div class="field-error">{{ rcpw.invalid ? 'Please confirm the password' : 'Passwords do not match' }}</div>
+              }
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="btn btn-ghost" (click)="resetTarget = null">
+                <app-icon name="x" [size]="14" /> Cancel
+              </button>
+              <button type="submit" class="btn btn-primary" [disabled]="resetBusy">
+                <app-icon name="check" [size]="14" /> {{ resetBusy ? 'Resetting…' : 'Reset password' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    }
+
     @if (confirmUser) {
       <app-confirm-dialog title="Delete user" [message]="'Delete ' + confirmUser.email + '?'" (confirm)="doDelete()" (close)="confirmUser = null" />
     }
@@ -188,6 +263,11 @@ export class UsersComponent implements OnInit {
   form: Record<string, any> = {};
   saving = false;
   showPassword = false;
+  resetTarget: User | null = null;
+  resetPw = { newPassword: '', confirm: '' };
+  resetBusy = false;
+  resetMismatch = false;
+  showResetPw = false;
   confirmUser: User | null = null;
   canCreate = false;
   canUpdate = false;
@@ -314,12 +394,34 @@ export class UsersComponent implements OnInit {
     });
   }
 
-  resetPassword(u: User): void {
-    const pw = prompt(`New password for ${u.email} (min 8 chars)`);
-    if (!pw || pw.length < 8) return;
-    this.api.post(`/users/${u.id}/reset-password`, { newPassword: pw }).subscribe({
-      next: () => this.toasts.success('Password reset'),
-      error: () => {},
+  openResetPassword(u: User): void {
+    this.resetTarget = u;
+    this.resetPw = { newPassword: '', confirm: '' };
+    this.resetMismatch = false;
+    this.showResetPw = false;
+  }
+
+  submitResetPassword(form: NgForm): void {
+    this.resetMismatch = false;
+    if (form.invalid) {
+      form.form.markAllAsTouched();
+      return;
+    }
+    if (this.resetPw.newPassword !== this.resetPw.confirm) {
+      this.resetMismatch = true;
+      return;
+    }
+    if (!this.resetTarget) return;
+    this.resetBusy = true;
+    this.api.post(`/users/${this.resetTarget.id}/reset-password`, { newPassword: this.resetPw.newPassword }).subscribe({
+      next: () => {
+        this.resetBusy = false;
+        this.resetTarget = null;
+        this.toasts.success('Password reset');
+      },
+      error: () => {
+        this.resetBusy = false;
+      },
     });
   }
 

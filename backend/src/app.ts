@@ -16,6 +16,9 @@ import routes from "./routes";
 
 const app: Application = express();
 
+// Behind a proxy (Render/Heroku) so req.protocol reflects X-Forwarded-Proto.
+app.set("trust proxy", 1);
+
 app.use(helmet());
 app.use(cors({ origin: env.corsOrigin.split(",").map((s) => s.trim()), credentials: true }));
 app.use(compression());

@@ -122,7 +122,10 @@ export async function changePassword(userId: number, current: string, next: stri
   });
 }
 
-export async function forgotPassword(email: string): Promise<void> {
+export async function forgotPassword(
+  email: string,
+  baseUrl: string
+): Promise<{ resetUrl: string; mailed: boolean }> {
   const user = await User.findOne({ where: { email } });
   if (!user) throw ApiError.notFound("No account found for that email");
 
@@ -137,12 +140,13 @@ export async function forgotPassword(email: string): Promise<void> {
     description: "password-reset token",
   });
 
-  const link = `${process.env.FRONTEND_URL || "http://localhost:4200"}/auth/reset-password?token=${token}`;
-  await sendMail({
+  const resetUrl = `${baseUrl.replace(/\/+$/, "")}/auth/reset-password?token=${token}`;
+  const mailed = await sendMail({
     to: user.email,
     subject: "Password reset request",
-    html: `<p>Hi ${user.firstName},</p><p>Reset your password here (valid 30 min):</p><p><a href="${link}">${link}</a></p>`,
+    html: `<p>Hi ${user.firstName},</p><p>Reset your password here (valid 30 min):</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
   });
+  return { resetUrl, mailed };
 }
 
 export async function resetPassword(token: string, newPassword: string): Promise<void> {

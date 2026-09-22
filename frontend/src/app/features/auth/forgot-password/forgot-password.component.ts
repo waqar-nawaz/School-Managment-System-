@@ -38,6 +38,12 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     @if (sent) {
       <p class="form-hint">If an account exists for this email, a reset link has been sent.</p>
     }
+    @if (resetUrl) {
+      <p class="form-hint" style="margin-top:0.6rem">
+        Email is not configured on the server, so here is the link:
+        <a [href]="resetUrl">Reset password</a>
+      </p>
+    }
     <p class="auth-actions">
       <a routerLink="/auth/login">Back to sign in</a>
     </p>
@@ -47,6 +53,7 @@ export class ForgotPasswordComponent {
   email = '';
   busy = false;
   sent = false;
+  resetUrl: string | null = null;
 
   constructor(
     private readonly api: ApiService,
@@ -60,9 +67,10 @@ export class ForgotPasswordComponent {
     }
     this.busy = true;
     this.api.post('/auth/forgot-password', { email: this.email }).subscribe({
-      next: () => {
+      next: (res) => {
         this.busy = false;
         this.sent = true;
+        this.resetUrl = (res?.data as { resetUrl?: string } | null)?.resetUrl ?? null;
       },
       error: (err) => {
         this.busy = false;

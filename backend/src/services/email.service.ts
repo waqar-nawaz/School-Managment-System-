@@ -1,5 +1,6 @@
 import nodemailer, { Transporter } from "nodemailer";
 import env from "../config";
+import { logger } from "../config/logger";
 
 let transporter: Transporter | null = null;
 
@@ -21,9 +22,13 @@ export async function sendMail(opts: {
   subject: string;
   html: string;
   text?: string;
-}): Promise<void> {
+}): Promise<boolean> {
   const t = getTransporter();
-  if (!t) return; // mail not configured — silently skip
+  if (!t) {
+    // mail not configured — nothing to send
+    logger.warn(`SMTP not configured, skipping email "${opts.subject}" to ${opts.to}`);
+    return false;
+  }
   await t.sendMail({
     from: env.mail.from,
     to: opts.to,
@@ -31,6 +36,7 @@ export async function sendMail(opts: {
     html: opts.html,
     text: opts.text,
   });
+  return true;
 }
 
 export async function sendWelcomeEmail(to: string, name: string, tempPassword: string): Promise<void> {
