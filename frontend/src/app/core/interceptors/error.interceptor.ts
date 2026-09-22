@@ -35,11 +35,30 @@ export class ErrorInterceptor implements HttpInterceptor {
           );
         }
 
-        const message = err.error?.message || err.message || 'Request failed';
+        const message = this.extractMessage(err);
         if (err.status !== 401) this.toasts.error(message);
         return throwError(() => err);
       })
     );
+  }
+
+  /** Turn any error payload (string, validation array, object) into readable text. */
+  private extractMessage(err: HttpErrorResponse): string {
+    const body = err.error as unknown;
+    if (typeof body === 'string' && body.trim()) return body;
+    if (body && typeof body === 'object') {
+      const b = body as { message?: unknown; errors?: unknown[]; error?: unknown };
+      if (Array.isArray(b.errors) && b.errors.length) {
+        const parts = b.errors
+          .map((e) => (typeof e === 'string' ? e : (e as { message?: string })?.message))
+          .filter((m): m is string => !!m);
+        if (parts.length) return parts.join(', ');
+      }
+      if (typeof b.message === 'string' && b.message) return b.message;
+      if (b.message) return JSON.stringify(b.message);
+      if (typeof b.error === 'string' && b.error) return b.error;
+    }
+    return err.message || 'Request failed';
   }
 
   private tryRefresh(): Observable<boolean> {

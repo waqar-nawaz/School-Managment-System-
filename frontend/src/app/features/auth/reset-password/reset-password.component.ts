@@ -1,6 +1,6 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../../core/services/api.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { IconComponent } from '../../../shared/components/icon/icon.component';
@@ -49,7 +49,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     </p>
   `,
 })
-export class ResetPasswordComponent {
+export class ResetPasswordComponent implements OnInit {
   token = '';
   password = '';
   busy = false;
@@ -58,8 +58,14 @@ export class ResetPasswordComponent {
   constructor(
     private readonly api: ApiService,
     private readonly router: Router,
-    private readonly toasts: ToastService
+    private readonly toasts: ToastService,
+    private readonly route: ActivatedRoute
   ) {}
+
+  ngOnInit(): void {
+    const token = this.route.snapshot.queryParamMap.get('token');
+    if (token) this.token = token;
+  }
 
   submit(form: NgForm): void {
     if (form.invalid) {
@@ -67,15 +73,14 @@ export class ResetPasswordComponent {
       return;
     }
     this.busy = true;
-    this.api.post('/auth/reset-password', { token: this.token, password: this.password }).subscribe({
+    this.api.post('/auth/reset-password', { token: this.token, newPassword: this.password }).subscribe({
       next: () => {
         this.busy = false;
         this.toasts.success('Password updated. Please sign in.');
         this.router.navigate(['/auth/login']);
       },
-      error: (err) => {
+      error: () => {
         this.busy = false;
-        this.toasts.error(err?.error?.message || 'Reset failed');
       },
     });
   }
