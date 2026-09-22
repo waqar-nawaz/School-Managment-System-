@@ -23,7 +23,7 @@ COPY --from=build /build/backend/package.json /build/backend/package-lock.json b
 RUN cd backend && npm ci --omit=dev --no-audit --no-fund
 
 COPY --from=build /build/backend/dist backend/dist
-COPY --from=build /build/frontend/dist/sms-frontend/browser frontend/dist/sms-frontend/browser
+COPY --from=build /build/frontend/dist/sms-frontend frontend/dist/sms-frontend
 
 WORKDIR /app/backend
 EXPOSE 3000

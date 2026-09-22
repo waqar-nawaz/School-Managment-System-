@@ -10,7 +10,7 @@ export class RefreshToken extends BaseModel {
   userId!: number;
 
   @Index
-  @Column({ type: DataType.TEXT, allowNull: false })
+  @Column({ type: DataType.STRING(64), allowNull: false })
   tokenHash!: string;
 
   @Column({ type: DataType.STRING(45) })

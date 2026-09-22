@@ -16,7 +16,7 @@ export class GradeScale extends BaseModel {
   @Column({ type: DataType.STRING(10), allowNull: false })
   grade!: string;
 
-  @Column({ type: DataType.STRING(10), defaultValue: "PASS" })
+  @Column({ type: DataType.STRING(30), defaultValue: "PASS" })
   result!: string;
 
   @Column({ type: DataType.TEXT })
