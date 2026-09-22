@@ -8,11 +8,12 @@ const env = {
   port: parseInt(process.env.PORT || "3000", 10),
 
   db: {
-    host: process.env.DB_HOST || "localhost",
-    port: parseInt(process.env.DB_PORT || "3306", 10),
-    name: process.env.DB_NAME || "school_db",
-    user: process.env.DB_USER || "school_user",
-    pass: process.env.DB_PASS || "school_pass",
+    // Fall back to Railway's managed MySQL plugin variables.
+    host: process.env.DB_HOST || process.env.MYSQLHOST || "localhost",
+    port: parseInt(process.env.DB_PORT || process.env.MYSQLPORT || "3306", 10),
+    name: process.env.DB_NAME || process.env.MYSQLDATABASE || "school_db",
+    user: process.env.DB_USER || process.env.MYSQLUSER || "school_user",
+    pass: process.env.DB_PASS || process.env.MYSQLPASSWORD || "school_pass",
   },
 
   jwt: {
