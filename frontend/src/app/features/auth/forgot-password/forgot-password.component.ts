@@ -17,8 +17,17 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     <form (ngSubmit)="submit(f)" #f="ngForm">
       <div class="form-group">
         <label>Email address</label>
-        <input type="email" class="form-control" name="email" [(ngModel)]="email" required email #email="ngModel" />
-        @if (f.submitted && email.invalid) {
+        <input
+          type="email"
+          class="form-control"
+          name="email"
+          [(ngModel)]="email"
+          required
+          email
+          autocomplete="email"
+          placeholder="you@school.local"
+          #emailCtrl="ngModel" />
+        @if (f.submitted && emailCtrl.invalid) {
           <div class="field-error">Enter a valid email address</div>
         }
       </div>
