@@ -135,7 +135,6 @@ export function defineAssociations(): void {
   Branch.hasMany(User, { as: "users", foreignKey: "branchId" });
   Branch.hasMany(SchoolClass, { as: "classes", foreignKey: "branchId" });
   Branch.hasMany(Student, { as: "students", foreignKey: "branchId" });
-  User.belongsTo(Branch, { as: "branch", foreignKey: "branchId" });
 
   // Roles / permissions
   Role.hasMany(User, { foreignKey: "role", sourceKey: "name" });
