@@ -1,8 +1,10 @@
 import { Router } from "express";
+import { Op } from "sequelize";
 import { authenticate } from "../../middlewares/authenticate";
 import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
+import { parsePagination, buildPaginationMeta } from "../../utils/pagination";
 import { Permission } from "../../models";
 import { ROLE_PERMISSIONS } from "../../config/permissions";
 
@@ -13,8 +15,24 @@ router.get(
   "/",
   authorize("permissions:read"),
   asyncHandler(async (req, res) => {
-    const rows = await Permission.findAll({ order: [["category", "ASC"], ["key", "ASC"]] });
-    ApiResponse.success(res, 200, "Permissions", rows);
+    const p = parsePagination(req);
+    const where = p.search
+      ? {
+          [Op.or]: [
+            { key: { [Op.like]: `%${p.search}%` } },
+            { label: { [Op.like]: `%${p.search}%` } },
+            { category: { [Op.like]: `%${p.search}%` } },
+          ],
+        }
+      : {};
+    const { rows, count } = await Permission.findAndCountAll({
+      where,
+      limit: p.limit,
+      offset: p.offset,
+      order: req.query.sort ? p.sort : [["category", "ASC"], ["key", "ASC"]],
+      distinct: true,
+    });
+    ApiResponse.success(res, 200, "Permissions", rows, buildPaginationMeta(p.page, p.limit, count));
   })
 );
 

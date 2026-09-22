@@ -1,8 +1,10 @@
 import { Router } from "express";
+import { Op } from "sequelize";
 import { authenticate } from "../../middlewares/authenticate";
 import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
+import { parsePagination, buildPaginationMeta } from "../../utils/pagination";
 import { Role, Permission, RolePermission } from "../../models";
 import { ROLE_PERMISSIONS } from "../../config/permissions";
 
@@ -47,9 +49,24 @@ router.put(
 router.get(
   "",
   authorize("roles:read"),
-  asyncHandler(async (_req, res) => {
-    const roles = await Role.findAll({ order: [["name", "ASC"]] });
-    ApiResponse.success(res, 200, "Roles", roles);
+  asyncHandler(async (req, res) => {
+    const p = parsePagination(req);
+    const where = p.search
+      ? {
+          [Op.or]: [
+            { name: { [Op.like]: `%${p.search}%` } },
+            { label: { [Op.like]: `%${p.search}%` } },
+          ],
+        }
+      : {};
+    const { rows, count } = await Role.findAndCountAll({
+      where,
+      limit: p.limit,
+      offset: p.offset,
+      order: req.query.sort ? p.sort : [["name", "ASC"]],
+      distinct: true,
+    });
+    ApiResponse.success(res, 200, "Roles", rows, buildPaginationMeta(p.page, p.limit, count));
   })
 );
 

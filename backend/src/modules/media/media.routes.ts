@@ -1,11 +1,13 @@
 import { Router } from "express";
 import fs from "fs";
 import path from "path";
+import { Op } from "sequelize";
 import { authenticate } from "../../middlewares/authenticate";
 import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
+import { parsePagination, buildPaginationMeta } from "../../utils/pagination";
 import { upload, uploadMultiple, UPLOAD_ROOT } from "../../middlewares/upload";
 import { Media } from "../../models";
 
@@ -37,12 +39,22 @@ router.post(
 
 router.get("/", authorize("media:read"), asyncHandler(async (req, res) => {
   const category = req.query.category ? String(req.query.category) : undefined;
-  const rows = await Media.findAll({
-    where: category ? { category } : {},
-    order: [["createdAt", "DESC"]],
-    limit: 100,
+  const p = parsePagination(req);
+  const where: Record<string, unknown> = { ...(category ? { category } : {}) };
+  if (p.search) {
+    where[Op.or as unknown as string] = [
+      { originalName: { [Op.like]: `%${p.search}%` } },
+      { mimeType: { [Op.like]: `%${p.search}%` } },
+    ];
+  }
+  const { rows, count } = await Media.findAndCountAll({
+    where,
+    limit: p.limit,
+    offset: p.offset,
+    order: req.query.sort ? p.sort : [["createdAt", "DESC"]],
+    distinct: true,
   });
-  ApiResponse.success(res, 200, "Media list", rows);
+  ApiResponse.success(res, 200, "Media list", rows, buildPaginationMeta(p.page, p.limit, count));
 }));
 
 router.get("/:id", authorize("media:read"), asyncHandler(async (req, res) => {
