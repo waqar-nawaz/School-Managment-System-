@@ -27,13 +27,28 @@ app.use(express.static(path.join(process.cwd(), "uploads"), { maxAge: "1d" }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 app.get("/health", (_req, res) =>
-  res.json({ success: true, message: "School Management API is healthy", uptime: process.uptime() })
+  res.json({
+    success: true,
+    message: "School Management API is healthy",
+    database: app.locals.dbReady === true ? "connected" : "unavailable",
+    uptime: process.uptime(),
+  })
 );
 
 if (env.nodeEnv !== "production") {
   app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 }
 
+app.use("/api", (req, res, next) => {
+  if (app.locals.dbReady !== true) {
+    res.status(503).json({
+      success: false,
+      message: "Database is not available. Set DB_* environment variables in the service and redeploy.",
+    });
+    return;
+  }
+  next();
+});
 app.use("/api", apiLimiter);
 app.use("/api", routes);
 

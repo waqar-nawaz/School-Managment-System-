@@ -8,8 +8,24 @@ import { startJobs } from "./jobs";
 
 async function bootstrap(): Promise<void> {
   defineAssociations();
-  await connectDatabase();
-  await runSeeders();
+
+  // The HTTP server must come up even if the database is temporarily
+  // unreachable, otherwise Render's health check fails and the deploy is
+  // marked as failed. Database-dependent routes will return errors until the
+  // connection is available (set DB_* env vars and redeploy).
+  try {
+    await connectDatabase();
+    await runSeeders();
+    app.locals.dbReady = true;
+    logger.info("Database connected and schema is ready");
+  } catch (err) {
+    app.locals.dbReady = false;
+    logger.error(
+      "Database unavailable - API routes will fail until DB_* env vars are set correctly. " +
+        "The server is still starting so the service stays healthy.",
+      err
+    );
+  }
 
   if (env.nodeEnv !== "production" || process.env.RUN_JOBS === "true") {
     startJobs();
