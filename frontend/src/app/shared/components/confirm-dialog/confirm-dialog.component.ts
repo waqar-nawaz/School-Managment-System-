@@ -8,7 +8,12 @@ import { IconComponent } from '../icon/icon.component';
   template: `
     <div class="modal-backdrop">
       <div class="modal">
-        <div class="modal-title">{{ title }}</div>
+        <div class="modal-head">
+          <div class="modal-title">{{ title }}</div>
+          <button type="button" class="modal-close" (click)="close.emit()" aria-label="Close">
+            <app-icon name="x" [size]="16" />
+          </button>
+        </div>
         <p style="color:var(--neutral-500)">{{ message }}</p>
         <div class="modal-actions">
           <button class="btn btn-ghost" (click)="close.emit()"><app-icon name="x" [size]="14" /> Cancel</button>

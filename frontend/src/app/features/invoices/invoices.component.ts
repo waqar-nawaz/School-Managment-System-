@@ -1,5 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { FormsModule, NgForm } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -57,10 +57,21 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     @if (showGenerate) {
       <div class="modal-backdrop">
         <div class="modal modal-lg">
-          <div class="modal-title">Generate invoice</div>
-          <form (ngSubmit)="generate()" #g="ngForm">
+          <div class="modal-head">
+            <div class="modal-title">Generate invoice</div>
+            <button type="button" class="modal-close" (click)="showGenerate = false" aria-label="Close">
+              <app-icon name="x" [size]="16" />
+            </button>
+          </div>
+          <form (ngSubmit)="generate(g)" #g="ngForm">
             <div class="form-grid">
-              <div class="form-group"><label>Student ID *</label><input type="number" class="form-control" [(ngModel)]="genForm.studentId" name="studentId" required /></div>
+              <div class="form-group">
+                <label>Student ID *</label>
+                <input type="number" class="form-control" [(ngModel)]="genForm.studentId" name="studentId" required #studentId="ngModel" />
+                @if (g.submitted && studentId.invalid) {
+                  <div class="field-error">Student ID is required</div>
+                }
+              </div>
               <div class="form-group"><label>Term ID</label><input type="number" class="form-control" [(ngModel)]="genForm.termId" name="termId" /></div>
               <div class="form-group"><label>Academic year ID</label><input type="number" class="form-control" [(ngModel)]="genForm.academicYearId" name="academicYearId" /></div>
               <div class="form-group"><label>Discount</label><input type="number" class="form-control" [(ngModel)]="genForm.discount" name="discount" /></div>
@@ -85,9 +96,20 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     @if (payTarget) {
       <div class="modal-backdrop">
         <div class="modal">
-          <div class="modal-title">Record payment</div>
-          <form (ngSubmit)="pay()" #p="ngForm">
-            <div class="form-group"><label>Amount (balance {{ money(balanceOf(payTarget)) }})</label><input type="number" class="form-control" [(ngModel)]="payForm.amount" name="amount" required /></div>
+          <div class="modal-head">
+            <div class="modal-title">Record payment</div>
+            <button type="button" class="modal-close" (click)="payTarget = null" aria-label="Close">
+              <app-icon name="x" [size]="16" />
+            </button>
+          </div>
+          <form (ngSubmit)="pay(p)" #p="ngForm">
+            <div class="form-group">
+              <label>Amount (balance {{ money(balanceOf(payTarget)) }})</label>
+              <input type="number" class="form-control" [(ngModel)]="payForm.amount" name="amount" required #amount="ngModel" />
+              @if (p.submitted && amount.invalid) {
+                <div class="field-error">Amount is required</div>
+              }
+            </div>
             <div class="form-group">
               <label>Method</label>
               <select class="form-control" [(ngModel)]="payForm.method" name="method">
@@ -151,7 +173,11 @@ export class InvoicesComponent implements OnInit {
     this.showGenerate = true;
   }
 
-  generate(): void {
+  generate(form: NgForm): void {
+    if (form.invalid) {
+      form.form.markAllAsTouched();
+      return;
+    }
     this.busy = true;
     const feeTypeIds = (this.genForm.feeTypeIdsRaw || '').split(',').map((s: string) => Number(s.trim())).filter(Number.isFinite);
     const body = { ...this.genForm, feeTypeIds };
@@ -174,7 +200,11 @@ export class InvoicesComponent implements OnInit {
     this.payForm = { amount: Math.max(0, Number(inv.totalDue) - Number(inv.amountPaid ?? 0)), method: 'cash', reference: '' };
   }
 
-  pay(): void {
+  pay(form: NgForm): void {
+    if (form.invalid) {
+      form.form.markAllAsTouched();
+      return;
+    }
     this.busy = true;
     this.api.post(`/invoices/${this.payTarget.id}/pay`, this.payForm).subscribe({
       next: () => {

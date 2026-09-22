@@ -1,5 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { FormsModule, NgForm } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { PermissionService } from '../../core/services/permission.service';
@@ -87,15 +87,38 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     @if (showForm) {
       <div class="modal-backdrop">
         <div class="modal modal-lg">
-          <div class="modal-title">{{ editing ? 'Edit user' : 'Add user' }}</div>
-          <form (ngSubmit)="save()" #f="ngForm">
+          <div class="modal-head">
+            <div class="modal-title">{{ editing ? 'Edit user' : 'Add user' }}</div>
+            <button type="button" class="modal-close" (click)="showForm = false" aria-label="Close">
+              <app-icon name="x" [size]="16" />
+            </button>
+          </div>
+          <form (ngSubmit)="save(f)" #f="ngForm">
             <div class="form-grid">
-              <div class="form-group"><label>Username *</label><input class="form-control" name="username" [(ngModel)]="form.username" required /></div>
-              <div class="form-group"><label>Email *</label><input class="form-control" name="email" [(ngModel)]="form.email" required /></div>
+              <div class="form-group">
+                <label>Username *</label>
+                <input class="form-control" name="username" [(ngModel)]="form.username" required #username="ngModel" />
+                @if (f.submitted && username.invalid) {
+                  <div class="field-error">Username is required</div>
+                }
+              </div>
+              <div class="form-group">
+                <label>Email *</label>
+                <input class="form-control" name="email" [(ngModel)]="form.email" required email #email="ngModel" />
+                @if (f.submitted && email.invalid) {
+                  <div class="field-error">Enter a valid email address</div>
+                }
+              </div>
               <div class="form-group"><label>First name</label><input class="form-control" name="firstName" [(ngModel)]="form.firstName" /></div>
               <div class="form-group"><label>Last name</label><input class="form-control" name="lastName" [(ngModel)]="form.lastName" /></div>
               @if (!editing) {
-                <div class="form-group"><label>Password *</label><input type="password" class="form-control" name="password" [(ngModel)]="form.password" required /></div>
+                <div class="form-group">
+                  <label>Password *</label>
+                  <input type="password" class="form-control" name="password" [(ngModel)]="form.password" required minlength="8" #password="ngModel" />
+                  @if (f.submitted && password.invalid) {
+                    <div class="field-error">Password must be at least 8 characters</div>
+                  }
+                </div>
               }
               <div class="form-group">
                 <label>Role</label>
@@ -209,8 +232,12 @@ export class UsersComponent implements OnInit {
     this.showForm = true;
   }
 
-  save(): void {
+  save(form: NgForm): void {
     if (this.saving) return;
+    if (form.invalid) {
+      form.form.markAllAsTouched();
+      return;
+    }
     this.saving = true;
     const req = this.editing
       ? this.api.put(`/users/${this.form.id}`, this.form)

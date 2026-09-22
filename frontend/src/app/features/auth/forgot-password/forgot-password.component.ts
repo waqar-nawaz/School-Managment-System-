@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { FormsModule, NgForm } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../../core/services/api.service';
 import { ToastService } from '../../../core/services/toast.service';
@@ -10,10 +10,13 @@ import { ToastService } from '../../../core/services/toast.service';
   imports: [FormsModule, RouterLink],
   template: `
     <h2 class="auth-title">Reset password</h2>
-    <form (ngSubmit)="submit()" #f="ngForm">
+    <form (ngSubmit)="submit(f)" #f="ngForm">
       <div class="form-group">
         <label>Email address</label>
-        <input type="email" class="form-control" name="email" [(ngModel)]="email" required />
+        <input type="email" class="form-control" name="email" [(ngModel)]="email" required email #email="ngModel" />
+        @if (f.submitted && email.invalid) {
+          <div class="field-error">Enter a valid email address</div>
+        }
       </div>
       <button type="submit" class="btn btn-primary btn-block" [disabled]="busy">{{ busy ? 'Sending…' : 'Send reset link' }}</button>
     </form>
@@ -35,8 +38,11 @@ export class ForgotPasswordComponent {
     private readonly toasts: ToastService
   ) {}
 
-  submit(): void {
-    if (!this.email) return;
+  submit(form: NgForm): void {
+    if (form.invalid) {
+      form.form.markAllAsTouched();
+      return;
+    }
     this.busy = true;
     this.api.post('/auth/forgot-password', { email: this.email }).subscribe({
       next: () => {

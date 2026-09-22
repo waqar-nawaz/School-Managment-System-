@@ -116,8 +116,13 @@ interface Row {
     @if (showForm && config) {
       <div class="modal-backdrop">
         <div class="modal modal-lg">
-          <div class="modal-title">{{ editingId ? 'Edit' : formTitle }}</div>
-          <form (ngSubmit)="save()" #f="ngForm">
+          <div class="modal-head">
+            <div class="modal-title">{{ editingId ? 'Edit' : formTitle }}</div>
+            <button type="button" class="modal-close" (click)="closeForm()" aria-label="Close">
+              <app-icon name="x" [size]="16" />
+            </button>
+          </div>
+          <form (ngSubmit)="save()" (input)="clearFieldErrors()" #f="ngForm">
             <div class="form-grid">
               @for (field of config.fields; track field.key) {
                 <div class="form-group" [class.form-group-full]="field.type === 'textarea'">
@@ -146,7 +151,11 @@ interface Row {
                       <input type="text" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
                     }
                   }
-                  @if (field.hint) { <small class="form-hint">{{ field.hint }}</small> }
+                  @if (fieldErrors[field.key]) {
+                    <div class="field-error">{{ fieldErrors[field.key] }}</div>
+                  } @else if (field.hint) {
+                    <small class="form-hint">{{ field.hint }}</small>
+                  }
                 </div>
               }
             </div>
@@ -192,6 +201,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   formTitle = 'Create';
   formValues: Record<string, unknown> = {};
   saving = false;
+  fieldErrors: Record<string, string> = {};
   confirm: Row | null = null;
   canCreate = false;
   canEdit = false;
@@ -271,6 +281,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   openCreate(): void {
     this.editingId = null;
     this.formValues = {};
+    this.fieldErrors = {};
     this.formTitle = `New ${this.config?.label.replace(/s$/, '')}`;
     this.showForm = true;
   }
@@ -278,6 +289,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   openEdit(row: Row): void {
     this.editingId = row.id as number ?? null;
     this.formValues = { ...row };
+    this.fieldErrors = {};
     this.formTitle = `Edit ${this.config?.label.replace(/s$/, '')}`;
     this.showForm = true;
   }
@@ -286,8 +298,23 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.showForm = false;
   }
 
+  clearFieldErrors(): void {
+    if (Object.keys(this.fieldErrors).length) this.fieldErrors = {};
+  }
+
   save(): void {
     if (!this.config || this.saveBusy) return;
+
+    this.fieldErrors = {};
+    for (const f of this.config.fields) {
+      if (!f.required) continue;
+      const v = this.formValues[f.key];
+      if (v === '' || v === null || v === undefined) {
+        this.fieldErrors[f.key] = `${f.label} is required`;
+      }
+    }
+    if (Object.keys(this.fieldErrors).length) return;
+
     this.saveBusy = true;
     this.saving = true;
     const body: Record<string, unknown> = {};

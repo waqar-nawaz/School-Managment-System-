@@ -94,11 +94,6 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
               [attr.aria-label]="theme.theme() === 'light' ? 'Switch to dark mode' : 'Switch to light mode'">
               <app-icon [name]="theme.theme() === 'light' ? 'moon' : 'sun'" [size]="17" />
             </button>
-            <span class="topbar-user">{{ userLabel }}</span>
-            <button class="btn btn-sm btn-outline" (click)="logout()">
-              <app-icon name="log-out" [size]="15" />
-              <span>Logout</span>
-            </button>
           </div>
         </header>
         <main class="admin-content">
@@ -140,7 +135,12 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
       }
       .collapse-btn:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
 
-      .sidebar-nav { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
+      .sidebar-nav {
+        display: flex; flex-direction: column; gap: 0.15rem; flex: 1;
+        overflow-y: auto; overflow-x: hidden; min-height: 0;
+        scrollbar-width: none; -ms-overflow-style: none;
+      }
+      .sidebar-nav::-webkit-scrollbar { display: none; width: 0; height: 0; }
       .sidebar-group {
         font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em;
         color: #64748b; padding: 0.85rem 0.65rem 0.3rem; font-weight: 700;

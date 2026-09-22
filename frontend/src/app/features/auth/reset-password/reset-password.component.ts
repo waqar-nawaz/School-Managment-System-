@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { FormsModule, NgForm } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../../core/services/api.service';
 import { ToastService } from '../../../core/services/toast.service';
@@ -10,14 +10,20 @@ import { ToastService } from '../../../core/services/toast.service';
   imports: [FormsModule, RouterLink],
   template: `
     <h2 class="auth-title">New password</h2>
-    <form (ngSubmit)="submit()" #f="ngForm">
+    <form (ngSubmit)="submit(f)" #f="ngForm">
       <div class="form-group">
         <label>Reset token</label>
-        <input type="text" class="form-control" name="token" [(ngModel)]="token" required />
+        <input type="text" class="form-control" name="token" [(ngModel)]="token" required #tokenCtrl="ngModel" />
+        @if (f.submitted && tokenCtrl.invalid) {
+          <div class="field-error">Reset token is required</div>
+        }
       </div>
       <div class="form-group">
         <label>New password</label>
-        <input type="password" class="form-control" name="password" [(ngModel)]="password" minlength="8" required />
+        <input type="password" class="form-control" name="password" [(ngModel)]="password" minlength="8" required #passwordCtrl="ngModel" />
+        @if (f.submitted && passwordCtrl.invalid) {
+          <div class="field-error">Password must be at least 8 characters</div>
+        }
       </div>
       <button type="submit" class="btn btn-primary btn-block" [disabled]="busy">{{ busy ? 'Saving…' : 'Save password' }}</button>
     </form>
@@ -37,8 +43,11 @@ export class ResetPasswordComponent {
     private readonly toasts: ToastService
   ) {}
 
-  submit(): void {
-    if (!this.token || this.password.length < 8) return;
+  submit(form: NgForm): void {
+    if (form.invalid) {
+      form.form.markAllAsTouched();
+      return;
+    }
     this.busy = true;
     this.api.post('/auth/reset-password', { token: this.token, password: this.password }).subscribe({
       next: () => {

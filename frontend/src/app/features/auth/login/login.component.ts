@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { FormsModule, NgForm } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
@@ -11,14 +11,20 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
   imports: [FormsModule, RouterLink, IconComponent],
   template: `
     <h2 class="auth-title">Sign in</h2>
-    <form (ngSubmit)="submit()" #f="ngForm">
+    <form (ngSubmit)="submit(f)" #f="ngForm">
       <div class="form-group">
         <label>Email or username</label>
-        <input type="text" class="form-control" name="identifier" [(ngModel)]="model.identifier" required />
+        <input type="text" class="form-control" name="identifier" [(ngModel)]="model.identifier" required #identifier="ngModel" />
+        @if (f.submitted && identifier.invalid) {
+          <div class="field-error">Email or username is required</div>
+        }
       </div>
       <div class="form-group">
         <label>Password</label>
-        <input type="password" class="form-control" name="password" [(ngModel)]="model.password" required />
+        <input type="password" class="form-control" name="password" [(ngModel)]="model.password" required #password="ngModel" />
+        @if (f.submitted && password.invalid) {
+          <div class="field-error">Password is required</div>
+        }
       </div>
       <div class="form-row">
         <label class="form-check">
@@ -45,8 +51,11 @@ export class LoginComponent {
     private readonly toasts: ToastService
   ) {}
 
-  submit(): void {
-    if (!this.model.identifier || !this.model.password) return;
+  submit(form: NgForm): void {
+    if (form.invalid) {
+      form.form.markAllAsTouched();
+      return;
+    }
     this.busy = true;
     this.auth.login(this.model).subscribe({
       next: () => {
