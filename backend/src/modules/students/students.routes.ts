@@ -5,7 +5,7 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { Student, Parent, StudentGuardian, Enrolment, User, Attendance, Invoice } from "../../models";
+import { Student, Parent, StudentGuardian, Enrolment, AcademicYear, User, Attendance, Invoice } from "../../models";
 import { createCrudController } from "../../utils/crudFactory";
 import { createUser } from "../users/users.service";
 import { writeAuditLog } from "../../services/audit.service";
@@ -88,7 +88,24 @@ router.post(
     }
 
     if (body.currentClassId) {
-      await Enrolment.create({ studentId: student.id, classId: body.currentClassId, sectionId: body.currentSectionId ?? null, enrolledOn: new Date(), status: "active", rollNo: body.rollNo });
+      let academicYearId: number | undefined = body.academicYearId;
+      if (!academicYearId) {
+        const currentYear =
+          (await AcademicYear.findOne({ where: { isCurrent: true } })) ||
+          (await AcademicYear.findOne({ order: [["startDate", "DESC"]] }));
+        academicYearId = currentYear?.id;
+      }
+      if (!academicYearId) throw ApiError.badRequest("No academic year configured; create one first");
+
+      await Enrolment.create({
+        studentId: student.id,
+        academicYearId,
+        classId: body.currentClassId,
+        sectionId: body.currentSectionId ?? null,
+        enrolledOn: new Date(),
+        status: "active",
+        rollNo: body.rollNo,
+      });
     }
 
     await writeAuditLog({ action: "create", entity: "student", entityId: student.id, userId: req.user!.id, role: req.user!.role, ip: req.ip, newData: { admissionNo: student.admissionNo } });

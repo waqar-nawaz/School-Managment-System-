@@ -1,12 +1,20 @@
 # Render Blueprint - School Management System
 # One web service: Express API that also serves the built Angular SPA.
-# MySQL is NOT managed by Render; provide an external MySQL host (e.g. Aiven/MariaDB
-# free tier) and set DB_* values in the Render dashboard after first deploy.
+# A managed PostgreSQL database is provisioned by Render and wired in through
+# DATABASE_URL, so no external database is required.
+databases:
+  - name: sms-db
+    databaseName: school_db
+    user: sms
+    plan: free
+    region: oregon
+
 services:
   - type: web
     name: sms-api
     runtime: node
     plan: starter
+    region: oregon
     buildCommand: bash render-build.sh
     startCommand: node backend/dist/server.js
     healthCheckPath: /health
@@ -24,22 +32,13 @@ services:
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
-      # --- Required: external MySQL connection (set real values in dashboard) ---
-      - key: DB_HOST
-        value: ""
-        sync: false
-      - key: DB_PORT
-        value: "3306"
-        sync: false
-      - key: DB_NAME
-        value: ""
-        sync: false
-      - key: DB_USER
-        value: ""
-        sync: false
-      - key: DB_PASS
-        value: ""
-        sync: false
+      # --- Managed PostgreSQL (Render provisions and injects this) ---
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sms-db
+          property: connectionString
+      - key: DB_DIALECT
+        value: postgres
       # --- Optional ---
       - key: REDIS_HOST
         value: ""

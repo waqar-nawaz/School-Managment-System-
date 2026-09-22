@@ -3,17 +3,29 @@ import path from "path";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
+const dbDialect = (process.env.DB_DIALECT || "postgres") as "postgres" | "mysql";
+
 const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: parseInt(process.env.PORT || "3000", 10),
 
   db: {
-    // Fall back to Railway's managed MySQL plugin variables.
-    host: process.env.DB_HOST || process.env.MYSQLHOST || "localhost",
-    port: parseInt(process.env.DB_PORT || process.env.MYSQLPORT || "3306", 10),
-    name: process.env.DB_NAME || process.env.MYSQLDATABASE || "school_db",
-    user: process.env.DB_USER || process.env.MYSQLUSER || "school_user",
-    pass: process.env.DB_PASS || process.env.MYSQLPASSWORD || "school_pass",
+    dialect: dbDialect,
+    // Render/Heroku-style single connection string wins when present.
+    url: process.env.DATABASE_URL || process.env.POSTGRES_URL || "",
+    // Fall back to Railway's managed DB plugin variables.
+    host: process.env.DB_HOST || process.env.PGHOST || process.env.MYSQLHOST || "localhost",
+    port: parseInt(
+      process.env.DB_PORT ||
+        process.env.PGPORT ||
+        process.env.MYSQLPORT ||
+        (dbDialect === "postgres" ? "5432" : "3306"),
+      10
+    ),
+    name: process.env.DB_NAME || process.env.PGDATABASE || process.env.MYSQLDATABASE || "school_db",
+    user: process.env.DB_USER || process.env.PGUSER || process.env.MYSQLUSER || (dbDialect === "postgres" ? "postgres" : "school_user"),
+    pass: process.env.DB_PASS || process.env.PGPASSWORD || process.env.MYSQLPASSWORD || (dbDialect === "postgres" ? "postgres" : "school_pass"),
+    ssl: process.env.DB_SSL === "true",
   },
 
   jwt: {

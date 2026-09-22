@@ -8,6 +8,7 @@ export class SchoolClass extends BaseModel {
   @Column({ type: DataType.STRING(80), allowNull: false })
   name!: string; // e.g. "Grade 5"
 
+  @Unique("uq_class_branch_name")
   @ForeignKey(() => Branch)
   @Column({ type: DataType.BIGINT.UNSIGNED })
   branchId!: number;

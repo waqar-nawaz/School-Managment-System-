@@ -12,6 +12,7 @@ export class Enrolment extends BaseModel {
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   studentId!: number;
 
+  @Unique("uq_enrolment_year_student")
   @ForeignKey(() => AcademicYear)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   academicYearId!: number;

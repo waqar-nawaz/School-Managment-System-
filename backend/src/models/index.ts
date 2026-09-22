@@ -199,7 +199,7 @@ export function defineAssociations(): void {
 
   // Finance
   Student.hasMany(Invoice, { as: "invoices", foreignKey: "studentId" });
-  Invoice.belongsTo(Student, { foreignKey: "studentId" });
+  Invoice.belongsTo(Student, { as: "student", foreignKey: "studentId" });
   Invoice.belongsTo(Term, { foreignKey: "termId" });
   Invoice.hasMany(Payment, { as: "payments", foreignKey: "invoiceId" });
   Payment.belongsTo(Invoice, { foreignKey: "invoiceId" });
@@ -247,7 +247,7 @@ export function defineAssociations(): void {
   Notification.belongsTo(User, { foreignKey: "userId" });
 
   // Miscellaneous
-  Certificate.belongsTo(Student, { foreignKey: "studentId" });
+  Certificate.belongsTo(Student, { as: "student", foreignKey: "studentId" });
   HealthRecord.belongsTo(Student, { foreignKey: "studentId" });
   DisciplineRecord.belongsTo(Student, { foreignKey: "studentId" });
   Complaint.belongsTo(User, { as: "reporter", foreignKey: "submittedBy" });
