@@ -213,7 +213,7 @@ export function defineAssociations(): void {
   PayrollItem.belongsTo(Staff, { foreignKey: "staffId" });
 
   // Library
-  Book.hasMany(BookCopy, { as: "copies", foreignKey: "bookId" });
+  Book.hasMany(BookCopy, { as: "bookCopies", foreignKey: "bookId" });
   BookCopy.belongsTo(Book, { foreignKey: "bookId" });
   BookCopy.hasMany(BookIssue, { as: "issues", foreignKey: "bookCopyId" });
   BookIssue.belongsTo(BookCopy, { foreignKey: "bookCopyId" });
