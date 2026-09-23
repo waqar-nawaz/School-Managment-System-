@@ -29,26 +29,48 @@ router.post(
   authorize("students:create"),
   asyncHandler(async (req, res) => {
     const body = req.body;
-    const { guardians } = body as { guardians?: any[] };
+    const guardians: any[] = Array.isArray(body.guardians) ? [...body.guardians] : [];
+    // The form may send a single guardian as guardianName / guardianPhone.
+    if (body.guardianName || body.guardianPhone) {
+      guardians.push({
+        fullName: body.guardianName || "Guardian",
+        phone: body.guardianPhone,
+        relation: "guardian",
+      });
+    }
+
+    const firstName = body.firstName || "Student";
+    const lastName = body.lastName || "";
+    const admissionNo = body.admissionNo || `STU-${Date.now()}`;
+    const email =
+      body.email ||
+      `${String(admissionNo).toLowerCase().replace(/[^a-z0-9]+/g, "") || "student"}@school.local`;
+    let username = String(body.username || email.split("@")[0] || "").trim();
+    if (username.length < 3) username = `student_${Date.now().toString().slice(-6)}`;
+
+    // Accept both naming conventions (form: dob/classId/sectionId).
+    const dob = body.dateOfBirth ?? body.dob;
+    const currentClassId = body.currentClassId ?? body.classId;
+    const currentSectionId = body.currentSectionId ?? body.sectionId;
 
     const user = await createUser({
-      username: body.username || body.email.split("@")[0],
-      email: body.email,
-      firstName: body.firstName,
-      lastName: body.lastName,
+      username,
+      email,
+      firstName,
+      lastName,
       role: "student",
       gender: body.gender,
-      phone: body.phone,
+      phone: body.phone ?? body.guardianPhone,
       branchId: body.branchId,
-      sendWelcome: true,
+      sendWelcome: !!body.email,
       generatedBy: req.user!.id,
     });
 
     const student = await Student.create({
-      admissionNo: body.admissionNo || `STU-${Date.now()}`,
-      firstName: body.firstName,
-      lastName: body.lastName,
-      dateOfBirth: body.dateOfBirth,
+      admissionNo,
+      firstName,
+      lastName,
+      dateOfBirth: dob,
       gender: body.gender,
       bloodGroup: body.bloodGroup,
       nationality: body.nationality,
@@ -57,14 +79,14 @@ router.post(
       email: body.email,
       admissionDate: body.admissionDate || new Date(),
       admissionStatus: "admitted",
-      currentClassId: body.currentClassId,
-      currentSectionId: body.currentSectionId,
+      currentClassId,
+      currentSectionId,
       medicalInfo: body.medicalInfo,
       userId: user.id,
       branchId: body.branchId,
     });
 
-    if (Array.isArray(guardians)) {
+    if (guardians.length) {
       for (const g of guardians) {
         let parent = g.id ? await Parent.findByPk(g.id) : await Parent.findOne({ where: { phone: g.phone } });
         if (!parent) {
@@ -87,7 +109,7 @@ router.post(
       }
     }
 
-    if (body.currentClassId) {
+    if (currentClassId) {
       let academicYearId: number | undefined = body.academicYearId;
       if (!academicYearId) {
         const currentYear =
@@ -100,8 +122,8 @@ router.post(
       await Enrolment.create({
         studentId: student.id,
         academicYearId,
-        classId: body.currentClassId,
-        sectionId: body.currentSectionId ?? null,
+        classId: currentClassId,
+        sectionId: currentSectionId ?? null,
         enrolledOn: new Date(),
         status: "active",
         rollNo: body.rollNo,
