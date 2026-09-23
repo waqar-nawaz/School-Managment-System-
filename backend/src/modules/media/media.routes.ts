@@ -44,7 +44,7 @@ router.get("/", authorize("media:read"), asyncHandler(async (req, res) => {
   const where: Record<string, unknown> = { ...(category ? { category } : {}) };
   if (p.search) {
     where[Op.or as unknown as string] = [
-      { originalName: { [likeOp]: `%${p.search}%` } },
+      { filename: { [likeOp]: `%${p.search}%` } },
       { mimeType: { [likeOp]: `%${p.search}%` } },
     ];
   }

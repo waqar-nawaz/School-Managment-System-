@@ -10,12 +10,14 @@ export interface Pagination {
 
 const SORTABLE_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_.]*$/;
 
+function toInt(value: unknown, fallback: number): number {
+  const n = parseInt(String(value), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export function parsePagination(req: Request, defaultLimit = 10): Pagination {
-  const page = Math.max(1, parseInt(String(req.query.page || "1"), 10));
-  const limit = Math.min(
-    100,
-    Math.max(1, parseInt(String(req.query.limit || String(defaultLimit)), 10))
-  );
+  const page = Math.max(1, toInt(req.query.page ?? "1", 1));
+  const limit = Math.min(100, Math.max(1, toInt(req.query.limit ?? String(defaultLimit), defaultLimit)));
   const sortRaw = String(req.query.sort || "-createdAt");
 
   const sort: Array<[string, "ASC" | "DESC"]> = sortRaw

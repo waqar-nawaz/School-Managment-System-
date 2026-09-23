@@ -17,6 +17,32 @@ interface Row {
   [key: string]: any;
 }
 
+// Backend permission module for resources whose URL key differs from it.
+const PERMISSION_BY_RESOURCE: Record<string, string> = {
+  'academic-years': 'academic',
+  terms: 'academic',
+  'class-subjects': 'subjects',
+  enrolments: 'students',
+  parents: 'students',
+  'exam-schedules': 'exams',
+  'report-cards': 'exam-results',
+  submissions: 'assignments',
+  'grade-scales': 'gradebook',
+  periods: 'timetable',
+  'fee-types': 'fees',
+  payslips: 'payroll',
+  'book-copies': 'library',
+  assets: 'inventory',
+  'visitor-logs': 'visitors',
+  'health-records': 'health-records',
+};
+
+// Resources served by a custom router that has no generic /export endpoint.
+const NO_EXPORT = new Set([
+  'roles', 'permissions', 'students', 'book-issues', 'certificates', 'media',
+  'payments', 'admissions', 'invoices',
+]);
+
 @Component({
   selector: 'app-crud-resource',
   standalone: true,
@@ -292,11 +318,11 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   }
 
   private calculatePermissions(): void {
-    const base = this.resourceKey.split('/')[0];
-    this.canCreate = this.perms.hasPermission(`${base}:create`) || this.perms.hasPermission(`${base}:manage`);
-    this.canEdit = this.perms.hasPermission(`${base}:update`) || this.perms.hasPermission(`${base}:manage`);
-    this.canDelete = this.perms.hasPermission(`${base}:delete`) || this.perms.hasPermission(`${base}:manage`);
-    this.canExport = this.perms.hasPermission(`${base}:read`) || this.canDelete;
+    const base = PERMISSION_BY_RESOURCE[this.resourceKey] ?? this.resourceKey;
+    this.canCreate = this.perms.hasPermission(`${base}:create`);
+    this.canEdit = this.perms.hasPermission(`${base}:update`);
+    this.canDelete = this.perms.hasPermission(`${base}:delete`);
+    this.canExport = this.perms.hasPermission('reports:export') && !NO_EXPORT.has(this.resourceKey);
   }
 
   onSearch(event: Event): void {

@@ -90,17 +90,17 @@ export const RESOURCES: ResourceDefinition[] = [
   },
   { path: "books", model: Book, searchable: ["title", "author", "isbn", "category"], permission: "library" },
   { path: "book-copies", model: BookCopy, searchable: ["accessionNo", "status"], permission: "library" },
-  { path: "book-fines", model: BookFine, searchable: ["receiptNo", "status"], permission: "library" },
+  { path: "book-fines", model: BookFine, searchable: ["receiptNo", "status"], permission: "book-fines" },
   { path: "routes", model: Route, searchable: ["name", "startPoint", "endPoint"], permission: "routes" },
-  { path: "route-stops", model: RouteStop, searchable: ["name"], permission: "routes" },
-  { path: "vehicles", model: Vehicle, searchable: ["registrationNo", "model"], permission: "routes" },
-  { path: "driver-assignments", model: DriverAssignment, searchable: [], permission: "routes" },
-  { path: "student-transport", model: StudentTransport, searchable: [], permission: "routes" },
+  { path: "route-stops", model: RouteStop, searchable: ["name"], permission: "route-stops" },
+  { path: "vehicles", model: Vehicle, searchable: ["registrationNo", "model"], permission: "vehicles" },
+  { path: "driver-assignments", model: DriverAssignment, searchable: [], permission: "driver-assignments" },
+  { path: "student-transport", model: StudentTransport, searchable: [], permission: "student-transport" },
   { path: "hostels", model: Hostel, searchable: ["name", "wardenName"], permission: "hostels" },
-  { path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "hostels" },
-  { path: "beds", model: Bed, searchable: ["bedNo"], permission: "hostels" },
+  { path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "rooms" },
+  { path: "beds", model: Bed, searchable: ["bedNo"], permission: "beds" },
   {
-    path: "hostel-allocations", model: HostelAllocation, searchable: ["status"], permission: "hostels",
+    path: "hostel-allocations", model: HostelAllocation, searchable: ["status"], permission: "hostel-allocations",
     // Only a student + bed are needed; room and hostel come from the bed.
     beforeCreate: async (body) => {
       if (body.bedId) {

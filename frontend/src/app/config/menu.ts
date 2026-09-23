@@ -28,6 +28,7 @@ export const MENU: MenuItem[] = [
   { label: 'Timetable', path: '/timetable', icon: 'clock', group: 'Academics', permission: 'timetable:read' },
   { label: 'Syllabus', path: '/syllabus', icon: 'list', group: 'Academics', permission: 'syllabus:read' },
   { label: 'Lesson Plans', path: '/lesson-plans', icon: 'folder', group: 'Academics', permission: 'lesson-plans:read' },
+  { label: 'Leave Requests', path: '/leaves', icon: 'clock', group: 'Academics', permission: 'leaves:read' },
 
   { label: 'Invoices', path: '/invoices', icon: 'file-text', group: 'Finance', permission: 'invoices:read' },
   { label: 'Payments', path: '/payments', icon: 'credit-card', group: 'Finance', permission: 'payments:read' },
@@ -60,6 +61,7 @@ export const MENU: MenuItem[] = [
   { label: 'Inventory', path: '/inventory', icon: 'package', group: 'Services', permission: 'inventory:read' },
   { label: 'Assets', path: '/assets', icon: 'monitor', group: 'Services', permission: 'inventory:read' },
   { label: 'Media', path: '/media', icon: 'image', group: 'Services', permission: 'media:read' },
+  { label: 'Visitor Logs', path: '/visitor-logs', icon: 'clipboard', group: 'Services', permission: 'visitors:read' },
 
   { label: 'Users', path: '/users', icon: 'user', group: 'Administration', permission: 'users:read' },
   { label: 'Roles', path: '/roles', icon: 'shield', group: 'Administration', permission: 'roles:read' },

@@ -35,7 +35,8 @@ export class AuthService {
     if (!rt) return of(false);
     return this.api.post<LoginResult>('/auth/refresh', { refreshToken: rt }).pipe(
       map((env) => {
-        this.storage.updateAccess(env.data.accessToken);
+        // The backend rotates the refresh token on every refresh — persist both.
+        this.storage.updateTokens(env.data.accessToken, env.data.refreshToken);
         this.userSubject.next(env.data.user);
         return true;
       }),

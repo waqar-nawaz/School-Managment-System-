@@ -45,7 +45,7 @@ export function createCrudController<M extends Model = Model>(
       const q = f.q;
       const base = q ? opts.toSearchWhere(q) : undefined;
       if (base) Object.assign(where, base);
-    } else if (f.q) {
+    } else if (f.q && searchable.length) {
       (where as any)[Op.or] = searchable.map((col) => ({
         [col]: { [likeOp]: `%${f.q}%` },
       }));
@@ -88,6 +88,7 @@ export function createCrudController<M extends Model = Model>(
 
     update: async (req, res) => {
       const id = Number(req.params.id);
+      if (!Number.isInteger(id)) throw ApiError.badRequest("Invalid id");
       const row = await model.findByPk(id) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
       const body = opts.beforeUpdate
@@ -99,6 +100,7 @@ export function createCrudController<M extends Model = Model>(
 
     remove: async (req, res) => {
       const id = Number(req.params.id);
+      if (!Number.isInteger(id)) throw ApiError.badRequest("Invalid id");
       const row = await model.findByPk(id) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
       await (row as any).destroy();

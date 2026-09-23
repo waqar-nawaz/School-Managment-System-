@@ -4,6 +4,7 @@ import { authenticate } from "../../middlewares/authenticate";
 import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
+import { ApiError } from "../../utils/ApiError";
 import { parsePagination, buildPaginationMeta } from "../../utils/pagination";
 import { likeOp } from "../../utils/search";
 import { Role, Permission, RolePermission } from "../../models";
@@ -79,6 +80,21 @@ router.post(
     if (!name) return ApiResponse.error(res, 400, "name is required");
     const role = await Role.create({ name, label: label ?? name, description });
     ApiResponse.success(res, 201, "Role created", role);
+  })
+);
+
+router.put(
+  "/:id",
+  authorize("roles:update", "roles:create"),
+  asyncHandler(async (req, res) => {
+    const role = await Role.findByPk(req.params.id);
+    if (!role) throw ApiError.notFound("Role not found");
+    const { label, description } = req.body as Record<string, string>;
+    await role.update({
+      ...(label !== undefined ? { label } : {}),
+      ...(description !== undefined ? { description } : {}),
+    });
+    ApiResponse.success(res, 200, "Role updated", role);
   })
 );
 

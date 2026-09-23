@@ -5,6 +5,7 @@ import { ApiError } from "../../utils/ApiError";
 import { signAccessToken, signRefreshToken } from "../../utils/token.util";
 import { sendMail } from "../../services/email.service";
 import { writeAuditLog } from "../../services/audit.service";
+import { permissionsForRole } from "../../config/permissions";
 
 export interface LoginInput {
   identifier: string;
@@ -19,7 +20,7 @@ export interface AuthResult {
 }
 
 function toClaims(role: string): string[] {
-  return ["*"];
+  return permissionsForRole(role);
 }
 
 export async function login(input: LoginInput, ip?: string, userAgent?: string): Promise<AuthResult> {

@@ -4,7 +4,7 @@ import env from "../config";
 export interface TokenPayload {
   sub: string;
   role: string;
-  schoolId?: number | null;
+  branchId?: number | null;
   claims: string[];
   type: "access" | "refresh";
 }
@@ -13,9 +13,9 @@ export function signAccessToken(
   sub: string,
   role: string,
   claims: string[],
-  schoolId?: number | null
+  branchId?: number | null
 ): string {
-  return jwt.sign({ sub, role, claims, schoolId, type: "access" }, env.jwt.secret, {
+  return jwt.sign({ sub, role, claims, branchId, type: "access" }, env.jwt.secret, {
     expiresIn: env.jwt.expiresIn as jwt.SignOptions["expiresIn"],
   });
 }

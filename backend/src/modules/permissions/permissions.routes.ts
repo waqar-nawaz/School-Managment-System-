@@ -4,6 +4,7 @@ import { authenticate } from "../../middlewares/authenticate";
 import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
+import { ApiError } from "../../utils/ApiError";
 import { parsePagination, buildPaginationMeta } from "../../utils/pagination";
 import { likeOp } from "../../utils/search";
 import { Permission } from "../../models";
@@ -56,6 +57,21 @@ router.post(
       category: body.category ?? "custom",
     });
     ApiResponse.success(res, 201, "Permission created", perm);
+  })
+);
+
+router.put(
+  "/:id",
+  authorize("permissions:update", "permissions:create"),
+  asyncHandler(async (req, res) => {
+    const perm = await Permission.findByPk(req.params.id);
+    if (!perm) throw ApiError.notFound("Permission not found");
+    const { label, category } = req.body as Record<string, string>;
+    await perm.update({
+      ...(label !== undefined ? { label } : {}),
+      ...(category !== undefined ? { category } : {}),
+    });
+    ApiResponse.success(res, 200, "Permission updated", perm);
   })
 );
 

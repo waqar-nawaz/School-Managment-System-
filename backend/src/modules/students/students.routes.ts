@@ -9,6 +9,7 @@ import { Student, Parent, StudentGuardian, Enrolment, AcademicYear, User, Attend
 import { createCrudController } from "../../utils/crudFactory";
 import { createUser } from "../users/users.service";
 import { writeAuditLog } from "../../services/audit.service";
+import { monthRange } from "../../utils/dateRange";
 
 const router = Router();
 router.use(authenticate);
@@ -140,7 +141,16 @@ router.post(
 router.put("/:id", authorize("students:update"), asyncHandler(async (req, res) => {
   const student = await Student.findByPk(req.params.id);
   if (!student) throw ApiError.notFound("Student not found");
-  await student.update(req.body);
+  const b = req.body as Record<string, unknown>;
+  const patch: Record<string, unknown> = { ...b };
+  // Accept both form keys (dob/classId/sectionId) and model keys.
+  if (b.dob !== undefined && b.dateOfBirth === undefined) patch.dateOfBirth = b.dob;
+  if (b.classId !== undefined && b.currentClassId === undefined) patch.currentClassId = b.classId;
+  if (b.sectionId !== undefined && b.currentSectionId === undefined) patch.currentSectionId = b.sectionId;
+  delete patch.dob;
+  delete patch.classId;
+  delete patch.sectionId;
+  await student.update(patch);
   ApiResponse.success(res, 200, "Student updated", student);
 }));
 
@@ -163,8 +173,9 @@ router.get("/:id/guardians", authorize("students:read"), asyncHandler(async (req
 /** Latest attendance summary for a student. */
 router.get("/:id/attendance", authorize("attendance:read", "students:read"), asyncHandler(async (req, res) => {
   const month = String(req.query.month || new Date().toISOString().slice(0, 7));
+  const { start, end } = monthRange(month);
   const rows = await Attendance.findAll({
-    where: { studentId: req.params.id, date: { [Op.like]: `${month}%` } },
+    where: { studentId: req.params.id, date: { [Op.gte]: start, [Op.lt]: end } },
   });
   const summary: Record<string, number> = {};
   for (const r of rows) summary[r.status] = (summary[r.status] || 0) + 1;

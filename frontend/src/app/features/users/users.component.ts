@@ -116,8 +116,20 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                   <div class="field-error">Enter a valid email address</div>
                 }
               </div>
-              <div class="form-group"><label>First name</label><input class="form-control" name="firstName" [(ngModel)]="form.firstName" /></div>
-              <div class="form-group"><label>Last name</label><input class="form-control" name="lastName" [(ngModel)]="form.lastName" /></div>
+              <div class="form-group">
+                <label>First name *</label>
+                <input class="form-control" name="firstName" [(ngModel)]="form.firstName" required #firstName="ngModel" />
+                @if (f.submitted && firstName.invalid) {
+                  <div class="field-error">First name is required</div>
+                }
+              </div>
+              <div class="form-group">
+                <label>Last name *</label>
+                <input class="form-control" name="lastName" [(ngModel)]="form.lastName" required #lastName="ngModel" />
+                @if (f.submitted && lastName.invalid) {
+                  <div class="field-error">Last name is required</div>
+                }
+              </div>
               @if (!editing) {
                 <div class="form-group">
                   <label>Password *</label>
@@ -332,7 +344,7 @@ export class UsersComponent implements OnInit {
 
   openCreate(): void {
     this.editing = false;
-    this.form = { role: 'staff', isActive: true };
+    this.form = { role: 'teacher', isActive: true };
     this.showPassword = false;
     this.showForm = true;
   }

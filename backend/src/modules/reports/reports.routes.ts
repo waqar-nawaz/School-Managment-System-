@@ -15,15 +15,22 @@ router.use(authenticate);
 
 const yearStart = () => new Date(new Date().getFullYear(), 0, 1);
 
+/** Coerce a query date to a valid Date (or the fallback). */
+function dateParam(value: unknown, fallback: Date): Date {
+  if (!value) return fallback;
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime()) ? fallback : d;
+}
+
 router.get(
   "/students-by-class",
   authorize("reports:read"),
   asyncHandler(async (_req, res) => {
     const rows = await Enrolment.findAll({
       where: { status: "active" },
-      attributes: [[fn("COUNT", col("id")), "count"]],
-      include: [{ association: "class", attributes: ["name"] }],
-      group: ["classId"],
+      attributes: ["classId", [fn("COUNT", col("Enrolment.id")), "count"]],
+      include: [{ association: "class", attributes: ["id", "name"] }],
+      group: ["Enrolment.classId", "class.id", "class.name"],
     });
     ApiResponse.success(res, 200, "Students by class", rows);
   })
@@ -33,8 +40,8 @@ router.get(
   "/attendance-rate",
   authorize("reports:read"),
   asyncHandler(async (req, res) => {
-    const from = req.query.from || yearStart();
-    const to = req.query.to || new Date();
+    const from = dateParam(req.query.from, yearStart());
+    const to = dateParam(req.query.to, new Date());
     const total = await Attendance.count({ where: { date: { [Op.between]: [from, to] } } });
     const present = await Attendance.count({
       where: { date: { [Op.between]: [from, to] }, status: "present" },
@@ -51,8 +58,8 @@ router.get(
   "/fees",
   authorize("reports:read"),
   asyncHandler(async (req, res) => {
-    const from = req.query.from || yearStart();
-    const to = req.query.to || new Date();
+    const from = dateParam(req.query.from, yearStart());
+    const to = dateParam(req.query.to, new Date());
     const invoiced = await Invoice.sum("totalDue", { where: { issueDate: { [Op.between]: [from, to] } } }) || 0;
     const collected = await Payment.sum("amount", { where: { paidOn: { [Op.between]: [from, to] }, status: "successful" } }) || 0;
     const spent = await Expense.sum("amount", { where: { expensedOn: { [Op.between]: [from, to] }, status: "approved" } }) || 0;

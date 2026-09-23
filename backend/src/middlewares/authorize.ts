@@ -9,8 +9,10 @@ export const authorize =
     const user = req.user as { role: string; claims: string[] } | undefined;
     if (!user) return next(ApiError.unauthorized());
 
-    const ok = required.every((perm) =>
-      user.claims.includes("*") || user.claims.includes(perm) || hasPermission(user.role, perm)
+    // Any one of the listed permissions is enough (OR semantics).
+    const ok = required.some(
+      (perm) =>
+        user.claims.includes("*") || user.claims.includes(perm) || hasPermission(user.role, perm)
     );
     if (!ok) return next(ApiError.forbidden(`Missing permission: ${required.join(", ")}`));
     next();

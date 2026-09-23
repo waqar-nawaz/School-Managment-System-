@@ -7,12 +7,13 @@ import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
 import { Attendance, Enrolment } from "../../models";
 import { ATTENDANCE_STATUS } from "../../utils/constants";
+import { monthRange } from "../../utils/dateRange";
 
 const router = Router();
 router.use(authenticate);
 
-function dateFromQuery(req: { query: Record<string, unknown> }): string {
-  const d = String(req.query.date || new Date().toISOString().slice(0, 10));
+function dateFromQuery(req: { query: Record<string, unknown>; body?: Record<string, unknown> }): string {
+  const d = String(req.body?.date || req.query.date || new Date().toISOString().slice(0, 10));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw ApiError.badRequest("date must be YYYY-MM-DD");
   return d;
 }
@@ -81,8 +82,9 @@ router.get("/summary", authorize("attendance:read"), asyncHandler(async (req, re
   const month = String(req.query.month || new Date().toISOString().slice(0, 7));
   const classId = req.query.classId ? Number(req.query.classId) : undefined;
 
+  const { start, end } = monthRange(month);
   const where: Record<string, unknown> = {
-    date: { [Op.like]: `${month}%` },
+    date: { [Op.gte]: start, [Op.lt]: end },
     ...(classId ? { classId } : {}),
   };
   const rows = await Attendance.findAll({ where });
@@ -97,8 +99,9 @@ router.get("/summary", authorize("attendance:read"), asyncHandler(async (req, re
 /** Per-student monthly record. */
 router.get("/student/:studentId", authorize("attendance:read"), asyncHandler(async (req, res) => {
   const month = String(req.query.month || new Date().toISOString().slice(0, 7));
+  const { start, end } = monthRange(month);
   const rows = await Attendance.findAll({
-    where: { studentId: req.params.studentId, date: { [Op.like]: `${month}%` } },
+    where: { studentId: req.params.studentId, date: { [Op.gte]: start, [Op.lt]: end } },
     order: [["date", "ASC"]],
   });
   ApiResponse.success(res, 200, "Student attendance", rows);

@@ -53,6 +53,18 @@ router.post("/", authorize("book-issues:create"), asyncHandler(async (req, res) 
   ApiResponse.success(res, 201, "Book issued", issue);
 }));
 
+router.put("/:id", authorize("book-issues:update"), asyncHandler(async (req, res) => {
+  const issue = await BookIssue.findByPk(req.params.id);
+  if (!issue) throw ApiError.notFound("Issue not found");
+  const { dueDate, status, requestedFor } = req.body;
+  await issue.update({
+    ...(dueDate !== undefined ? { dueDate } : {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(requestedFor !== undefined ? { requestedFor } : {}),
+  });
+  ApiResponse.success(res, 200, "Book issue updated", issue);
+}));
+
 router.post("/:id/return", authorize("book-issues:update"), asyncHandler(async (req, res) => {
   const issue = await BookIssue.findByPk(req.params.id);
   if (!issue) throw ApiError.notFound("Issue not found");

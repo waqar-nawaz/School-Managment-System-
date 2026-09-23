@@ -6,25 +6,27 @@ const REFRESH_KEY = 'sms_refresh_token';
 @Injectable({ providedIn: 'root' })
 export class StorageService {
   get accessToken(): string | null {
-    return localStorage.getItem(ACCESS_KEY);
+    return localStorage.getItem(ACCESS_KEY) ?? sessionStorage.getItem(ACCESS_KEY);
   }
 
   get refreshToken(): string | null {
-    return localStorage.getItem(REFRESH_KEY);
+    return localStorage.getItem(REFRESH_KEY) ?? sessionStorage.getItem(REFRESH_KEY);
   }
 
   setTokens(access: string, refresh: string, remember = true): void {
-    if (remember) {
-      localStorage.setItem(ACCESS_KEY, access);
-      localStorage.setItem(REFRESH_KEY, refresh);
-    } else {
-      sessionStorage.setItem(ACCESS_KEY, access);
-      sessionStorage.setItem(REFRESH_KEY, refresh);
-    }
+    const primary = remember ? localStorage : sessionStorage;
+    const other = remember ? sessionStorage : localStorage;
+    primary.setItem(ACCESS_KEY, access);
+    primary.setItem(REFRESH_KEY, refresh);
+    other.removeItem(ACCESS_KEY);
+    other.removeItem(REFRESH_KEY);
   }
 
-  updateAccess(token: string): void {
-    localStorage.setItem(ACCESS_KEY, token);
+  /** Update both tokens in whichever storage currently holds the session. */
+  updateTokens(access: string, refresh: string): void {
+    const store = localStorage.getItem(REFRESH_KEY) ? localStorage : sessionStorage;
+    store.setItem(ACCESS_KEY, access);
+    if (refresh) store.setItem(REFRESH_KEY, refresh);
   }
 
   clear(): void {

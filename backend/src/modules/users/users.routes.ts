@@ -38,8 +38,8 @@ router.get("/", authorize("users:read"), asyncHandler(async (req, res) => {
       [c]: { [likeOp]: `%${p.q}%` },
     }));
   }
-  const page = Math.max(1, Number(p.page || 1));
-  const limit = Math.min(100, Math.max(1, Number(p.limit || 10)));
+  const page = Math.max(1, Number.isFinite(Number(p.page)) ? Number(p.page) : 1);
+  const limit = Math.min(100, Math.max(1, Number.isFinite(Number(p.limit)) ? Number(p.limit) : 10));
   const { rows, count } = await User.findAndCountAll({
     where,
     limit,

@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
+import { PermissionService } from '../../core/services/permission.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 
 interface RegisterEntry {
@@ -55,13 +56,15 @@ interface RegisterEntry {
             </tbody>
           </table>
         </div>
-        <div class="modal-actions" style="justify-content:flex-start">
-          <button class="btn btn-primary" [disabled]="saving" (click)="save()">
-            <app-icon name="check" [size]="15" /> {{ saving ? 'Saving…' : 'Save attendance' }}
-          </button>
-          <button class="btn btn-ghost" (click)="markAll('present')"><app-icon name="check" [size]="15" /> All present</button>
-          <button class="btn btn-ghost" (click)="markAll('absent')"><app-icon name="x" [size]="15" /> All absent</button>
-        </div>
+        @if (canMark) {
+          <div class="modal-actions" style="justify-content:flex-start">
+            <button class="btn btn-primary" [disabled]="saving" (click)="save()">
+              <app-icon name="check" [size]="15" /> {{ saving ? 'Saving…' : 'Save attendance' }}
+            </button>
+            <button class="btn btn-ghost" (click)="markAll('present')"><app-icon name="check" [size]="15" /> All present</button>
+            <button class="btn btn-ghost" (click)="markAll('absent')"><app-icon name="x" [size]="15" /> All absent</button>
+          </div>
+        }
       } @else {
         <p class="form-hint">Choose a class and date, then load the register.</p>
       }
@@ -69,17 +72,22 @@ interface RegisterEntry {
   `,
 })
 export class AttendanceComponent implements OnInit {
-  readonly STATUSES = ['present', 'absent', 'late', 'leave'];
+  readonly STATUSES = ['present', 'absent', 'late', 'excused', 'holiday'];
   classId = 1;
   sectionId: number | null = null;
   date = new Date().toISOString().slice(0, 10);
   entries: RegisterEntry[] = [];
   saving = false;
+  canMark = false;
 
   constructor(
     private readonly api: ApiService,
-    private readonly toasts: ToastService
-  ) {}
+    private readonly toasts: ToastService,
+    private readonly perms: PermissionService
+  ) {
+    this.canMark =
+      this.perms.hasPermission('attendance:create') || this.perms.hasPermission('attendance:update');
+  }
 
   ngOnInit(): void {
     this.loadRegister();
@@ -107,7 +115,7 @@ export class AttendanceComponent implements OnInit {
       lateMinutes: e.lateMinutes,
       reason: e.reason,
     }));
-    this.api.post('/attendance/bulk', { classId: this.classId, ...(this.sectionId ? { sectionId: this.sectionId } : {}), entries }).subscribe({
+    this.api.post('/attendance/bulk', { classId: this.classId, ...(this.sectionId ? { sectionId: this.sectionId } : {}), date: this.date, entries }).subscribe({
       next: () => {
         this.saving = false;
         this.toasts.success('Attendance saved');

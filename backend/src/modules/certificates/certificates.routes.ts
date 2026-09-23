@@ -55,6 +55,19 @@ router.post("/", authorize("certificates:create"), asyncHandler(async (req, res)
   ApiResponse.success(res, 201, "Certificate issued", cert);
 }));
 
+router.put("/:id", authorize("certificates:update"), asyncHandler(async (req, res) => {
+  const cert = await Certificate.findByPk(req.params.id);
+  if (!cert) throw ApiError.notFound("Certificate not found");
+  const { title, body, signedBy, studentId } = req.body;
+  await cert.update({
+    ...(title !== undefined ? { title } : {}),
+    ...(body !== undefined ? { body } : {}),
+    ...(signedBy !== undefined ? { signedBy } : {}),
+    ...(studentId !== undefined ? { studentId } : {}),
+  });
+  ApiResponse.success(res, 200, "Certificate updated", cert);
+}));
+
 router.patch("/:id/verify", authorize("certificates:update"), asyncHandler(async (req, res) => {
   const cert = await Certificate.findByPk(req.params.id);
   if (!cert) throw ApiError.notFound("Certificate not found");
