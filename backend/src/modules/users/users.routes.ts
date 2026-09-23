@@ -16,6 +16,7 @@ import {
 } from "./users.validation";
 import { createUser, adminResetPassword } from "./users.service";
 import { writeAuditLog } from "../../services/audit.service";
+import { likeOp } from "../../utils/search";
 
 const router = Router();
 router.use(authenticate);
@@ -34,7 +35,7 @@ router.get("/", authorize("users:read"), asyncHandler(async (req, res) => {
   if (p.isActive) where.isActive = p.isActive === "true";
   if (p.q) {
     where[Op.or] = ["username", "email", "firstName", "lastName"].map((c) => ({
-      [c]: { [Op.like]: `%${p.q}%` },
+      [c]: { [likeOp]: `%${p.q}%` },
     }));
   }
   const page = Math.max(1, Number(p.page || 1));

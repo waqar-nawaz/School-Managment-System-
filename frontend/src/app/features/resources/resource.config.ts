@@ -405,7 +405,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   students: {
     key: 'students', label: 'Students', api: '/students',
-    columns: [nameCol('admissionNo', 'Admission No'), nameCol('firstName', 'First'), nameCol('lastName', 'Last'), nameCol('guardianPhone'), { key: 'classId', label: 'Class', type: 'number' }, statusCol()],
+    columns: [nameCol('admissionNo', 'Admission No'), nameCol('firstName', 'First'), nameCol('lastName', 'Last'), nameCol('guardianPhone', 'Guardian Phone'), { key: 'currentClassId', label: 'Class', type: 'number' }, { key: 'admissionStatus', label: 'Status', type: 'badge', badgeMap: BADGE_COMMON }],
     fields: fields([
       { key: 'admissionNo', label: 'Admission number', required: true },
       { key: 'firstName', label: 'First name', required: true },

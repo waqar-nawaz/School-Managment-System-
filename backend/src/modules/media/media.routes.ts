@@ -8,6 +8,7 @@ import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
 import { parsePagination, buildPaginationMeta } from "../../utils/pagination";
+import { likeOp } from "../../utils/search";
 import { upload, uploadMultiple, UPLOAD_ROOT } from "../../middlewares/upload";
 import { Media } from "../../models";
 
@@ -43,8 +44,8 @@ router.get("/", authorize("media:read"), asyncHandler(async (req, res) => {
   const where: Record<string, unknown> = { ...(category ? { category } : {}) };
   if (p.search) {
     where[Op.or as unknown as string] = [
-      { originalName: { [Op.like]: `%${p.search}%` } },
-      { mimeType: { [Op.like]: `%${p.search}%` } },
+      { originalName: { [likeOp]: `%${p.search}%` } },
+      { mimeType: { [likeOp]: `%${p.search}%` } },
     ];
   }
   const { rows, count } = await Media.findAndCountAll({

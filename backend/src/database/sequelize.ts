@@ -1,4 +1,4 @@
-import { Sequelize, ModelCtor } from "sequelize-typescript";
+import { Sequelize, ModelCtor, DataType } from "sequelize-typescript";
 import env from "../config";
 import { logger } from "../config/logger";
 import { models } from "../models";
@@ -45,9 +45,33 @@ export const sequelize = env.db.url
       ...commonOptions,
     });
 
+/**
+ * Add columns introduced after the first release, without a destructive
+ * `sync({ alter: true })`. Safe to run on every boot across dialects.
+ */
+async function ensureColumns(): Promise<void> {
+  const qi = sequelize.getQueryInterface();
+  const wanted: Array<{ table: string; column: string; def: Record<string, unknown> }> = [
+    { table: "students", column: "guardianName", def: { type: DataType.STRING(120) } },
+    { table: "students", column: "guardianPhone", def: { type: DataType.STRING(30) } },
+  ];
+  for (const { table, column, def } of wanted) {
+    try {
+      const desc = await qi.describeTable(table);
+      if (!desc[column]) {
+        await qi.addColumn(table, column, def as never);
+        logger.info(`Added column ${table}.${column}`);
+      }
+    } catch {
+      /* table not created yet — sync handles it next boot */
+    }
+  }
+}
+
 export async function connectDatabase(): Promise<void> {
   await sequelize.authenticate();
   await sequelize.sync({ alter: false });
+  await ensureColumns();
 }
 
 export default sequelize;

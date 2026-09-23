@@ -34,6 +34,12 @@ export class Student extends BaseModel {
   @Column({ type: DataType.STRING(20) })
   emergencyContact!: string;
 
+  @Column({ type: DataType.STRING(120) })
+  guardianName!: string;
+
+  @Column({ type: DataType.STRING(30) })
+  guardianPhone!: string;
+
   @Column({ type: DataType.TEXT })
   address!: string;
 

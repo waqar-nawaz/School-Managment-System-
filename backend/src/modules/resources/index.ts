@@ -4,6 +4,7 @@ import { authorize } from "../../middlewares/authorize";
 import { createCrudController, CrudOptions } from "../../utils/crudFactory";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { parsePagination } from "../../utils/pagination";
+import { likeOp } from "../../utils/search";
 import { RESOURCES, ResourceDefinition } from "./resourceDefinitions";
 import { writeAuditLog } from "../../services/audit.service";
 
@@ -53,7 +54,7 @@ function exportCsv(def: ResourceDefinition) {
     if (p.search) {
       const { Op } = await import("sequelize");
       (where as any)[Op.or] = def.searchable.map((col) => ({
-        [col]: { [Op.like]: `%${p.search}%` },
+        [col]: { [likeOp]: `%${p.search}%` },
       }));
     }
     const rows = await def.model.findAll({ where, limit: 5000, raw: true });

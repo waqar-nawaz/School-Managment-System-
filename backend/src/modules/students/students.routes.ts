@@ -75,6 +75,8 @@ router.post(
       bloodGroup: body.bloodGroup,
       nationality: body.nationality,
       emergencyContact: body.emergencyContact,
+      guardianName: body.guardianName,
+      guardianPhone: body.guardianPhone,
       address: body.address,
       email: body.email,
       admissionDate: body.admissionDate || new Date(),

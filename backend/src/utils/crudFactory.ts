@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import { ApiError } from "./ApiError";
 import { ApiResponse, PaginationMeta } from "./ApiResponse";
 import { parsePagination, buildPaginationMeta } from "./pagination";
+import { likeOp } from "./search";
 
 export interface CrudOptions<M extends Model = Model> {
   model: ModelCtor<M>;
@@ -46,7 +47,7 @@ export function createCrudController<M extends Model = Model>(
       if (base) Object.assign(where, base);
     } else if (f.q) {
       (where as any)[Op.or] = searchable.map((col) => ({
-        [col]: { [Op.like]: `%${f.q}%` },
+        [col]: { [likeOp]: `%${f.q}%` },
       }));
     }
 

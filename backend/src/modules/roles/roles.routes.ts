@@ -5,6 +5,7 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { parsePagination, buildPaginationMeta } from "../../utils/pagination";
+import { likeOp } from "../../utils/search";
 import { Role, Permission, RolePermission } from "../../models";
 import { ROLE_PERMISSIONS } from "../../config/permissions";
 
@@ -54,8 +55,8 @@ router.get(
     const where = p.search
       ? {
           [Op.or]: [
-            { name: { [Op.like]: `%${p.search}%` } },
-            { label: { [Op.like]: `%${p.search}%` } },
+            { name: { [likeOp]: `%${p.search}%` } },
+            { label: { [likeOp]: `%${p.search}%` } },
           ],
         }
       : {};
