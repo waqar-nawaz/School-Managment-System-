@@ -68,6 +68,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "messages:read", "messages:create", "messages:send",
     "notices:read", "events:read", "announcements:read", "report-cards:read",
     "library:read", "book-issues:read",
+    "leaves:read", "leaves:create",
   ],
 
   parent: [

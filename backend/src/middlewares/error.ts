@@ -30,8 +30,8 @@ export const errorHandler = (
         res,
         400,
         field
-          ? `Invalid ${field}: the selected record does not exist. Please choose an existing one.`
-          : "Invalid reference: the selected related record does not exist."
+          ? `The related "${field}" is missing or still in use by other records.`
+          : "A related record is missing or still in use by other records."
       );
     }
     if (name === "SequelizeValidationError") {

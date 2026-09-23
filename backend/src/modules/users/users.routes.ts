@@ -6,7 +6,10 @@ import { createCrudController } from "../../utils/crudFactory";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { User } from "../../models";
+import {
+  User, RefreshToken, Notification, Message, Student, Teacher, Staff, Parent, AuditLog,
+} from "../../models";
+import { sequelize } from "../../database/sequelize";
 import { sanitize } from "../auth/auth.controller";
 import {
   createUserSchema,
@@ -102,8 +105,39 @@ router.delete("/:id", authorize("users:delete"), asyncHandler(async (req, res) =
   const user = await User.findByPk(req.params.id);
   if (!user) throw ApiError.notFound("User not found");
   if (user.username === "superadmin") throw ApiError.forbidden("Cannot delete the superadmin account");
-  await user.destroy();
-  ApiResponse.success(res, 200, "User deleted", null);
+
+  try {
+    await sequelize.transaction(async (t) => {
+      // Remove rows that must reference a user...
+      await RefreshToken.destroy({ where: { userId: user.id }, transaction: t });
+      await Notification.destroy({ where: { userId: user.id }, transaction: t });
+      await Message.destroy({ where: { senderId: user.id }, transaction: t });
+      // ...and detach nullable profile links so they survive.
+      await Student.update({ userId: null }, { where: { userId: user.id }, transaction: t });
+      await Teacher.update({ userId: null }, { where: { userId: user.id }, transaction: t });
+      await Staff.update({ userId: null }, { where: { userId: user.id }, transaction: t });
+      await Parent.update({ userId: null }, { where: { userId: user.id }, transaction: t });
+      await AuditLog.update({ userId: null }, { where: { userId: user.id }, transaction: t });
+      await user.destroy({ transaction: t });
+    });
+    ApiResponse.success(res, 200, "User deleted", null);
+  } catch (err) {
+    // Still referenced elsewhere (e.g. book issues, leave requests) — deactivate
+    // and free up the username/email instead of leaving a broken account.
+    if ((err as { name?: string }).name !== "SequelizeForeignKeyConstraintError") throw err;
+    await user.update({
+      isActive: false,
+      emailVerified: false,
+      username: `deleted_${user.id}_${user.username}`.slice(0, 120),
+      email: `deleted_${user.id}_${user.email}`.slice(0, 180),
+    });
+    ApiResponse.success(
+      res,
+      200,
+      "User has linked records, so the account was deactivated instead. Link with a different account if needed.",
+      null
+    );
+  }
 }));
 
 export default router;

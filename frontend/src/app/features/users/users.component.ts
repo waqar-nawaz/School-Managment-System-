@@ -483,9 +483,9 @@ export class UsersComponent implements OnInit {
   doDelete(): void {
     if (!this.confirmUser) return;
     this.api.delete(`/users/${this.confirmUser.id}`).subscribe({
-      next: () => {
+      next: (res) => {
         this.confirmUser = null;
-        this.toasts.success('User deleted');
+        this.toasts.success(res?.message || 'User deleted');
         this.load();
       },
       error: () => {
