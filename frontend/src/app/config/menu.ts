@@ -26,6 +26,10 @@ export const MENU: MenuItem[] = [
   { label: 'Assignments', path: '/assignments', icon: 'clipboard', group: 'Academics', permission: 'assignments:read' },
   { label: 'Gradebook', path: '/gradebook', icon: 'trending-up', group: 'Academics', permission: 'gradebook:read' },
   { label: 'Timetable', path: '/timetable', icon: 'clock', group: 'Academics', permission: 'timetable:read' },
+  { label: 'Class Subjects', path: '/class-subjects', icon: 'link', group: 'Academics', permission: 'subjects:read' },
+  { label: 'Exam Schedules', path: '/exam-schedules', icon: 'calendar', group: 'Academics', permission: 'exams:read' },
+  { label: 'Grade Scales', path: '/grade-scales', icon: 'award', group: 'Academics', permission: 'gradebook:read' },
+  { label: 'Periods', path: '/periods', icon: 'clock', group: 'Academics', permission: 'timetable:read' },
   { label: 'Syllabus', path: '/syllabus', icon: 'list', group: 'Academics', permission: 'syllabus:read' },
   { label: 'Lesson Plans', path: '/lesson-plans', icon: 'folder', group: 'Academics', permission: 'lesson-plans:read' },
   { label: 'Leave Requests', path: '/leaves', icon: 'clock', group: 'Academics', permission: 'leaves:read' },
@@ -38,15 +42,19 @@ export const MENU: MenuItem[] = [
   { label: 'Payslips', path: '/payslips', icon: 'file-text', group: 'Finance', permission: 'payroll:read' },
 
   { label: 'Books', path: '/books', icon: 'book', group: 'Library', permission: 'library:read' },
+  { label: 'Book Copies', path: '/book-copies', icon: 'bookmark', group: 'Library', permission: 'library:read' },
   { label: 'Book Issues', path: '/book-issues', icon: 'bookmark', group: 'Library', permission: 'book-issues:read' },
   { label: 'Book Fines', path: '/book-fines', icon: 'scale', group: 'Library', permission: 'book-fines:read' },
 
   { label: 'Routes', path: '/routes', icon: 'map', group: 'Transport', permission: 'routes:read' },
+  { label: 'Route Stops', path: '/route-stops', icon: 'map-pin', group: 'Transport', permission: 'route-stops:read' },
+  { label: 'Driver Assignments', path: '/driver-assignments', icon: 'user-check', group: 'Transport', permission: 'driver-assignments:read' },
   { label: 'Vehicles', path: '/vehicles', icon: 'truck', group: 'Transport', permission: 'vehicles:read' },
   { label: 'Student Transport', path: '/student-transport', icon: 'map-pin', group: 'Transport', permission: 'student-transport:read' },
 
   { label: 'Hostels', path: '/hostels', icon: 'bed', group: 'Hostel', permission: 'hostels:read' },
   { label: 'Rooms', path: '/rooms', icon: 'dashboard', group: 'Hostel', permission: 'rooms:read' },
+  { label: 'Beds', path: '/beds', icon: 'bed', group: 'Hostel', permission: 'beds:read' },
   { label: 'Allocations', path: '/hostel-allocations', icon: 'clipboard', group: 'Hostel', permission: 'hostel-allocations:read' },
 
   { label: 'Events', path: '/events', icon: 'calendar', group: 'Communication', permission: 'events:read' },

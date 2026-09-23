@@ -305,6 +305,16 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
     columns: [{ key: 'studentId', label: 'Student', type: 'number' }, { key: 'routeId', label: 'Route', type: 'number' }, { key: 'stopId', label: 'Stop', type: 'number' }, { key: 'vehicleId', label: 'Vehicle', type: 'number' }, boolCol('isActive', 'Active')],
     fields: fields([refField('studentId', 'Student', '/students', 'firstName', 'admissionNo', true), refField('routeId', 'Route', '/routes', 'name', undefined, true), refField('stopId', 'Stop', '/route-stops', 'name'), refField('vehicleId', 'Vehicle', '/vehicles', 'registrationNo'), { key: 'startDate', label: 'Start date', type: 'dateonly' }, { key: 'endDate', label: 'End date', type: 'dateonly' }]),
   },
+  'driver-assignments': {
+    key: 'driver-assignments', label: 'Driver Assignments', api: '/driver-assignments',
+    columns: [{ key: 'vehicleId', label: 'Vehicle', type: 'number' }, { key: 'driverId', label: 'Driver', type: 'number' }, { key: 'routeId', label: 'Route', type: 'number' }, { key: 'assignedOn', label: 'Assigned', type: 'date' }, boolCol('isActive', 'Active')],
+    fields: fields([
+      refField('vehicleId', 'Vehicle', '/vehicles', 'registrationNo', undefined, true),
+      refField('driverId', 'Driver', '/users', 'firstName', 'email', true),
+      refField('routeId', 'Route', '/routes', 'name'),
+      { key: 'assignedOn', label: 'Assigned on', type: 'dateonly' },
+    ]),
+  },
   hostels: {
     key: 'hostels', label: 'Hostels', api: '/hostels',
     columns: [nameCol('name'), nameCol('gender'), { key: 'capacity', label: 'Capacity', type: 'number' }, nameCol('wardenName', 'Warden'), boolCol('isActive', 'Active')],

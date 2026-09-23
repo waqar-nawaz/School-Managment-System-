@@ -213,12 +213,28 @@ const NO_EXPORT = new Set([
                       </select>
                     }
                     @case ('ref') {
-                      <select class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]">
-                        <option [ngValue]="null">— select —</option>
-                        @for (opt of refOptions[field.key] ?? []; track opt.value) {
-                          <option [ngValue]="opt.value">{{ opt.label }}</option>
+                      <div class="ref-box">
+                        <input
+                          type="text"
+                          class="form-control"
+                          placeholder="Type to search…"
+                          autocomplete="off"
+                          [value]="refLabel(field.key)"
+                          (input)="onRefInput(field, $event)"
+                          (focus)="openRef(field)"
+                          (blur)="onRefBlur()" />
+                        @if (refOpenKey === field.key) {
+                          <div class="ref-list">
+                            @for (opt of refOptions[field.key] ?? []; track opt.value) {
+                              <button type="button" class="ref-item" (mousedown)="selectRef(field.key, opt)">
+                                {{ opt.label }}
+                              </button>
+                            } @empty {
+                              <div class="ref-empty">No matches</div>
+                            }
+                          </div>
                         }
-                      </select>
+                      </div>
                     }
                     @case ('date') { <input type="date" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" /> }
                     @case ('dateonly') { <input type="date" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" /> }
@@ -271,6 +287,9 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.openMenuId = null;
     this.fieldErrors = {};
     this.refOptions = {};
+    this.refSearch = {};
+    this.refSelectedLabel = {};
+    this.refOpenKey = null;
     this.calculatePermissions();
     this.load();
   }
@@ -290,6 +309,9 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   saving = false;
   fieldErrors: Record<string, string> = {};
   refOptions: Record<string, Array<{ value: unknown; label: string }> | undefined> = {};
+  refSearch: Record<string, string> = {};
+  refSelectedLabel: Record<string, string> = {};
+  refOpenKey: string | null = null;
   openMenuId: number | null = null;
   menuPos: { top: number; right: number } | null = null;
   confirm: Row | null = null;
@@ -410,18 +432,28 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.editingId = null;
     this.formValues = {};
     this.fieldErrors = {};
+    this.refOptions = {};
+    this.refSearch = {};
+    this.refSelectedLabel = {};
+    this.refOpenKey = null;
     this.formTitle = `New ${this.config?.label.replace(/s$/, '')}`;
     this.showForm = true;
-    this.loadRefOptions();
   }
 
   openEdit(row: Row): void {
     this.editingId = row.id as number ?? null;
     this.formValues = { ...row };
     this.fieldErrors = {};
+    this.refOptions = {};
+    this.refSearch = {};
+    this.refSelectedLabel = {};
+    this.refOpenKey = null;
     this.formTitle = `Edit ${this.config?.label.replace(/s$/, '')}`;
     this.showForm = true;
-    this.loadRefOptions();
+    // Resolve labels for the already-set reference ids.
+    for (const field of this.config?.fields ?? []) {
+      if (field.type === 'ref') this.loadRefOptions(field, '');
+    }
   }
 
   toggleRowMenu(id: number | undefined, event: Event): void {
@@ -441,24 +473,57 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.openMenuId = null;
   }
 
-  private loadRefOptions(): void {
-    if (!this.config) return;
-    for (const field of this.config.fields) {
-      if (field.type !== 'ref' || !field.ref) continue;
-      const { api, labelKey, secondaryKey } = field.ref;
-      this.api.get<Record<string, unknown>[]>(api, { page: 1, limit: 100 }).subscribe({
-        next: (res) => {
-          const rows = (res?.data as Record<string, unknown>[]) ?? [];
-          this.refOptions[field.key] = rows.map((r) => ({
-            value: r['id'],
-            label:
-              [r[labelKey], secondaryKey ? r[secondaryKey] : null].filter(Boolean).join(' — ') ||
-              `#${r['id']}`,
-          }));
-        },
-        error: () => {},
-      });
-    }
+  private loadRefOptions(field: FieldConfig, q = ''): void {
+    if (!field.ref) return;
+    const { api, labelKey, secondaryKey } = field.ref;
+    this.api.get<Record<string, unknown>[]>(api, { page: 1, limit: 20, q }).subscribe({
+      next: (res) => {
+        const rows = (res?.data as Record<string, unknown>[]) ?? [];
+        const opts = rows.map((r) => ({
+          value: r['id'],
+          label:
+            [r[labelKey], secondaryKey ? r[secondaryKey] : null].filter(Boolean).join(' — ') ||
+            `#${r['id']}`,
+        }));
+        this.refOptions[field.key] = opts;
+        const current = this.formValues[field.key];
+        const match = opts.find((o) => String(o.value) === String(current));
+        if (match && !this.refSearch[field.key]) this.refSelectedLabel[field.key] = match.label;
+      },
+      error: () => {},
+    });
+  }
+
+  openRef(field: FieldConfig): void {
+    this.refOpenKey = field.key;
+    this.loadRefOptions(field, this.refSearch[field.key] ?? '');
+  }
+
+  onRefBlur(): void {
+    // Let a mousedown selection register before closing.
+    setTimeout(() => {
+      this.refOpenKey = null;
+    }, 150);
+  }
+
+  onRefInput(field: FieldConfig, event: Event): void {
+    const q = (event.target as HTMLInputElement).value;
+    this.refSearch[field.key] = q;
+    this.refSelectedLabel[field.key] = q;
+    this.formValues[field.key] = null;
+    this.refOpenKey = field.key;
+    this.loadRefOptions(field, q);
+  }
+
+  selectRef(key: string, opt: { value: unknown; label: string }): void {
+    this.formValues[key] = opt.value;
+    this.refSelectedLabel[key] = opt.label;
+    this.refSearch[key] = '';
+    this.refOpenKey = null;
+  }
+
+  refLabel(key: string): string {
+    return this.refSelectedLabel[key] ?? '';
   }
 
   closeForm(): void {

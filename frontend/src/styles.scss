@@ -218,6 +218,21 @@ select.form-control.pagination-size { width: auto; max-width: 130px; flex: 0 0 a
 .row-menu-item.danger { color: var(--danger); }
 .row-menu-item.danger:hover { background: rgba(192, 57, 43, 0.12); }
 
+/* ---------- Searchable reference (typeahead) field ---------- */
+.ref-box { position: relative; }
+.ref-list {
+  position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 1000;
+  max-height: 240px; overflow-y: auto; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-lg); padding: 0.25rem;
+}
+.ref-item {
+  display: block; width: 100%; text-align: left; padding: 0.45rem 0.6rem;
+  background: transparent; border: none; border-radius: 6px; color: var(--text);
+  font: inherit; font-size: 0.85rem; cursor: pointer;
+}
+.ref-item:hover { background: var(--neutral-100); }
+.ref-empty { padding: 0.5rem 0.6rem; color: var(--text-muted); font-size: 0.82rem; }
+
 /* ---------- Badges ---------- */
 .badge {
   display: inline-block; padding: 0.2rem 0.55rem; border-radius: 999px;
