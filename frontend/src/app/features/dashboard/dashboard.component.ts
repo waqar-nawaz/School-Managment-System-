@@ -27,9 +27,6 @@ interface DashboardStats {
         <h1 class="page-title">Dashboard</h1>
         <p class="page-subtitle">Overview of your school today</p>
       </div>
-      <div class="page-actions">
-        <button class="btn btn-ghost" (click)="load()"><app-icon name="refresh" [size]="15" /> Refresh</button>
-      </div>
     </div>
 
     @if (loading) {

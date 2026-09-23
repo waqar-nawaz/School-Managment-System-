@@ -167,7 +167,9 @@ body.dark-theme .btn-ghost-danger:hover { background: rgba(192, 57, 43, 0.2); }
 .form-check { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer; }
 .form-checkbox { width: 1rem; height: 1rem; accent-color: var(--primary); }
 .form-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.form-grid { display: flex; flex-wrap: wrap; gap: 1rem; }
+.form-grid .form-group { flex: 1 1 220px; min-width: 0; margin-bottom: 0; }
+.form-grid .form-group-full { flex-basis: 100%; }
 .form-hint { color: var(--text-muted); font-size: 0.8rem; margin-top: 0.3rem; }
 .text-danger { color: var(--danger); }
 .field-error { color: #c0392b; font-size: 0.76rem; margin-top: 0.25rem; }
@@ -190,6 +192,22 @@ table.table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .pagination-right { display: flex; align-items: center; gap: 0.75rem; flex-wrap: nowrap; margin-left: auto; }
 .pagination-count { white-space: nowrap; }
 select.form-control.pagination-size { width: auto; max-width: 130px; flex: 0 0 auto; }
+
+/* ---------- Row action menu (3-dot) ---------- */
+.row-menu { position: relative; display: inline-block; }
+.row-menu-list {
+  position: absolute; right: 0; top: 100%; margin-top: 0.25rem; min-width: 150px; z-index: 60;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: var(--shadow-lg); padding: 0.25rem;
+}
+.row-menu-item {
+  display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.5rem 0.65rem;
+  background: transparent; border: none; border-radius: 6px; color: var(--text);
+  font: inherit; font-size: 0.85rem; cursor: pointer; text-align: left;
+}
+.row-menu-item:hover { background: var(--neutral-100); }
+.row-menu-item.danger { color: var(--danger); }
+.row-menu-item.danger:hover { background: rgba(192, 57, 43, 0.12); }
 
 /* ---------- Badges ---------- */
 .badge {

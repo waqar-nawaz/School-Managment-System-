@@ -14,6 +14,8 @@ function buildRouter(def: ResourceDefinition): Router {
     model: def.model,
     searchable: def.searchable,
     defaultSort: def.defaultSort ?? [["createdAt", "DESC"]],
+    beforeCreate: def.beforeCreate,
+    beforeUpdate: def.beforeUpdate,
   } as CrudOptions);
 
   router.use(authenticate);

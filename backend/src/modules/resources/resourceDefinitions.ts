@@ -1,3 +1,4 @@
+import { Request } from "express";
 import {
   Role, Permission, Branch, AcademicYear, Term, SchoolClass, Section, Subject,
   ClassSubject, Enrolment, Parent, Teacher, Staff, Exam, ExamSchedule, ExamResult,
@@ -16,6 +17,8 @@ export interface ResourceDefinition {
   permission: string; // module name used for :read/:create/:update/:delete
   defaultSort?: [string, "ASC" | "DESC"];
   readonly?: boolean; // no write operations exposed
+  beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
+  beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
 }
 
 export const RESOURCES: ResourceDefinition[] = [
@@ -35,7 +38,17 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "exams", model: Exam, searchable: ["name", "examType", "status"], permission: "exams" },
   { path: "exam-schedules", model: ExamSchedule, searchable: ["room", "startTime"], permission: "exams" },
   { path: "exam-results", model: ExamResult, searchable: ["grade", "remarks"], permission: "exam-results" },
-  { path: "report-cards", model: ReportCard, searchable: ["grade"], permission: "exam-results" },
+  {
+    path: "report-cards", model: ReportCard, searchable: ["grade"], permission: "exam-results",
+    // studentId is required by the model but not on the form — derive it from the enrolment.
+    beforeCreate: async (body) => {
+      if (body.enrolmentId && !body.studentId) {
+        const enrolment = await Enrolment.findByPk(body.enrolmentId);
+        if (enrolment) body.studentId = enrolment.studentId;
+      }
+      return body;
+    },
+  },
   { path: "assignments", model: Assignment, searchable: ["title", "description"], permission: "assignments" },
   { path: "submissions", model: Submission, searchable: ["status"], permission: "assignments" },
   { path: "gradebook", model: GradebookEntry, searchable: ["grade"], permission: "gradebook" },
@@ -44,9 +57,37 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "periods", model: Period, searchable: ["dayOfWeek", "room"], permission: "timetable" },
   { path: "fee-types", model: FeeType, searchable: ["name", "category"], permission: "fees" },
   { path: "expenses", model: Expense, searchable: ["title", "category", "status"], permission: "expenses" },
-  { path: "payroll", model: PayrollItem, searchable: ["month", "status"], permission: "payroll" },
-  { path: "payslips", model: Payslip, searchable: ["payslipNo"], permission: "payroll" },
-  { path: "leaves", model: LeaveRequest, searchable: ["leaveType", "status"], permission: "leaves" },
+  {
+    path: "payroll", model: PayrollItem, searchable: ["month", "status"], permission: "payroll",
+    beforeCreate: (body) => {
+      if (body.netPay === undefined || body.netPay === null || body.netPay === "") {
+        body.netPay = Number(body.basicSalary ?? 0) + Number(body.allowances ?? 0) - Number(body.deductions ?? 0);
+      }
+      return body;
+    },
+  },
+  {
+    path: "payslips", model: Payslip, searchable: ["payslipNo"], permission: "payroll",
+    beforeCreate: async (body) => {
+      if ((body.gross === undefined || body.gross === null || body.gross === "") && body.payrollItemId) {
+        const item = await PayrollItem.findByPk(body.payrollItemId);
+        if (item) {
+          body.gross = Number(item.basicSalary) + Number(item.allowances ?? 0);
+          body.net = Number(item.netPay ?? body.gross);
+        }
+      }
+      if (body.gross === undefined || body.gross === null || body.gross === "") body.gross = 0;
+      if (body.net === undefined || body.net === null || body.net === "") body.net = body.gross;
+      return body;
+    },
+  },
+  {
+    path: "leaves", model: LeaveRequest, searchable: ["leaveType", "status"], permission: "leaves",
+    beforeCreate: (body, req) => {
+      if (!body.userId) body.userId = req.user?.id;
+      return body;
+    },
+  },
   { path: "books", model: Book, searchable: ["title", "author", "isbn", "category"], permission: "library" },
   { path: "book-copies", model: BookCopy, searchable: ["accessionNo", "status"], permission: "library" },
   { path: "book-fines", model: BookFine, searchable: ["receiptNo", "status"], permission: "library" },
@@ -62,13 +103,25 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "events", model: Event, searchable: ["title", "category", "venue"], permission: "events" },
   { path: "notices", model: Notice, searchable: ["title", "type"], permission: "notices" },
   { path: "announcements", model: Announcement, searchable: ["title", "priority"], permission: "announcements" },
-  { path: "messages", model: Message, searchable: ["subject"], permission: "messages" },
+  {
+    path: "messages", model: Message, searchable: ["subject"], permission: "messages",
+    beforeCreate: (body, req) => {
+      if (!body.senderId) body.senderId = req.user?.id;
+      return body;
+    },
+  },
   { path: "notifications", model: Notification, searchable: ["title"], permission: "notifications", readonly: true },
   { path: "syllabus", model: Syllabus, searchable: ["title"], permission: "syllabus" },
   { path: "lesson-plans", model: LessonPlan, searchable: ["title"], permission: "lesson-plans" },
   { path: "health-records", model: HealthRecord, searchable: ["bloodGroup"], permission: "health-records", readonly: true },
   { path: "discipline-records", model: DisciplineRecord, searchable: ["title", "type", "status"], permission: "discipline-records" },
-  { path: "complaints", model: Complaint, searchable: ["title", "category", "status"], permission: "complaints" },
+  {
+    path: "complaints", model: Complaint, searchable: ["title", "category", "status"], permission: "complaints",
+    beforeCreate: (body, req) => {
+      if (!body.submittedBy) body.submittedBy = req.user?.id;
+      return body;
+    },
+  },
   { path: "inventory", model: InventoryItem, searchable: ["name", "sku", "category"], permission: "inventory" },
   { path: "assets", model: Asset, searchable: ["name", "assetCode", "category"], permission: "inventory" },
   { path: "audit-logs", model: AuditLog, searchable: ["action", "entity"], permission: "audit-logs", readonly: true },

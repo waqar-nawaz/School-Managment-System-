@@ -17,9 +17,26 @@ export const errorHandler = (
     return ApiResponse.error(res, err.statusCode, err.message, err.errors);
   }
 
-  if (typeof err === "object" && err !== null && "name" in err && (err as any).name === "SequelizeUniqueConstraintError") {
-    const message = (err as any).errors?.map((e: any) => e.message).join(", ") || "Duplicate entry";
-    return ApiResponse.error(res, 409, message);
+  if (typeof err === "object" && err !== null && "name" in err) {
+    const name = (err as any).name as string;
+    if (name === "SequelizeUniqueConstraintError") {
+      const message = (err as any).errors?.map((e: any) => e.message).join(", ") || "Duplicate entry";
+      return ApiResponse.error(res, 409, message);
+    }
+    if (name === "SequelizeForeignKeyConstraintError") {
+      return ApiResponse.error(
+        res,
+        400,
+        "Invalid reference: a selected related record does not exist."
+      );
+    }
+    if (name === "SequelizeValidationError") {
+      const fields = (err as any).errors?.map((e: any) => e.message).join(", ") || "Validation error";
+      return ApiResponse.error(res, 400, fields);
+    }
+    if (name === "SequelizeDatabaseError") {
+      return ApiResponse.error(res, 400, (err as any).parent?.sqlMessage || "Database error");
+    }
   }
 
   logger.error(`${req.method} ${req.originalUrl} -> ${(err as Error).message}`, {

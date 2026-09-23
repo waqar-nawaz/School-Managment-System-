@@ -16,7 +16,6 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
       </div>
       <div class="page-actions">
         <button class="btn btn-primary" (click)="addSetting()"><app-icon name="plus" [size]="15" /> Add setting</button>
-        <button class="btn btn-ghost" (click)="load()"><app-icon name="refresh" [size]="15" /> Refresh</button>
       </div>
     </div>
 

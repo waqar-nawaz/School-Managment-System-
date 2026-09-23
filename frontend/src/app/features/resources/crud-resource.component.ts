@@ -1,4 +1,4 @@
-import { Component, Input, OnDestroy, OnInit } from '@angular/core';
+import { Component, HostListener, Input, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { Subject } from 'rxjs';
 import { switchMap, tap, takeUntil, debounceTime } from 'rxjs/operators';
@@ -35,7 +35,6 @@ interface Row {
           <p class="page-subtitle">Manage {{ config.label.toLowerCase() }}</p>
         </div>
         <div class="page-actions">
-          <button class="btn btn-ghost" (click)="load()"><app-icon name="refresh" [size]="15" /> Refresh</button>
           @if (canExport && rows.length) {
             <button class="btn btn-ghost" (click)="exportCsv()"><app-icon name="download" [size]="15" /> Export CSV</button>
           }
@@ -90,11 +89,30 @@ interface Row {
                     </td>
                   }
                   <td style="text-align:right;white-space:nowrap">
-                    @if (config.canCreate !== false && canEdit) {
-                      <button class="btn btn-sm btn-ghost" (click)="openEdit(row)"><app-icon name="edit" [size]="14" /> Edit</button>
-                    }
-                    @if (config.canCreate !== false && canDelete) {
-                      <button class="btn btn-sm btn-ghost-danger" (click)="askDelete(row)"><app-icon name="trash" [size]="14" /> Delete</button>
+                    @if (rowEditable || rowDeletable) {
+                      <div class="row-menu">
+                        <button
+                          type="button"
+                          class="icon-btn"
+                          (click)="toggleRowMenu(row.id, $event)"
+                          aria-label="Actions">
+                          <app-icon name="more-vertical" [size]="18" />
+                        </button>
+                        @if (openMenuId === row.id) {
+                          <div class="row-menu-list" (click)="$event.stopPropagation()">
+                            @if (rowEditable) {
+                              <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null">
+                                <app-icon name="edit" [size]="15" /> Edit
+                              </button>
+                            }
+                            @if (rowDeletable) {
+                              <button type="button" class="row-menu-item danger" (click)="askDelete(row); openMenuId = null">
+                                <app-icon name="trash" [size]="15" /> Delete
+                              </button>
+                            }
+                          </div>
+                        }
+                      </div>
                     }
                   </td>
                 </tr>
@@ -156,6 +174,14 @@ interface Row {
                         }
                       </select>
                     }
+                    @case ('ref') {
+                      <select class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]">
+                        <option [ngValue]="null">— select —</option>
+                        @for (opt of refOptions[field.key] ?? []; track opt.value) {
+                          <option [ngValue]="opt.value">{{ opt.label }}</option>
+                        }
+                      </select>
+                    }
                     @case ('date') { <input type="date" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" /> }
                     @case ('dateonly') { <input type="date" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" /> }
                     @default {
@@ -197,6 +223,17 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   @Input() set resource(v: string) {
     this.resourceKey = v || this.route.snapshot.paramMap.get('resource') || '';
     this.config = resolveResource(this.resourceKey);
+    // Reset all view state so switching between resources starts clean.
+    this.search = '';
+    this.searchText = '';
+    this.page = 1;
+    this.rows = [];
+    this.total = 0;
+    this.showForm = false;
+    this.openMenuId = null;
+    this.fieldErrors = {};
+    this.refOptions = {};
+    this.calculatePermissions();
     this.load();
   }
 
@@ -214,6 +251,8 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   formValues: Record<string, unknown> = {};
   saving = false;
   fieldErrors: Record<string, string> = {};
+  refOptions: Record<string, Array<{ value: unknown; label: string }> | undefined> = {};
+  openMenuId: number | null = null;
   confirm: Row | null = null;
   canCreate = false;
   canEdit = false;
@@ -279,6 +318,14 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.load();
   }
 
+  get rowEditable(): boolean {
+    return this.config?.canCreate !== false && this.canEdit;
+  }
+
+  get rowDeletable(): boolean {
+    return this.config?.canCreate !== false && this.canDelete;
+  }
+
   get totalPages(): number {
     return Math.ceil(this.total / this.pageSize);
   }
@@ -302,6 +349,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.fieldErrors = {};
     this.formTitle = `New ${this.config?.label.replace(/s$/, '')}`;
     this.showForm = true;
+    this.loadRefOptions();
   }
 
   openEdit(row: Row): void {
@@ -310,6 +358,38 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.fieldErrors = {};
     this.formTitle = `Edit ${this.config?.label.replace(/s$/, '')}`;
     this.showForm = true;
+    this.loadRefOptions();
+  }
+
+  toggleRowMenu(id: number | undefined, event: Event): void {
+    event.stopPropagation();
+    if (id === undefined) return;
+    this.openMenuId = this.openMenuId === id ? null : id;
+  }
+
+  @HostListener('document:click')
+  closeRowMenu(): void {
+    this.openMenuId = null;
+  }
+
+  private loadRefOptions(): void {
+    if (!this.config) return;
+    for (const field of this.config.fields) {
+      if (field.type !== 'ref' || !field.ref) continue;
+      const { api, labelKey, secondaryKey } = field.ref;
+      this.api.get<Record<string, unknown>[]>(api, { page: 1, limit: 100 }).subscribe({
+        next: (res) => {
+          const rows = (res?.data as Record<string, unknown>[]) ?? [];
+          this.refOptions[field.key] = rows.map((r) => ({
+            value: r['id'],
+            label:
+              [r[labelKey], secondaryKey ? r[secondaryKey] : null].filter(Boolean).join(' — ') ||
+              `#${r['id']}`,
+          }));
+        },
+        error: () => {},
+      });
+    }
   }
 
   closeForm(): void {

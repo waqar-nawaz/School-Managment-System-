@@ -26,8 +26,11 @@ router.delete("/:id", authorize("certificates:delete"), (req, res, next) => base
  * sensible default doc is generated from the student record.
  */
 router.post("/", authorize("certificates:create"), asyncHandler(async (req, res) => {
-  const { studentId, type, title, body, signedBy } = req.body;
-  if (!CERTIFICATE_TYPES.includes(type as any)) throw ApiError.badRequest("Unknown certificate type");
+  const { studentId, title, body, signedBy } = req.body;
+  const type = req.body.type ?? req.body.certType;
+  if (!CERTIFICATE_TYPES.includes(type as any)) {
+    throw ApiError.badRequest(`Unknown certificate type. Allowed: ${CERTIFICATE_TYPES.join(", ")}`);
+  }
 
   const student = await Student.findByPk(studentId);
   if (!student) throw ApiError.notFound("Student not found");

@@ -17,9 +17,6 @@ const STATUSES = ['enquiry', 'applied', 'test', 'interview', 'accepted', 'reject
         <h1 class="page-title">Admissions</h1>
         <p class="page-subtitle">Application pipeline</p>
       </div>
-      <div class="page-actions">
-        <button class="btn btn-ghost" (click)="load()"><app-icon name="refresh" [size]="15" /> Refresh</button>
-      </div>
     </div>
 
     <div class="stat-grid stat-grid-sm">

@@ -5,7 +5,7 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { BookCopy, Book, BookIssue, BookFine, User } from "../../models";
+import { BookCopy, Book, BookIssue, BookFine, User, Student } from "../../models";
 import { createCrudController } from "../../utils/crudFactory";
 
 const router = Router();
@@ -22,20 +22,27 @@ router.get("/:id", authorize("library:read"), (req, res, next) => base.getOne(re
 router.delete("/:id", authorize("library:delete"), (req, res, next) => base.remove(req, res).catch(next));
 
 router.post("/", authorize("book-issues:create"), asyncHandler(async (req, res) => {
-  const { bookId, userId, dueInDays = 14, requestedFor = "student" } = req.body;
-  const book = await Book.findByPk(bookId);
-  if (!book) throw ApiError.notFound("Book not found");
+  const { bookId, bookCopyId, userId, studentId, dueInDays = 14, requestedFor = "student" } = req.body;
 
-  const copy = await BookCopy.findOne({ where: { bookId, status: "available" } });
+  // Accept either a specific copy or pick an available one for a book.
+  let copy = bookCopyId ? await BookCopy.findByPk(bookCopyId) : null;
+  if (!copy && bookId) copy = await BookCopy.findOne({ where: { bookId, status: "available" } });
   if (!copy) throw ApiError.badRequest("No available copy for this book");
+  if (copy.status !== "available") throw ApiError.badRequest("This copy is not available");
 
-  const borrower = await User.findByPk(userId);
-  if (!borrower) throw ApiError.notFound("User not found");
+  // Borrower can be a user id directly, or a student id (resolve to its user).
+  let borrowerId = userId;
+  if (!borrowerId && studentId) {
+    const student = await Student.findByPk(studentId);
+    borrowerId = student?.userId;
+  }
+  const borrower = borrowerId ? await User.findByPk(borrowerId) : null;
+  if (!borrower) throw ApiError.badRequest("Borrower not found: provide a valid userId or studentId");
 
   await copy.update({ status: "issued" });
   const issue = await BookIssue.create({
     bookCopyId: copy.id,
-    userId,
+    userId: borrowerId,
     issueDate: new Date(),
     dueDate: new Date(Date.now() + Number(dueInDays) * 86400000),
     requestedFor,
