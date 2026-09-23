@@ -84,7 +84,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   branches: {
     key: 'branches', label: 'Branches', api: '/branches',
-    columns: [nameCol('name', 'Branch'), nameCol('code', 'Code'), nameCol('city', 'City'), nameCol('phone', 'Phone'), statusCol()],
+    columns: [nameCol('name', 'Branch'), nameCol('code', 'Code'), nameCol('city', 'City'), nameCol('phone', 'Phone'), boolCol('isActive', 'Active')],
     fields: fields([
       { key: 'name', label: 'Branch name', required: true },
       { key: 'code', label: 'Code' },
@@ -109,17 +109,17 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   classes: {
     key: 'classes', label: 'Classes', api: '/classes',
-    columns: [nameCol('name', 'Class'), nameCol('level', 'Level'), { key: 'capacity', label: 'Capacity', type: 'number' }, { key: 'room', label: 'Room', type: 'text' }, statusCol()],
+    columns: [nameCol('name', 'Class'), nameCol('level', 'Level'), { key: 'capacity', label: 'Capacity', type: 'number' }, { key: 'room', label: 'Room', type: 'text' }, boolCol('isActive', 'Active')],
     fields: fields([{ key: 'name', label: 'Class name', required: true }, { key: 'level', label: 'Level' }, { key: 'capacity', label: 'Capacity', type: 'number' }, { key: 'room', label: 'Room' }, { key: 'isActive', label: 'Active', type: 'bool' }]),
   },
   sections: {
     key: 'sections', label: 'Sections', api: '/sections',
-    columns: [nameCol('name', 'Section'), { key: 'classId', label: 'Class ID', type: 'number' }, { key: 'capacity', label: 'Capacity', type: 'number' }, statusCol()],
+    columns: [nameCol('name', 'Section'), { key: 'classId', label: 'Class ID', type: 'number' }, { key: 'capacity', label: 'Capacity', type: 'number' }, boolCol('isActive', 'Active')],
     fields: fields([refField('classId', 'Class', '/classes', 'name', undefined, true), { key: 'name', label: 'Section (A/B)', required: true }, { key: 'capacity', label: 'Capacity', type: 'number' }]),
   },
   subjects: {
     key: 'subjects', label: 'Subjects', api: '/subjects',
-    columns: [nameCol('name'), nameCol('code', 'Code'), { key: 'maxMarks', label: 'Max Marks', type: 'number' }, { key: 'passMarks', label: 'Pass', type: 'number' }, statusCol()],
+    columns: [nameCol('name'), nameCol('code', 'Code'), { key: 'maxMarks', label: 'Max Marks', type: 'number' }, { key: 'passMarks', label: 'Pass', type: 'number' }, boolCol('isActive', 'Active')],
     fields: fields([{ key: 'name', label: 'Subject name', required: true }, { key: 'code', label: 'Code' }, { key: 'maxMarks', label: 'Max marks', type: 'number' }, { key: 'passMarks', label: 'Pass marks', type: 'number' }, { key: 'isActive', label: 'Active', type: 'bool' }]),
   },
   enrolments: {
@@ -147,7 +147,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   teachers: {
     key: 'teachers', label: 'Teachers', api: '/teachers',
-    columns: [nameCol('staffNo', 'Staff No'), nameCol('firstName', 'First Name'), nameCol('lastName', 'Last Name'), nameCol('email'), nameCol('qualification'), statusCol()],
+    columns: [nameCol('staffNo', 'Staff No'), nameCol('firstName', 'First Name'), nameCol('lastName', 'Last Name'), nameCol('email'), nameCol('qualification'), boolCol('isActive', 'Active')],
     fields: fields([
       { key: 'staffNo', label: 'Staff number', required: true },
       { key: 'firstName', label: 'First name', required: true },
@@ -160,7 +160,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   staff: {
     key: 'staff', label: 'Staff', api: '/staff',
-    columns: [nameCol('staffNo', 'Staff No'), nameCol('firstName', 'First Name'), nameCol('lastName', 'Last Name'), nameCol('department'), nameCol('designation'), statusCol()],
+    columns: [nameCol('staffNo', 'Staff No'), nameCol('firstName', 'First Name'), nameCol('lastName', 'Last Name'), nameCol('department'), nameCol('designation'), boolCol('isActive', 'Active')],
     fields: fields([
       { key: 'staffNo', label: 'Staff number', required: true },
       { key: 'firstName', label: 'First name', required: true },
@@ -239,7 +239,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   'fee-types': {
     key: 'fee-types', label: 'Fee Types', api: '/fee-types',
-    columns: [nameCol('name'), nameCol('category'), { key: 'amount', label: 'Amount', type: 'money' }, nameCol('billingCycle', 'Cycle'), statusCol()],
+    columns: [nameCol('name'), nameCol('category'), { key: 'amount', label: 'Amount', type: 'money' }, nameCol('billingCycle', 'Cycle'), boolCol('isActive', 'Active')],
     fields: fields([{ key: 'name', label: 'Fee name', required: true }, { key: 'category', label: 'Category', type: 'select', options: STATUS_OPTIONS(['tuition', 'transport', 'hostel', 'misc']) }, { key: 'amount', label: 'Amount', type: 'number', required: true }, { key: 'billingCycle', label: 'Billing cycle', type: 'select', options: STATUS_OPTIONS(['term', 'monthly', 'yearly', 'one-time']) }, { key: 'isMandatory', label: 'Mandatory', type: 'bool' }, { key: 'isActive', label: 'Active', type: 'bool' }]),
   },
   expenses: {
@@ -264,7 +264,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   books: {
     key: 'books', label: 'Books', api: '/books',
-    columns: [nameCol('title'), nameCol('author'), nameCol('isbn'), nameCol('category'), { key: 'copies', label: 'Copies', type: 'number' }, statusCol()],
+    columns: [nameCol('title'), nameCol('author'), nameCol('isbn'), nameCol('category'), { key: 'copies', label: 'Copies', type: 'number' }, boolCol('isActive', 'Active')],
     fields: fields([
       { key: 'isbn', label: 'ISBN', required: true },
       { key: 'title', label: 'Title', required: true },
@@ -287,7 +287,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   routes: {
     key: 'routes', label: 'Transport Routes', api: '/routes',
-    columns: [nameCol('name'), nameCol('startPoint', 'Start'), nameCol('endPoint', 'End'), { key: 'monthlyFee', label: 'Fee', type: 'money' }, statusCol()],
+    columns: [nameCol('name'), nameCol('startPoint', 'Start'), nameCol('endPoint', 'End'), { key: 'monthlyFee', label: 'Fee', type: 'money' }, boolCol('isActive', 'Active')],
     fields: fields([{ key: 'name', label: 'Route name', required: true }, { key: 'startPoint', label: 'Start point' }, { key: 'endPoint', label: 'End point' }, { key: 'monthlyFee', label: 'Monthly fee', type: 'number' }, { key: 'description', label: 'Description', type: 'textarea' }]),
   },
   'route-stops': {
@@ -307,7 +307,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   hostels: {
     key: 'hostels', label: 'Hostels', api: '/hostels',
-    columns: [nameCol('name'), nameCol('gender'), { key: 'capacity', label: 'Capacity', type: 'number' }, nameCol('wardenName', 'Warden'), statusCol()],
+    columns: [nameCol('name'), nameCol('gender'), { key: 'capacity', label: 'Capacity', type: 'number' }, nameCol('wardenName', 'Warden'), boolCol('isActive', 'Active')],
     fields: fields([{ key: 'name', label: 'Hostel name', required: true }, { key: 'gender', label: 'Type', type: 'select', options: STATUS_OPTIONS(['boys', 'girls', 'coed']) }, { key: 'capacity', label: 'Capacity', type: 'number' }, { key: 'wardenName', label: 'Warden' }, { key: 'address', label: 'Address', type: 'textarea' }]),
   },
   rooms: {
@@ -323,7 +323,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   'hostel-allocations': {
     key: 'hostel-allocations', label: 'Hostel Allocations', api: '/hostel-allocations',
     columns: [{ key: 'studentId', label: 'Student', type: 'number' }, { key: 'hostelId', label: 'Hostel', type: 'number' }, { key: 'roomId', label: 'Room', type: 'number' }, { key: 'bedId', label: 'Bed', type: 'number' }, { key: 'checkIn', label: 'Check-in', type: 'date' }, statusCol()],
-    fields: fields([refField('studentId', 'Student', '/students', 'firstName', 'admissionNo', true), refField('hostelId', 'Hostel', '/hostels', 'name', undefined, true), refField('roomId', 'Room', '/rooms', 'roomNo', undefined, true), refField('bedId', 'Bed', '/beds', 'bedNo', undefined, true), { key: 'checkIn', label: 'Check-in', type: 'dateonly' }, { key: 'monthlyFee', label: 'Monthly fee', type: 'number' }]),
+    fields: fields([refField('studentId', 'Student', '/students', 'firstName', 'admissionNo', true), refField('bedId', 'Bed', '/beds', 'bedNo', undefined, true), { key: 'checkIn', label: 'Check-in', type: 'dateonly' }, { key: 'monthlyFee', label: 'Monthly fee', type: 'number' }]),
   },
   events: {
     key: 'events', label: 'Events', api: '/events',
@@ -374,7 +374,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   inventory: {
     key: 'inventory', label: 'Inventory', api: '/inventory',
-    columns: [nameCol('name'), nameCol('category'), nameCol('sku'), { key: 'quantity', label: 'Qty', type: 'number' }, { key: 'minQuantity', label: 'Min', type: 'number' }, statusCol()],
+    columns: [nameCol('name'), nameCol('category'), nameCol('sku'), { key: 'quantity', label: 'Qty', type: 'number' }, { key: 'minQuantity', label: 'Min', type: 'number' }, boolCol('isActive', 'Active')],
     fields: fields([{ key: 'name', label: 'Item name', required: true }, { key: 'category', label: 'Category' }, { key: 'sku', label: 'SKU' }, { key: 'quantity', label: 'Quantity', type: 'number' }, { key: 'minQuantity', label: 'Min quantity', type: 'number' }, { key: 'unit', label: 'Unit' }, { key: 'unitPrice', label: 'Unit price', type: 'number' }, { key: 'supplier', label: 'Supplier' }]),
   },
   assets: {
@@ -395,13 +395,13 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   'class-subjects': {
     key: 'class-subjects', label: 'Class Subjects', api: '/class-subjects',
-    columns: [{ key: 'classId', label: 'Class', type: 'number' }, { key: 'subjectId', label: 'Subject', type: 'number' }, nameCol('teacherId', 'Teacher'), boolCol('isElective', 'Elective')],
-    fields: fields([refField('classId', 'Class', '/classes', 'name', undefined, true), refField('subjectId', 'Subject', '/subjects', 'name', undefined, true), refField('teacherId', 'Teacher', '/teachers', 'firstName', 'staffNo'), { key: 'isElective', label: 'Elective', type: 'bool' }]),
+    columns: [{ key: 'classId', label: 'Class', type: 'number' }, { key: 'subjectId', label: 'Subject', type: 'number' }],
+    fields: fields([refField('classId', 'Class', '/classes', 'name', undefined, true), refField('subjectId', 'Subject', '/subjects', 'name', undefined, true)]),
   },
   'exam-schedules': {
     key: 'exam-schedules', label: 'Exam Schedules', api: '/exam-schedules',
-    columns: [{ key: 'examId', label: 'Exam', type: 'number' }, { key: 'classId', label: 'Class', type: 'number' }, { key: 'subjectId', label: 'Subject', type: 'number' }, { key: 'examDate', label: 'Date', type: 'date' }, nameCol('startTime', 'Start'), nameCol('room', 'Room')],
-    fields: fields([refField('examId', 'Exam', '/exams', 'name', undefined, true), refField('classId', 'Class', '/classes', 'name'), refField('subjectId', 'Subject', '/subjects', 'name'), { key: 'examDate', label: 'Exam date', type: 'dateonly' }, { key: 'startTime', label: 'Start time' }, { key: 'endTime', label: 'End time' }, { key: 'room', label: 'Room' }]),
+    columns: [{ key: 'examId', label: 'Exam', type: 'number' }, { key: 'classId', label: 'Class', type: 'number' }, { key: 'subjectId', label: 'Subject', type: 'number' }, { key: 'date', label: 'Date', type: 'date' }, nameCol('startTime', 'Start'), nameCol('room', 'Room')],
+    fields: fields([refField('examId', 'Exam', '/exams', 'name', undefined, true), refField('classId', 'Class', '/classes', 'name'), refField('subjectId', 'Subject', '/subjects', 'name'), { key: 'date', label: 'Exam date', type: 'dateonly' }, { key: 'startTime', label: 'Start time' }, { key: 'endTime', label: 'End time' }, { key: 'room', label: 'Room' }]),
   },
   students: {
     key: 'students', label: 'Students', api: '/students',
@@ -437,13 +437,13 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   certificates: {
     key: 'certificates', label: 'Certificates', api: '/certificates',
-    columns: [nameCol('certNo', 'Cert No'), { key: 'studentId', label: 'Student', type: 'number' }, nameCol('certType', 'Type'), nameCol('status'), { key: 'issuedOn', label: 'Issued', type: 'date' }],
+    columns: [nameCol('certNo', 'Cert No'), { key: 'studentId', label: 'Student', type: 'number' }, { key: 'type', label: 'Type', type: 'badge', badgeMap: BADGE_COMMON }, { key: 'issuedOn', label: 'Issued', type: 'date' }, boolCol('isVerified', 'Verified')],
     fields: fields([{ key: 'type', label: 'Type', type: 'select', options: STATUS_OPTIONS(['transfer', 'character', 'bonafide', 'provisional', 'mark_sheet']), required: true }, refField('studentId', 'Student', '/students', 'firstName', 'admissionNo', true), { key: 'title', label: 'Title' }, { key: 'body', label: 'Body', type: 'textarea' }]),
   },
   complaints: {
     key: 'complaints', label: 'Complaints', api: '/complaints',
-    columns: [nameCol('title'), { key: 'complainantType', label: 'Complainant', type: 'text' }, nameCol('category'), { key: 'assignedTo', label: 'Assigned To', type: 'text' }, statusCol()],
-    fields: fields([{ key: 'title', label: 'Title', required: true }, { key: 'description', label: 'Details', type: 'textarea', required: true }, { key: 'category', label: 'Category', type: 'select', options: STATUS_OPTIONS(['academic', 'facility', 'staff', 'transport', 'other']) }, { key: 'priority', label: 'Priority', type: 'select', options: STATUS_OPTIONS(['high', 'medium', 'low']) }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['open', 'in_progress', 'resolved', 'closed']) }]),
+    columns: [nameCol('title'), { key: 'priority', label: 'Priority', type: 'badge', badgeMap: BADGE_COMMON }, nameCol('category'), { key: 'assignedTo', label: 'Assigned To', type: 'number' }, statusCol()],
+    fields: fields([{ key: 'title', label: 'Title', required: true }, { key: 'description', label: 'Details', type: 'textarea', required: true }, { key: 'category', label: 'Category', type: 'select', options: STATUS_OPTIONS(['academic', 'facility', 'staff', 'transport', 'other']) }, { key: 'priority', label: 'Priority', type: 'select', options: STATUS_OPTIONS(['high', 'medium', 'low']) }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['open', 'in_progress', 'resolved', 'closed']) }, refField('assignedTo', 'Assigned to', '/users', 'firstName', 'email')]),
   },
   media: {
     key: 'media', label: 'Media', api: '/media',

@@ -99,7 +99,21 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "hostels", model: Hostel, searchable: ["name", "wardenName"], permission: "hostels" },
   { path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "hostels" },
   { path: "beds", model: Bed, searchable: ["bedNo"], permission: "hostels" },
-  { path: "hostel-allocations", model: HostelAllocation, searchable: ["status"], permission: "hostels" },
+  {
+    path: "hostel-allocations", model: HostelAllocation, searchable: ["status"], permission: "hostels",
+    // Only a student + bed are needed; room and hostel come from the bed.
+    beforeCreate: async (body) => {
+      if (body.bedId) {
+        const bed = await Bed.findByPk(body.bedId);
+        if (bed) {
+          body.roomId = bed.roomId;
+          const room = await Room.findByPk(bed.roomId);
+          if (room) body.hostelId = room.hostelId;
+        }
+      }
+      return body;
+    },
+  },
   { path: "events", model: Event, searchable: ["title", "category", "venue"], permission: "events" },
   { path: "notices", model: Notice, searchable: ["title", "type"], permission: "notices" },
   { path: "announcements", model: Announcement, searchable: ["title", "priority"], permission: "announcements" },
