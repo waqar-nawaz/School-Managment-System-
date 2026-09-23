@@ -3,19 +3,6 @@ import { USER_ROLES } from "../../utils/constants";
 
 const roleEnum = z.enum(USER_ROLES as unknown as [string, ...string[]]);
 
-export const createUserSchema = z.object({
-  username: z.string().min(3).max(120),
-  email: z.string().email(),
-  firstName: z.string().min(1).max(120),
-  lastName: z.string().min(1).max(120),
-  password: z.string().min(8).optional(),
-  role: roleEnum,
-  gender: z.enum(["male", "female", "other"]).optional(),
-  phone: z.string().max(20).optional(),
-  branchId: z.number().int().positive().optional(),
-  sendWelcome: z.boolean().default(true),
-});
-
 // Accepts numbers, numeric strings, "" and null (BIGINT ids often arrive as strings).
 const nullableId = z.preprocess(
   (v) => {
@@ -24,6 +11,19 @@ const nullableId = z.preprocess(
   },
   z.number().int().positive().nullable()
 );
+
+export const createUserSchema = z.object({
+  username: z.string().min(3).max(120),
+  email: z.string().email(),
+  firstName: z.string().min(1).max(120),
+  lastName: z.string().min(1).max(120),
+  password: z.string().min(8).optional(),
+  role: roleEnum,
+  gender: z.enum(["male", "female", "other"]).nullish(),
+  phone: z.string().max(20).nullish(),
+  branchId: nullableId.optional(),
+  sendWelcome: z.boolean().default(true),
+});
 
 export const updateUserSchema = z.object({
   firstName: z.string().min(1).max(120).optional(),
