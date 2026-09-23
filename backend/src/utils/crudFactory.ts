@@ -33,8 +33,16 @@ export function createCrudController<M extends Model = Model>(
 
   const buildWhere = (req: Request): WhereOptions => {
     const where: Record<string, unknown> = {};
-    const f = req.query as Record<string, string | undefined>;
+    const f = req.query as Record<string, unknown>;
 
+    // Support both flat (filter[field]=x with the simple parser) and nested
+    // (filter: { field: x } with Express's default extended parser).
+    const nested = f["filter"];
+    if (nested && typeof nested === "object") {
+      for (const [field, val] of Object.entries(nested as Record<string, unknown>)) {
+        where[field] = val;
+      }
+    }
     for (const key of Object.keys(f)) {
       if (!key.startsWith("filter[")) continue;
       const field = key.slice(7, -1);
@@ -42,12 +50,12 @@ export function createCrudController<M extends Model = Model>(
     }
 
     if (opts.toSearchWhere) {
-      const q = f.q;
+      const q = f.q ? String(f.q) : undefined;
       const base = q ? opts.toSearchWhere(q) : undefined;
       if (base) Object.assign(where, base);
     } else if (f.q && searchable.length) {
       (where as any)[Op.or] = searchable.map((col) => ({
-        [col]: { [likeOp]: `%${f.q}%` },
+        [col]: { [likeOp]: `%${String(f.q)}%` },
       }));
     }
 

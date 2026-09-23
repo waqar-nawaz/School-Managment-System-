@@ -152,6 +152,35 @@ router.put("/:id", authorize("students:update"), asyncHandler(async (req, res) =
   delete patch.classId;
   delete patch.sectionId;
   await student.update(patch);
+
+  // Attendance is driven by active enrolments, so keep the current-year
+  // enrolment in sync when the class/section is changed here.
+  const newClassId = (patch.currentClassId as number | undefined) ?? student.currentClassId;
+  const newSectionId = (patch.currentSectionId as number | undefined) ?? student.currentSectionId;
+  if (newClassId) {
+    const academicYear =
+      (await AcademicYear.findOne({ where: { isCurrent: true } })) ||
+      (await AcademicYear.findOne({ order: [["startDate", "DESC"]] }));
+    if (academicYear) {
+      const [enrolment] = await Enrolment.findOrCreate({
+        where: { studentId: student.id, academicYearId: academicYear.id },
+        defaults: {
+          studentId: student.id,
+          academicYearId: academicYear.id,
+          classId: newClassId,
+          sectionId: newSectionId ?? null,
+          enrolledOn: new Date(),
+          status: "active",
+        },
+      });
+      await enrolment.update({
+        classId: newClassId,
+        sectionId: newSectionId ?? null,
+        status: "active",
+      });
+    }
+  }
+
   ApiResponse.success(res, 200, "Student updated", student);
 }));
 
