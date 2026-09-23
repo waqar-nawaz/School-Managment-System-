@@ -5,7 +5,7 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { Attendance, Enrolment } from "../../models";
+import { Attendance, Enrolment, Student } from "../../models";
 import { ATTENDANCE_STATUS } from "../../utils/constants";
 import { monthRange } from "../../utils/dateRange";
 
@@ -30,14 +30,28 @@ router.get("/register", authorize("attendance:read"), asyncHandler(async (req, r
   });
   const records = await Attendance.findAll({ where: { date, classId, ...(sectionId ? { sectionId } : {}) } });
 
+  const studentIds = enrolments.map((e) => e.studentId);
+  const students = studentIds.length
+    ? await Student.findAll({
+        where: { id: studentIds },
+        attributes: ["id", "firstName", "lastName", "admissionNo"],
+      })
+    : [];
+  const studentById = new Map(students.map((s) => [Number(s.id), s]));
+
   const byStudent = new Map(records.map((r) => [r.studentId, r]));
-  const register = enrolments.map((e) => ({
-    studentId: e.studentId,
-    rollNo: e.rollNo,
-    status: byStudent.get(e.studentId)?.status ?? null,
-    lateMinutes: byStudent.get(e.studentId)?.lateMinutes ?? 0,
-    reason: byStudent.get(e.studentId)?.reason ?? "",
-  }));
+  const register = enrolments.map((e) => {
+    const s = studentById.get(Number(e.studentId));
+    return {
+      studentId: e.studentId,
+      studentName: s ? `${s.firstName} ${s.lastName}`.trim() : `#${e.studentId}`,
+      admissionNo: s?.admissionNo ?? "",
+      rollNo: e.rollNo,
+      status: byStudent.get(e.studentId)?.status ?? null,
+      lateMinutes: byStudent.get(e.studentId)?.lateMinutes ?? 0,
+      reason: byStudent.get(e.studentId)?.reason ?? "",
+    };
+  });
 
   ApiResponse.success(res, 200, "Attendance register", { date, classId, sectionId, register });
 }));

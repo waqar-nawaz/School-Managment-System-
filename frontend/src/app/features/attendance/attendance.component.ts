@@ -7,10 +7,22 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
 
 interface RegisterEntry {
   studentId: number;
+  studentName?: string;
+  admissionNo?: string;
   rollNo: string | null;
   status: string | null;
   lateMinutes: number;
   reason: string;
+}
+
+interface ClassOption {
+  id: number;
+  name: string;
+}
+interface SectionOption {
+  id: number;
+  name: string;
+  classId: number;
 }
 
 @Component({
@@ -21,36 +33,56 @@ interface RegisterEntry {
     <div class="page-header">
       <div>
         <h1 class="page-title">Attendance</h1>
-        <p class="page-subtitle">Mark daily attendance per class</p>
+        <p class="page-subtitle">Select a class &amp; date, load the register, mark and save</p>
       </div>
     </div>
 
     <div class="card">
       <div class="card-toolbar">
-        <input type="number" class="form-control" style="max-width:140px" placeholder="Class ID" [(ngModel)]="classId" />
-        <input type="number" class="form-control" style="max-width:140px" placeholder="Section ID (opt)" [(ngModel)]="sectionId" />
+        <select class="form-control" style="max-width:200px" [(ngModel)]="classId" (ngModelChange)="onClassChange()">
+          <option [ngValue]="null">— Select class —</option>
+          @for (c of classes; track c.id) {
+            <option [ngValue]="c.id">{{ c.name }}</option>
+          }
+        </select>
+        <select class="form-control" style="max-width:200px" [(ngModel)]="sectionId">
+          <option [ngValue]="null">All sections</option>
+          @for (s of sections; track s.id) {
+            <option [ngValue]="s.id">{{ s.name }}</option>
+          }
+        </select>
         <input type="date" class="form-control" style="max-width:170px" [(ngModel)]="date" />
-        <button class="btn btn-primary" (click)="loadRegister()"><app-icon name="search" [size]="15" /> Load register</button>
+        <button class="btn btn-primary" (click)="loadRegister()" [disabled]="!classId">
+          <app-icon name="search" [size]="15" /> Load register
+        </button>
       </div>
 
       @if (entries.length) {
         <div class="table-responsive">
           <table class="table">
             <thead>
-              <tr><th>Roll</th><th>Student ID</th><th>Status</th><th>Late (min)</th><th>Reason</th></tr>
+              <tr>
+                <th style="width:70px">Roll</th>
+                <th>Student</th>
+                <th style="width:150px">Status</th>
+                <th style="width:110px">Late (min)</th>
+                <th>Reason</th>
+              </tr>
             </thead>
             <tbody>
               @for (e of entries; track e.studentId) {
                 <tr>
                   <td>{{ e.rollNo ?? '—' }}</td>
-                  <td>{{ e.studentId }}</td>
+                  <td>{{ e.studentName || ('#' + e.studentId) }}</td>
                   <td>
                     <select class="form-control form-control-sm" [(ngModel)]="e.status">
-                      @for (s of STATUSES; track s) { <option [value]="s">{{ s }}</option> }
+                      @for (s of STATUSES; track s) {
+                        <option [value]="s">{{ s }}</option>
+                      }
                     </select>
                   </td>
                   <td><input type="number" class="form-control form-control-sm" style="width:80px" [(ngModel)]="e.lateMinutes" /></td>
-                  <td><input class="form-control form-control-sm" style="width:220px" [(ngModel)]="e.reason" /></td>
+                  <td><input class="form-control form-control-sm" [(ngModel)]="e.reason" /></td>
                 </tr>
               }
             </tbody>
@@ -65,18 +97,26 @@ interface RegisterEntry {
             <button class="btn btn-ghost" (click)="markAll('absent')"><app-icon name="x" [size]="15" /> All absent</button>
           </div>
         }
+      } @else if (loaded) {
+        <p class="form-hint">No active students in this class/section. Enrol students first (Enrolments or add a student with a class).</p>
       } @else {
-        <p class="form-hint">Choose a class and date, then load the register.</p>
+        <p class="form-hint">
+          Choose the class (and section if needed) and the date, then click “Load register”.
+          The list shows the students enrolled in that class, defaulting to present — change anyone who is absent/late and save.
+        </p>
       }
     </div>
   `,
 })
 export class AttendanceComponent implements OnInit {
   readonly STATUSES = ['present', 'absent', 'late', 'excused', 'holiday'];
-  classId = 1;
+  classes: ClassOption[] = [];
+  sections: SectionOption[] = [];
+  classId: number | null = null;
   sectionId: number | null = null;
   date = new Date().toISOString().slice(0, 10);
   entries: RegisterEntry[] = [];
+  loaded = false;
   saving = false;
   canMark = false;
 
@@ -90,7 +130,25 @@ export class AttendanceComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.loadRegister();
+    this.api.get<ClassOption[]>('/classes', { page: 1, limit: 100 }).subscribe({
+      next: (res) => (this.classes = (res?.data as ClassOption[]) ?? []),
+      error: () => {},
+    });
+  }
+
+  onClassChange(): void {
+    this.sectionId = null;
+    this.sections = [];
+    this.entries = [];
+    this.loaded = false;
+    if (this.classId) {
+      this.api
+        .get<SectionOption[]>('/sections', { 'filter[classId]': this.classId, page: 1, limit: 100 })
+        .subscribe({
+          next: (res) => (this.sections = (res?.data as SectionOption[]) ?? []),
+          error: () => {},
+        });
+    }
   }
 
   loadRegister(): void {
@@ -98,8 +156,17 @@ export class AttendanceComponent implements OnInit {
     const params: Record<string, unknown> = { classId: this.classId, date: this.date };
     if (this.sectionId) params.sectionId = this.sectionId;
     this.api.get<{ register: RegisterEntry[] }>('/attendance/register', params).subscribe({
-      next: (res) => (this.entries = res?.data?.register ?? []),
-      error: () => {},
+      next: (res) => {
+        this.entries = (res?.data?.register ?? []).map((e) => ({
+          ...e,
+          status: e.status || 'present',
+        }));
+        this.loaded = true;
+      },
+      error: () => {
+        this.entries = [];
+        this.loaded = true;
+      },
     });
   }
 
@@ -115,15 +182,22 @@ export class AttendanceComponent implements OnInit {
       lateMinutes: e.lateMinutes,
       reason: e.reason,
     }));
-    this.api.post('/attendance/bulk', { classId: this.classId, ...(this.sectionId ? { sectionId: this.sectionId } : {}), date: this.date, entries }).subscribe({
-      next: () => {
-        this.saving = false;
-        this.toasts.success('Attendance saved');
-        this.loadRegister();
-      },
-      error: () => {
-        this.saving = false;
-      },
-    });
+    this.api
+      .post('/attendance/bulk', {
+        classId: this.classId,
+        ...(this.sectionId ? { sectionId: this.sectionId } : {}),
+        date: this.date,
+        entries,
+      })
+      .subscribe({
+        next: () => {
+          this.saving = false;
+          this.toasts.success('Attendance saved');
+          this.loadRegister();
+        },
+        error: () => {
+          this.saving = false;
+        },
+      });
   }
 }
