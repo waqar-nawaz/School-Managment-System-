@@ -424,7 +424,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
       { key: 'dateOfBirth', label: 'Date of birth', type: 'dateonly' },
       { key: 'guardianName', label: 'Guardian name' },
       { key: 'guardianPhone', label: 'Guardian phone' },
-      refField('currentClassId', 'Class', '/classes', 'name'),
+      refField('currentClassId', 'Class', '/classes', 'name', undefined, true),
       refField('currentSectionId', 'Section', '/sections', 'name'),
     ]),
   },

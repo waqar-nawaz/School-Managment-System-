@@ -43,11 +43,17 @@ router.post(
     const firstName = body.firstName || "Student";
     const lastName = body.lastName || "";
     const admissionNo = body.admissionNo || `STU-${Date.now()}`;
-    const email =
-      body.email ||
-      `${String(admissionNo).toLowerCase().replace(/[^a-z0-9]+/g, "") || "student"}@school.local`;
-    let username = String(body.username || email.split("@")[0] || "").trim();
-    if (username.length < 3) username = `student_${Date.now().toString().slice(-6)}`;
+    // When no email is given, generate a unique placeholder (derived from the
+    // admission number) so two students never collide on the same address.
+    const providedEmail = body.email ? String(body.email).trim() : "";
+    const slug = String(admissionNo).toLowerCase().replace(/[^a-z0-9]+/g, "") || "student";
+    const unique = `${Date.now().toString(36)}${Math.floor(Math.random() * 10000)}`;
+    const email = providedEmail || `${slug}.${unique}@school.local`;
+    let username = String(body.username || "").trim();
+    if (!username) {
+      username = providedEmail ? providedEmail.split("@")[0] : `student_${unique}`;
+    }
+    if (username.length < 3) username = `student_${unique}`;
 
     // Accept both naming conventions (form: dob/classId/sectionId).
     const dob = body.dateOfBirth ?? body.dob;

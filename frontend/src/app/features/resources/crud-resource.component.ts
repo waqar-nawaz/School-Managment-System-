@@ -222,7 +222,7 @@ const NO_EXPORT = new Set([
                           [value]="refLabel(field.key)"
                           (input)="onRefInput(field, $event)"
                           (focus)="openRef(field)"
-                          (blur)="onRefBlur()" />
+                          (blur)="onRefBlur(field.key)" />
                         @if (refOpenKey === field.key) {
                           <div class="ref-list">
                             @for (opt of refOptions[field.key] ?? []; track opt.value) {
@@ -499,10 +499,17 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.loadRefOptions(field, this.refSearch[field.key] ?? '');
   }
 
-  onRefBlur(): void {
+  onRefBlur(key: string): void {
     // Let a mousedown selection register before closing.
     setTimeout(() => {
-      this.refOpenKey = null;
+      if (this.refOpenKey === key) {
+        // Typed text without picking a suggestion must not look "selected".
+        if (this.formValues[key] === null || this.formValues[key] === undefined) {
+          this.refSelectedLabel[key] = '';
+          this.refSearch[key] = '';
+        }
+        this.refOpenKey = null;
+      }
     }, 150);
   }
 

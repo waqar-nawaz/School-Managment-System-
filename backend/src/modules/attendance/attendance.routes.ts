@@ -25,12 +25,31 @@ router.get("/register", authorize("attendance:read"), asyncHandler(async (req, r
   const sectionId = req.query.sectionId ? Number(req.query.sectionId) : undefined;
   if (!classId) throw ApiError.badRequest("classId required");
 
-  const enrolments = await Enrolment.findAll({
-    where: { classId, ...(sectionId ? { sectionId } : {}), status: "active" },
-  });
-  const records = await Attendance.findAll({ where: { date, classId, ...(sectionId ? { sectionId } : {}) } });
+  const sectionWhere = sectionId ? { sectionId } : {};
 
-  const studentIds = enrolments.map((e) => e.studentId);
+  // Prefer active enrolments; fall back to the student's own current
+  // class/section for records created without an enrolment.
+  const enrolments = await Enrolment.findAll({
+    where: { classId, ...sectionWhere, status: "active" },
+  });
+  let roster: Array<{ studentId: number; rollNo: string | null }> = enrolments.map((e) => ({
+    studentId: Number(e.studentId),
+    rollNo: e.rollNo,
+  }));
+  if (!roster.length) {
+    const byClass = await Student.findAll({
+      where: {
+        currentClassId: classId,
+        ...(sectionId ? { currentSectionId: sectionId } : {}),
+        isActive: true,
+      },
+      attributes: ["id"],
+    });
+    roster = byClass.map((s) => ({ studentId: Number(s.id), rollNo: null }));
+  }
+
+  const records = await Attendance.findAll({ where: { date, classId, ...sectionWhere } });
+  const studentIds = roster.map((r) => r.studentId);
   const students = studentIds.length
     ? await Student.findAll({
         where: { id: studentIds },
@@ -39,17 +58,17 @@ router.get("/register", authorize("attendance:read"), asyncHandler(async (req, r
     : [];
   const studentById = new Map(students.map((s) => [Number(s.id), s]));
 
-  const byStudent = new Map(records.map((r) => [r.studentId, r]));
-  const register = enrolments.map((e) => {
-    const s = studentById.get(Number(e.studentId));
+  const byStudent = new Map(records.map((r) => [Number(r.studentId), r]));
+  const register = roster.map((r) => {
+    const s = studentById.get(r.studentId);
     return {
-      studentId: e.studentId,
-      studentName: s ? `${s.firstName} ${s.lastName}`.trim() : `#${e.studentId}`,
+      studentId: r.studentId,
+      studentName: s ? `${s.firstName} ${s.lastName}`.trim() : `#${r.studentId}`,
       admissionNo: s?.admissionNo ?? "",
-      rollNo: e.rollNo,
-      status: byStudent.get(e.studentId)?.status ?? null,
-      lateMinutes: byStudent.get(e.studentId)?.lateMinutes ?? 0,
-      reason: byStudent.get(e.studentId)?.reason ?? "",
+      rollNo: r.rollNo,
+      status: byStudent.get(r.studentId)?.status ?? null,
+      lateMinutes: byStudent.get(r.studentId)?.lateMinutes ?? 0,
+      reason: byStudent.get(r.studentId)?.reason ?? "",
     };
   });
 
