@@ -51,6 +51,8 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
     entries: Array<{ studentId: number; status: string; lateMinutes?: number; reason?: string }>;
   };
   if (!Array.isArray(entries)) throw ApiError.badRequest("entries array required");
+  const invalid = entries.find((e) => !e || e.studentId === undefined || e.studentId === null);
+  if (invalid) throw ApiError.badRequest("Each entry needs a studentId");
 
   const cleaned = entries.map((e) => ({
     studentId: e.studentId,

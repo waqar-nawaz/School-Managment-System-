@@ -93,10 +93,11 @@ router.post(
       for (const g of guardians) {
         let parent = g.id ? await Parent.findByPk(g.id) : await Parent.findOne({ where: { phone: g.phone } });
         if (!parent) {
+          const gName = String(g.fullName || g.name || "Guardian").trim() || "Guardian";
           const pUser = await createUser({
-            username: `${g.fullName.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`,
+            username: `${gName.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`,
             email: g.email || `${student.admissionNo}-p@school.local`,
-            firstName: g.fullName,
+            firstName: gName,
             lastName: "",
             role: "parent",
             phone: g.phone,
@@ -104,7 +105,7 @@ router.post(
             generatedBy: req.user!.id,
           });
           parent = await Parent.create({
-            fullName: g.fullName, phone: g.phone, email: g.email, relation: g.relation || "guardian",
+            fullName: gName, phone: g.phone, email: g.email, relation: g.relation || "guardian",
             occupation: g.occupation, address: g.address, userId: pUser.id,
           });
         }
