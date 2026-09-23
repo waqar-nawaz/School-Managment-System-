@@ -34,6 +34,10 @@ export class ApiService {
     return this.http.get(`${this.apiUrl}${path}`, { responseType: 'blob' });
   }
 
+  upload<T>(path: string, formData: FormData): Observable<ApiEnvelope<T>> {
+    return this.http.post<ApiEnvelope<T>>(`${this.apiUrl}${path}`, formData);
+  }
+
   private toParams(params?: Record<string, unknown>): Record<string, string> {
     const out: Record<string, string> = {};
     if (!params) return out;

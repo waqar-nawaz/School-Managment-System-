@@ -61,6 +61,12 @@ const NO_EXPORT = new Set([
           <p class="page-subtitle">Manage {{ config.label.toLowerCase() }}</p>
         </div>
         <div class="page-actions">
+          @if (resourceKey === 'media' && canUpload) {
+            <button class="btn btn-primary" (click)="fileInput.click()">
+              <app-icon name="plus" [size]="15" /> Upload file
+            </button>
+            <input #fileInput type="file" hidden (change)="onUpload($event)" />
+          }
           @if (canExport && rows.length) {
             <button class="btn btn-ghost" (click)="exportCsv()"><app-icon name="download" [size]="15" /> Export CSV</button>
           }
@@ -96,7 +102,9 @@ const NO_EXPORT = new Set([
                 @for (col of config.columns; track col.key) {
                   <th>{{ col.label }}</th>
                 }
-                <th style="width:150px;text-align:right">Actions</th>
+                @if (hasActions) {
+                  <th style="width:70px;text-align:right">Actions</th>
+                }
               </tr>
             </thead>
             <tbody>
@@ -114,8 +122,8 @@ const NO_EXPORT = new Set([
                       }
                     </td>
                   }
-                  <td style="text-align:right;white-space:nowrap">
-                    @if (rowEditable || rowDeletable) {
+                  @if (hasActions) {
+                    <td style="text-align:right;white-space:nowrap">
                       <div class="row-menu">
                         <button
                           type="button"
@@ -143,11 +151,11 @@ const NO_EXPORT = new Set([
                           </div>
                         }
                       </div>
-                    }
-                  </td>
+                    </td>
+                  }
                 </tr>
               } @empty {
-                <tr><td [attr.colspan]="config.columns.length + 1" class="empty-cell">No records found.</td></tr>
+                <tr><td [attr.colspan]="config.columns.length + (hasActions ? 1 : 0)" class="empty-cell">No records found.</td></tr>
               }
             </tbody>
           </table>
@@ -347,6 +355,30 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   setPage(p: number): void {
     this.page = p;
     this.load();
+  }
+
+  get hasActions(): boolean {
+    return this.rowEditable || this.rowDeletable;
+  }
+
+  get canUpload(): boolean {
+    return this.perms.hasPermission('media:create');
+  }
+
+  onUpload(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('files', file);
+    this.api.upload('/media/upload', fd).subscribe({
+      next: () => {
+        this.toasts.success('File uploaded');
+        this.load();
+      },
+      error: () => {},
+    });
+    input.value = '';
   }
 
   get rowEditable(): boolean {
