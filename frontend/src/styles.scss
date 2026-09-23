@@ -204,7 +204,8 @@ select.form-control.pagination-size { width: auto; max-width: 130px; flex: 0 0 a
 /* ---------- Row action menu (3-dot) ---------- */
 .row-menu { position: relative; display: inline-block; }
 .row-menu-list {
-  position: absolute; right: 0; top: 100%; margin-top: 0.25rem; min-width: 150px; z-index: 60;
+  /* Fixed so it overlays the table and is never clipped by the scroll area. */
+  position: fixed; min-width: 150px; z-index: 1000;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: var(--shadow-lg); padding: 0.25rem;
 }

@@ -99,7 +99,11 @@ interface Row {
                           <app-icon name="more-vertical" [size]="18" />
                         </button>
                         @if (openMenuId === row.id) {
-                          <div class="row-menu-list" (click)="$event.stopPropagation()">
+                          <div
+                            class="row-menu-list"
+                            [style.top.px]="menuPos?.top"
+                            [style.right.px]="menuPos?.right"
+                            (click)="$event.stopPropagation()">
                             @if (rowEditable) {
                               <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null">
                                 <app-icon name="edit" [size]="15" /> Edit
@@ -253,6 +257,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   fieldErrors: Record<string, string> = {};
   refOptions: Record<string, Array<{ value: unknown; label: string }> | undefined> = {};
   openMenuId: number | null = null;
+  menuPos: { top: number; right: number } | null = null;
   confirm: Row | null = null;
   canCreate = false;
   canEdit = false;
@@ -364,7 +369,13 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   toggleRowMenu(id: number | undefined, event: Event): void {
     event.stopPropagation();
     if (id === undefined) return;
-    this.openMenuId = this.openMenuId === id ? null : id;
+    if (this.openMenuId === id) {
+      this.openMenuId = null;
+      return;
+    }
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.menuPos = { top: rect.bottom + 4, right: window.innerWidth - rect.right };
+    this.openMenuId = id;
   }
 
   @HostListener('document:click')
