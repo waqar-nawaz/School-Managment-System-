@@ -202,11 +202,6 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
       .topbar-title { font-weight: 800; font-size: 1rem; color: var(--heading); }
       .topbar-actions { display: flex; align-items: center; gap: 0.6rem; }
       .topbar-user { color: var(--text-muted); font-size: 0.9rem; }
-      .icon-btn {
-        display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 8px;
-        background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); cursor: pointer;
-      }
-      .icon-btn:hover { background: var(--row-hover); color: var(--text); }
       .admin-content { flex: 1; padding: 1.5rem; }
 
       @media (max-width: 860px) {

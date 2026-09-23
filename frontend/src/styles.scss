@@ -122,6 +122,14 @@ body.dark-theme .btn-ghost-danger:hover { background: rgba(192, 57, 43, 0.2); }
 .btn-sm { padding: 0.3rem 0.65rem; font-size: 0.78rem; border-radius: 5px; }
 .btn-block { width: 100%; justify-content: center; }
 
+/* Borderless icon button that blends with the page (rows, toolbars, headers) */
+.icon-btn {
+  display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 8px;
+  background: transparent; border: none; color: var(--text-muted); cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.icon-btn:hover { background: var(--neutral-100); color: var(--text); }
+
 /* ---------- Page header ---------- */
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem; }
 .page-title { font-size: 1.35rem; font-weight: 800; color: var(--heading); }

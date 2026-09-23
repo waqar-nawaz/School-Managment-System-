@@ -24,10 +24,14 @@ export const errorHandler = (
       return ApiResponse.error(res, 409, message);
     }
     if (name === "SequelizeForeignKeyConstraintError") {
+      const fields = (err as any).fields as Record<string, unknown> | undefined;
+      const field = fields ? Object.keys(fields)[0] : undefined;
       return ApiResponse.error(
         res,
         400,
-        "Invalid reference: a selected related record does not exist."
+        field
+          ? `Invalid ${field}: the selected record does not exist. Please choose an existing one.`
+          : "Invalid reference: the selected related record does not exist."
       );
     }
     if (name === "SequelizeValidationError") {
@@ -42,5 +46,6 @@ export const errorHandler = (
   logger.error(`${req.method} ${req.originalUrl} -> ${(err as Error).message}`, {
     stack: (err as Error).stack,
   });
-  return ApiResponse.error(res, 500, "Internal server error");
+  // User-friendly message; full details are in the server logs.
+  return ApiResponse.error(res, 500, "Something went wrong while processing your request. Please check your input and try again.");
 };
