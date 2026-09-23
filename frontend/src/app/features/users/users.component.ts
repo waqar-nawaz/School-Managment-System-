@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, HostListener, OnInit } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -43,7 +43,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
       <div class="table-responsive">
         <table class="table">
           <thead>
-            <tr><th>Name</th><th>Email</th><th>Username</th><th>Role</th><th>Phone</th><th>Status</th><th style="width:180px;text-align:right">Actions</th></tr>
+            <tr><th>Name</th><th>Email</th><th>Username</th><th>Role</th><th>Phone</th><th>Status</th><th style="width:70px;text-align:right">Actions</th></tr>
           </thead>
           <tbody>
             @for (u of users; track u.id) {
@@ -55,20 +55,40 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                 <td>{{ u.phone || '—' }}</td>
                 <td>@if (u.isActive) {<span class="badge badge-success">Active</span>} @else {<span class="badge badge-danger">Disabled</span>}</td>
                 <td style="text-align:right;white-space:nowrap">
-                  @if (canUpdate) {
-                    <button class="btn btn-sm btn-ghost" (click)="openEdit(u)"><app-icon name="edit" [size]="14" /> Edit</button>
-                  }
-                  @if (canUpdate) {
-                    <button class="btn btn-sm btn-ghost" (click)="openResetPassword(u)"><app-icon name="lock" [size]="14" /> Reset PW</button>
-                  }
-                  @if (canUpdate) {
-                    <button class="btn btn-sm btn-ghost" (click)="toggleStatus(u)">
-                      <app-icon [name]="u.isActive ? 'x' : 'check'" [size]="14" />
-                      {{ u.isActive ? 'Disable' : 'Enable' }}
-                    </button>
-                  }
-                  @if (canDelete) {
-                    <button class="btn btn-sm btn-ghost-danger" (click)="askDelete(u)"><app-icon name="trash" [size]="14" /> Delete</button>
+                  @if (canUpdate || canDelete) {
+                    <div class="row-menu">
+                      <button type="button" class="icon-btn" (click)="toggleRowMenu(u.id, $event)" aria-label="Actions">
+                        <app-icon name="more-vertical" [size]="18" />
+                      </button>
+                      @if (openMenuId === u.id) {
+                        <div
+                          class="row-menu-list"
+                          [style.top.px]="menuPos?.top"
+                          [style.right.px]="menuPos?.right"
+                          (click)="$event.stopPropagation()">
+                          @if (canUpdate) {
+                            <button type="button" class="row-menu-item" (click)="openEdit(u); openMenuId = null">
+                              <app-icon name="edit" [size]="15" /> Edit
+                            </button>
+                          }
+                          @if (canUpdate) {
+                            <button type="button" class="row-menu-item" (click)="openResetPassword(u); openMenuId = null">
+                              <app-icon name="lock" [size]="15" /> Reset password
+                            </button>
+                          }
+                          @if (canUpdate) {
+                            <button type="button" class="row-menu-item" (click)="toggleStatus(u); openMenuId = null">
+                              <app-icon [name]="u.isActive ? 'x' : 'check'" [size]="15" /> {{ u.isActive ? 'Disable' : 'Enable' }}
+                            </button>
+                          }
+                          @if (canDelete) {
+                            <button type="button" class="row-menu-item danger" (click)="askDelete(u); openMenuId = null">
+                              <app-icon name="trash" [size]="15" /> Delete
+                            </button>
+                          }
+                        </div>
+                      }
+                    </div>
                   }
                 </td>
               </tr>
@@ -275,6 +295,8 @@ export class UsersComponent implements OnInit {
   form: Record<string, any> = {};
   saving = false;
   showPassword = false;
+  openMenuId: number | null = null;
+  menuPos: { top: number; right: number } | null = null;
   resetTarget: User | null = null;
   resetPw = { newPassword: '', confirm: '' };
   resetBusy = false;
@@ -340,6 +362,23 @@ export class UsersComponent implements OnInit {
       this.page++;
       this.load();
     }
+  }
+
+  toggleRowMenu(id: number | undefined, event: Event): void {
+    event.stopPropagation();
+    if (id === undefined) return;
+    if (this.openMenuId === id) {
+      this.openMenuId = null;
+      return;
+    }
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.menuPos = { top: rect.bottom + 4, right: window.innerWidth - rect.right };
+    this.openMenuId = id;
+  }
+
+  @HostListener('document:click')
+  closeRowMenu(): void {
+    this.openMenuId = null;
   }
 
   openCreate(): void {
