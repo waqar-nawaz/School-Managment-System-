@@ -71,7 +71,13 @@ if (frontendDist) {
   logger.info(`Serving Angular frontend from ${frontendDist}`);
   app.use(express.static(frontendDist, { maxAge: "1h", index: false }));
   app.get("*", (req, res, next) => {
-    if (req.path.startsWith("/api") || req.path.startsWith("/health") || req.path.startsWith("/uploads")) {
+    // Note: match "/health" exactly — "/health-records" is a SPA route.
+    if (
+      req.path.startsWith("/api") ||
+      req.path === "/health" ||
+      req.path.startsWith("/health/") ||
+      req.path.startsWith("/uploads")
+    ) {
       return next();
     }
     return res.sendFile(path.join(frontendDist, "index.html"), {

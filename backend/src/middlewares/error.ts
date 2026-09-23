@@ -24,8 +24,15 @@ export const errorHandler = (
       return ApiResponse.error(res, 409, message);
     }
     if (name === "SequelizeForeignKeyConstraintError") {
-      const fields = (err as any).fields as Record<string, unknown> | undefined;
-      const field = fields ? Object.keys(fields)[0] : undefined;
+      const fields = (err as any).fields as unknown;
+      let field: string | undefined;
+      if (Array.isArray(fields)) {
+        field = fields[0] !== undefined ? String(fields[0]) : undefined;
+      } else if (fields && typeof fields === "object") {
+        const keys = Object.keys(fields as Record<string, unknown>);
+        const first = keys[0];
+        field = first === undefined ? undefined : /^\d+$/.test(first) ? String((fields as any)[first]) : first;
+      }
       return ApiResponse.error(
         res,
         400,
