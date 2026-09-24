@@ -2,9 +2,13 @@ import { Table, Column, DataType, Index, ForeignKey } from "sequelize-typescript
 import { BaseModel } from "./BaseModel";
 import { Teacher } from "./Teacher";
 import { Staff } from "./Staff";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "payroll_items" })
 export class PayrollItem extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @Column({ type: DataType.STRING(20), allowNull: false })
   month!: string; // YYYY-MM
 
