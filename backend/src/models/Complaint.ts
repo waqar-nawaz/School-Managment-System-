@@ -5,6 +5,9 @@ import { Branch } from "./Branch";
 
 @Table({ tableName: "complaints" })
 export class Complaint extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @Column({ type: DataType.STRING(40), allowNull: false })
   category!: string; // grievance | harassment | infrastructure | other
 
