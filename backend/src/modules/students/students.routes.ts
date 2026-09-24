@@ -91,85 +91,105 @@ router.post(
     const currentClassId = body.currentClassId ?? body.classId;
     const currentSectionId = body.currentSectionId ?? body.sectionId;
 
-    const user = await createUser({
-      username,
-      email,
-      firstName,
-      lastName,
-      role: "student",
-      gender: body.gender,
-      phone: body.phone ?? body.guardianPhone,
-      branchId: req.user?.branchId ?? undefined,
-      sendWelcome: !!body.email,
-      generatedBy: req.user!.id,
-    });
-
-    const student = await Student.create({
-      admissionNo,
-      firstName,
-      lastName,
-      dateOfBirth: dob,
-      gender: body.gender,
-      bloodGroup: body.bloodGroup,
-      nationality: body.nationality,
-      emergencyContact: body.emergencyContact,
-      guardianName: body.guardianName,
-      guardianPhone: body.guardianPhone,
-      address: body.address,
-      email: body.email,
-      admissionDate: body.admissionDate || new Date(),
-      admissionStatus: "admitted",
-      currentClassId,
-      currentSectionId,
-      medicalInfo: body.medicalInfo,
-      userId: user.id,
-      branchId: req.user!.branchId,
-    });
-
-    if (guardians.length) {
-      for (const g of guardians) {
-        let parent = g.id ? await Parent.findByPk(g.id) : await Parent.findOne({ where: { phone: g.phone } });
-        if (!parent) {
-          const gName = String(g.fullName || g.name || "Guardian").trim() || "Guardian";
-          const pUser = await createUser({
-            username: `${gName.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`,
-            email: g.email || `${student.admissionNo}-p@school.local`,
-            firstName: gName,
-            lastName: "",
-            role: "parent",
-            phone: g.phone,
-            sendWelcome: false,
-            generatedBy: req.user!.id,
-          });
-          parent = await Parent.create({
-            fullName: gName, phone: g.phone, email: g.email, relation: g.relation || "guardian",
-            occupation: g.occupation, address: g.address, userId: pUser.id,
-          });
-        }
-        await StudentGuardian.create({ studentId: student.id, parentId: parent.id, relation: parent.relation, isPrimary: !!g.isPrimary });
-      }
-    }
-
-    if (currentClassId) {
-      let academicYearId: number | undefined = body.academicYearId;
-      if (!academicYearId) {
-        const currentYear =
-          (await AcademicYear.findOne({ where: { isCurrent: true } })) ||
-          (await AcademicYear.findOne({ order: [["startDate", "DESC"]] }));
-        academicYearId = currentYear?.id;
-      }
-      if (!academicYearId) throw ApiError.badRequest("No academic year configured; create one first");
-
-      await Enrolment.create({
-        studentId: student.id,
-        academicYearId,
-        classId: currentClassId,
-        sectionId: currentSectionId ?? null,
-        enrolledOn: new Date(),
-        status: "active",
-        rollNo: body.rollNo,
+    const result = await sequelize.transaction(async (transaction) => {
+      const user = await createUser({
+        username,
+        email,
+        firstName,
+        lastName,
+        role: "student",
+        gender: body.gender,
+        phone: body.phone ?? body.guardianPhone,
+        branchId: req.user?.branchId ?? undefined,
+        sendWelcome: !!body.email,
+        generatedBy: req.user!.id,
+        transaction,
       });
-    }
+
+      const student = await Student.create({
+        admissionNo,
+        firstName,
+        lastName,
+        dateOfBirth: dob,
+        gender: body.gender,
+        bloodGroup: body.bloodGroup,
+        nationality: body.nationality,
+        emergencyContact: body.emergencyContact,
+        guardianName: body.guardianName,
+        guardianPhone: body.guardianPhone,
+        address: body.address,
+        email: body.email,
+        admissionDate: body.admissionDate || new Date(),
+        admissionStatus: "admitted",
+        currentClassId,
+        currentSectionId,
+        medicalInfo: body.medicalInfo,
+        userId: user.id,
+        branchId: req.user!.branchId,
+      }, { transaction });
+
+      if (guardians.length) {
+        for (const g of guardians) {
+          let parent = g.id
+            ? await Parent.findByPk(g.id, { transaction })
+            : await Parent.findOne({ where: { phone: g.phone }, transaction });
+
+          if (!parent) {
+            const gName = String(g.fullName || g.name || "Guardian").trim() || "Guardian";
+            const pUser = await createUser({
+              username: `${gName.replace(/\\s+/g, "_").toLowerCase()}_${Date.now()}`,
+              email: g.email || `${student.admissionNo}-p@school.local`,
+              firstName: gName,
+              lastName: "",
+              role: "parent",
+              phone: g.phone,
+              sendWelcome: false,
+              generatedBy: req.user!.id,
+              transaction,
+            });
+            parent = await Parent.create({
+              fullName: gName,
+              phone: g.phone,
+              email: g.email,
+              relation: g.relation || "guardian",
+              occupation: g.occupation,
+              address: g.address,
+              userId: pUser.id,
+            }, { transaction });
+          }
+
+          await StudentGuardian.create({
+            studentId: student.id,
+            parentId: parent.id,
+            relation: parent.relation,
+            isPrimary: !!g.isPrimary,
+          }, { transaction });
+        }
+      }
+
+      if (currentClassId) {
+        let academicYearId: number | undefined = body.academicYearId;
+        if (!academicYearId) {
+          const currentYear =
+            (await AcademicYear.findOne({ where: { isCurrent: true }, transaction })) ||
+            (await AcademicYear.findOne({ order: [["startDate", "DESC"]], transaction }));
+          academicYearId = currentYear?.id;
+        }
+        if (!academicYearId) throw ApiError.badRequest("No academic year configured; create one first");
+
+        await Enrolment.create({
+          studentId: student.id,
+          academicYearId,
+          classId: currentClassId,
+          sectionId: currentSectionId ?? null,
+          enrolledOn: new Date(),
+          status: "active",
+          rollNo: body.rollNo,
+        }, { transaction });
+      }
+
+      return student;
+    });
 
     await writeAuditLog({ action: "create", entity: "student", entityId: student.id, userId: req.user!.id, role: req.user!.role, ip: req.ip, newData: { admissionNo: student.admissionNo } });
     ApiResponse.success(res, 201, "Student admitted", student);
