@@ -198,6 +198,46 @@ const validateExamSchedule = async (body: any, req: Request) => {
   return body;
 };
 
+
+const validateExam = async (body: any, req: Request) => {
+  const existing = await getExisting(Exam, req);
+  const name = String(body.name ?? existing?.name ?? '').trim();
+  const academicYearId = Number(body.academicYearId ?? existing?.academicYearId);
+  const termId = body.termId !== undefined ? (body.termId ? Number(body.termId) : null) : (existing?.termId ?? null);
+  const start = body.startDate !== undefined ? new Date(body.startDate) : (existing?.startDate ? new Date(existing.startDate) : null);
+  const end = body.endDate !== undefined ? new Date(body.endDate) : (existing?.endDate ? new Date(existing.endDate) : null);
+  const maxMarks = Number(body.maxMarks ?? existing?.maxMarks ?? 100);
+  const type = String(body.examType ?? existing?.examType ?? 'midterm');
+  const status = String(body.status ?? existing?.status ?? 'draft');
+  if (!name || !Number.isInteger(academicYearId) || academicYearId <= 0) throw new Error('name and academicYearId are required');
+  if (!['weekly','monthly','midterm','final','quiz'].includes(type)) throw new Error('Invalid exam type');
+  if (!['draft','published','completed','cancelled'].includes(status)) throw new Error('Invalid exam status');
+  if (!start || !end || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) throw new Error('Invalid exam date range');
+  if (!Number.isInteger(maxMarks) || maxMarks <= 0) throw new Error('maxMarks must be a positive integer');
+  const year = await AcademicYear.findByPk(academicYearId);
+  if (!year) throw new Error('Academic year not found');
+  if (start < new Date(year.startDate) || end > new Date(year.endDate)) throw new Error('Exam dates must be within the academic year');
+  if (termId) { const term = await Term.findByPk(termId); if (!term || Number(term.academicYearId) !== academicYearId) throw new Error('Selected term does not belong to the academic year'); }
+  body.name=name; body.academicYearId=academicYearId; body.termId=termId; body.startDate=start; body.endDate=end; body.maxMarks=maxMarks; body.examType=type; body.status=status; body.branchId=req.user?.branchId;
+  return body;
+};
+
+const validateReportCard = async (body: any, req: Request) => {
+  const existing = await getExisting(ReportCard, req);
+  const enrolmentId = Number(body.enrolmentId ?? existing?.enrolmentId);
+  const termId = body.termId !== undefined ? (body.termId ? Number(body.termId) : null) : (existing?.termId ?? null);
+  if (!Number.isInteger(enrolmentId) || enrolmentId <= 0) throw new Error('enrolmentId is required');
+  const enrolment = await Enrolment.findByPk(enrolmentId);
+  if (!enrolment) throw new Error('Enrolment not found');
+  if (req.user?.branchId != null && Number(enrolment.branchId) !== Number(req.user.branchId)) throw new Error('Enrolment does not belong to your branch');
+  if (termId) { const term = await Term.findByPk(termId); if (!term || Number(term.academicYearId) !== Number(enrolment.academicYearId)) throw new Error('Term does not belong to the enrolment academic year'); }
+  if (existing && Number(existing.enrolmentId) !== enrolmentId) throw new Error('Report card enrolment cannot be changed');
+  const duplicate = await ReportCard.findOne({ where: { enrolmentId, termId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error('Report card already exists for this enrolment and term');
+  body.enrolmentId=enrolmentId; body.studentId=enrolment.studentId; body.termId=termId; body.branchId=req.user?.branchId;
+  return body;
+};
+
 const validateRoute = async (body: any, req: Request) => {
   const existing = await getExisting(Route, req);
   const name = String(body.name ?? existing?.name ?? "").trim();
@@ -367,7 +407,7 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "parents", model: Parent, searchable: ["fullName", "phone", "email"], permission: "students" },
   { path: "teachers", model: Teacher, searchable: ["staffNo", "firstName", "lastName", "email"], permission: "teachers" },
   { path: "staff", model: Staff, searchable: ["staffNo", "firstName", "lastName", "department"], permission: "staff" },
-  { path: "exams", model: Exam, searchable: ["name", "examType", "status"], permission: "exams" },
+  { path: "exams", model: Exam, searchable: ["name", "examType", "status"], permission: "exams", beforeCreate: validateExam, beforeUpdate: validateExam },
   {
     path: "exam-schedules", model: ExamSchedule, searchable: ["room", "startTime"], permission: "exams",
     beforeCreate: validateExamSchedule,
@@ -381,13 +421,8 @@ export const RESOURCES: ResourceDefinition[] = [
   {
     path: "report-cards", model: ReportCard, searchable: ["grade"], permission: "exam-results",
     // studentId is required by the model but not on the form — derive it from the enrolment.
-    beforeCreate: async (body) => {
-      if (body.enrolmentId && !body.studentId) {
-        const enrolment = await Enrolment.findByPk(body.enrolmentId);
-        if (enrolment) body.studentId = enrolment.studentId;
-      }
-      return body;
-    },
+    beforeCreate: validateReportCard,
+    beforeUpdate: validateReportCard,
   },
   { path: "assignments", model: Assignment, searchable: ["title", "description"], permission: "assignments" },
   { path: "submissions", model: Submission, searchable: ["status"], permission: "assignments" },
