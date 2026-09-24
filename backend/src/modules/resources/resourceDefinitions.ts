@@ -120,9 +120,38 @@ const validateSection = async (body: any, req: Request) => {
   if (!schoolClass || !schoolClass.isActive) throw new Error("Class not found or inactive");
   if (branchId != null && Number(schoolClass.branchId) !== Number(branchId)) throw new Error("Class does not belong to your branch");
   if (!Number.isInteger(capacity) || capacity < 0) throw new Error("Section capacity must be non-negative");
-  const duplicate = await Section.findOne({ where: { classId, name, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (name.length > 20) throw new Error("Section name must be 20 characters or fewer");
+
+  const duplicate = await Section.findOne({
+    where: {
+      classId,
+      name,
+      ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
+    },
+  });
   if (duplicate) throw new Error("Section already exists in this class");
-  body.classId = classId; body.name = name; body.capacity = capacity; body.branchId = branchId;
+
+  // If the class has an explicit capacity, the combined capacity of its
+  // sections must not exceed the class capacity.
+  const classCapacity = Number(schoolClass.capacity ?? 0);
+  if (classCapacity > 0) {
+    const sectionRows = await Section.findAll({
+      where: {
+        classId,
+        ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
+      },
+      attributes: ["capacity"],
+    });
+    const usedCapacity = sectionRows.reduce((sum, row) => sum + Number(row.capacity ?? 0), 0);
+    if (usedCapacity + capacity > classCapacity) {
+      throw new Error("Total section capacity cannot exceed class capacity");
+    }
+  }
+
+  body.classId = classId;
+  body.name = name;
+  body.capacity = capacity;
+  body.branchId = branchId;
   return body;
 };
 
