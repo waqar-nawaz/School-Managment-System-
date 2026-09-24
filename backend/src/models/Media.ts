@@ -1,4 +1,4 @@
-import { Table, Column, DataType, ForeignKey, BelongsTo } from "sequelize-typescript";
+import { Table, Column, DataType, ForeignKey } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { User } from "./User";
 import { Branch } from "./Branch";
@@ -23,8 +23,6 @@ export class Media extends BaseModel {
   @Column({ type: DataType.STRING(40) })
   category!: string;
 
-  @BelongsTo(() => Branch)
-  branch!: Branch;
 
   @ForeignKey(() => User)
   @Column({ type: DataType.BIGINT.UNSIGNED })
