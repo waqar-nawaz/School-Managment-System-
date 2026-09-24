@@ -316,7 +316,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
       refField('driverId', 'Driver', '/users', 'firstName', 'email', true),
       refField('routeId', 'Route', '/routes', 'name'),
       { key: 'assignedOn', label: 'Assigned on', type: 'dateonly' },
-      boolCol('isActive', 'Active'),
+      { key: 'isActive', label: 'Active', type: 'bool' },
     ]),
   },
   hostels: {
