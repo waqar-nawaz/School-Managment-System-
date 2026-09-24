@@ -3,9 +3,14 @@ import { BaseModel } from "./BaseModel";
 import { User } from "./User";
 import { Student } from "./Student";
 import { Route, RouteStop } from "./Route";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "vehicles" })
 export class Vehicle extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
+
   @Unique
   @Column({ type: DataType.STRING(30), allowNull: false })
   registrationNo!: string;
@@ -32,6 +37,10 @@ export class Vehicle extends BaseModel {
 
 @Table({ tableName: "driver_assignments" })
 export class DriverAssignment extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
+
   @ForeignKey(() => Vehicle)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   vehicleId!: number;
@@ -53,6 +62,10 @@ export class DriverAssignment extends BaseModel {
 
 @Table({ tableName: "student_transport" })
 export class StudentTransport extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
+
   @ForeignKey(() => Student)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   studentId!: number;
