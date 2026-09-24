@@ -137,7 +137,7 @@ router.post(
           if (!parent) {
             const gName = String(g.fullName || g.name || "Guardian").trim() || "Guardian";
             const pUser = await createUser({
-              username: `${gName.replace(/\\s+/g, "_").toLowerCase()}_${Date.now()}`,
+              username: `${gName.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`,
               email: g.email || `${student.admissionNo}-p@school.local`,
               firstName: gName,
               lastName: "",
