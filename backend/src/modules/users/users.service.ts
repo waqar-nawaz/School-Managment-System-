@@ -1,4 +1,5 @@
 import { User } from "../../models";
+import { Transaction } from "sequelize";
 import { hashPassword, generateRandomPassword } from "../../utils/password.util";
 import { ApiError } from "../../utils/ApiError";
 import { sendWelcomeEmail } from "../../services/email.service";
@@ -16,13 +17,14 @@ export interface CreateUserInput {
   branchId?: number;
   sendWelcome?: boolean;
   generatedBy?: number | null;
+  transaction?: Transaction;
 }
 
 export async function createUser(input: CreateUserInput): Promise<User> {
-  const emailTaken = await User.findOne({ where: { email: input.email } });
+  const emailTaken = await User.findOne({ where: { email: input.email }, transaction: input.transaction });
   if (emailTaken) throw ApiError.conflict("Email already registered");
 
-  const usernameTaken = await User.findOne({ where: { username: input.username } });
+  const usernameTaken = await User.findOne({ where: { username: input.username }, transaction: input.transaction });
   if (usernameTaken) throw ApiError.conflict("Username already taken");
 
   const tempPassword = input.password ?? generateRandomPassword();
@@ -37,7 +39,7 @@ export async function createUser(input: CreateUserInput): Promise<User> {
     branchId: input.branchId ?? null,
     passwordHash: await hashPassword(tempPassword),
     passwordChangedAt: new Date(),
-  });
+  }, { transaction: input.transaction });
 
   if (input.sendWelcome) {
     await sendWelcomeEmail(input.email, `${input.firstName} ${input.lastName}`, tempPassword).catch(() => {});
