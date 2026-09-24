@@ -8,7 +8,7 @@ import {
   Route, RouteStop, Vehicle, DriverAssignment, StudentTransport, Hostel, Room, Bed,
   HostelAllocation, Event, Notice, Announcement, Message, Notification, Syllabus,
   LessonPlan, HealthRecord, DisciplineRecord, Complaint, InventoryItem, Asset,
-  AuditLog, VisitorLog,
+  AuditLog, VisitorLog, User,
 } from "../../models";
 
 export interface ResourceDefinition {
@@ -253,7 +253,63 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "routes", model: Route, searchable: ["name", "startPoint", "endPoint"], permission: "routes" },
   { path: "route-stops", model: RouteStop, searchable: ["name"], permission: "route-stops" },
   { path: "vehicles", model: Vehicle, searchable: ["registrationNo", "model"], permission: "vehicles" },
-  { path: "driver-assignments", model: DriverAssignment, searchable: [], permission: "driver-assignments" },
+  {
+    path: "driver-assignments", model: DriverAssignment, searchable: [], permission: "driver-assignments",
+    beforeCreate: async (body, req) => {
+      if (!body.vehicleId || !body.driverId) throw new Error("vehicleId and driverId are required");
+      const vehicle = await Vehicle.findByPk(body.vehicleId);
+      if (!vehicle) throw new Error("Vehicle not found");
+      if (vehicle.status !== "active") throw new Error("Selected vehicle is not active");
+      const driver = await User.findByPk(body.driverId);
+      if (!driver || !driver.isActive) throw new Error("Selected driver is not active");
+      if (body.routeId) {
+        const route = await Route.findByPk(body.routeId);
+        if (!route || !route.isActive) throw new Error("Selected route is not active");
+        if (req.user?.branchId != null && Number(route.branchId) !== Number(req.user.branchId)) {
+          throw new Error("Selected route does not belong to your branch");
+        }
+      }
+      const activeVehicle = await DriverAssignment.findOne({ where: { vehicleId: body.vehicleId, isActive: true } });
+      if (activeVehicle) throw new Error("Vehicle already has an active driver assignment");
+      const activeDriver = await DriverAssignment.findOne({ where: { driverId: body.driverId, isActive: true } });
+      if (activeDriver) throw new Error("Driver already has an active vehicle assignment");
+      const assignedOn = body.assignedOn ? new Date(body.assignedOn) : new Date();
+      if (!Number.isFinite(assignedOn.getTime())) throw new Error("Invalid assignedOn date");
+      body.assignedOn = assignedOn;
+      body.isActive = body.isActive !== false;
+      return body;
+    },
+    beforeUpdate: async (body, req) => {
+      const id = Number(req.params.id);
+      const current = await DriverAssignment.findByPk(id);
+      if (!current) throw new Error("Driver assignment not found");
+      const vehicleId = body.vehicleId ?? current.vehicleId;
+      const driverId = body.driverId ?? current.driverId;
+      const vehicle = await Vehicle.findByPk(vehicleId);
+      const driver = await User.findByPk(driverId);
+      if (!vehicle || vehicle.status !== "active") throw new Error("Selected vehicle is not active");
+      if (!driver || !driver.isActive) throw new Error("Selected driver is not active");
+      const routeId = body.routeId ?? current.routeId;
+      if (routeId) {
+        const route = await Route.findByPk(routeId);
+        if (!route || !route.isActive) throw new Error("Selected route is not active");
+        if (req.user?.branchId != null && Number(route.branchId) !== Number(req.user.branchId)) {
+          throw new Error("Selected route does not belong to your branch");
+        }
+      }
+      const nextActive = body.isActive !== undefined ? Boolean(body.isActive) : current.isActive;
+      if (nextActive) {
+        const vehicleConflict = await DriverAssignment.findOne({ where: { vehicleId, isActive: true, id: { [Op.ne]: id } } });
+        if (vehicleConflict) throw new Error("Vehicle already has another active driver assignment");
+        const driverConflict = await DriverAssignment.findOne({ where: { driverId, isActive: true, id: { [Op.ne]: id } } });
+        if (driverConflict) throw new Error("Driver already has another active vehicle assignment");
+      }
+      const assignedOn = body.assignedOn !== undefined ? new Date(body.assignedOn) : new Date(current.assignedOn);
+      if (!Number.isFinite(assignedOn.getTime())) throw new Error("Invalid assignedOn date");
+      body.assignedOn = assignedOn;
+      return body;
+    },
+  },
   {
     path: "student-transport", model: StudentTransport, searchable: [], permission: "student-transport",
     beforeCreate: async (body, req) => {
