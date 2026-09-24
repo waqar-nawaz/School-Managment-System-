@@ -850,12 +850,83 @@ export const RESOURCES: ResourceDefinition[] = [
   },
   {
     path: "leaves", model: LeaveRequest, searchable: ["leaveType", "status"], permission: "leaves",
-    beforeCreate: (body, req) => {
-      body.userId = req.user?.id;
+    beforeCreate: async (body, req) => {
+      const userId = Number(req.user?.id);
+      const branchId = req.user?.branchId;
+      const leaveType = String(body.leaveType ?? "").trim().toLowerCase();
+      const startDate = new Date(body.startDate);
+      const endDate = new Date(body.endDate);
+      const days = Number(body.days ?? 0);
+      if (!userId) throw new Error("Authenticated user is required");
+      if (!["sick", "casual", "annual", "unpaid", "maternity"].includes(leaveType)) throw new Error("Invalid leave type");
+      if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) throw new Error("Invalid leave date range");
+      if (!Number.isFinite(days) || days <= 0) throw new Error("days must be greater than 0");
+      const user = await User.findByPk(userId);
+      if (!user || !user.isActive) throw new Error("User is not active");
+      if (branchId != null && Number(user.branchId) !== Number(branchId)) throw new Error("User does not belong to your branch");
+      const overlap = await LeaveRequest.findOne({
+        where: {
+          userId,
+          ...(branchId != null ? { branchId } : {}),
+          status: { [Op.in]: ["pending", "approved"] },
+          startDate: { [Op.lte]: endDate },
+          endDate: { [Op.gte]: startDate },
+        },
+      });
+      if (overlap) throw new Error("An overlapping pending or approved leave already exists");
+      body.userId = userId;
+      body.branchId = branchId;
+      body.leaveType = leaveType;
+      body.startDate = startDate;
+      body.endDate = endDate;
+      body.days = days;
+      body.status = "pending";
+      delete body.processedBy;
       return body;
     },
-    beforeUpdate: (body) => {
-      delete body.userId;
+    beforeUpdate: async (body, req) => {
+      const id = Number(req.params.id);
+      const current = await LeaveRequest.findByPk(id);
+      if (!current) throw new Error("Leave request not found");
+      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw new Error("Leave request does not belong to your branch");
+      if (Number(current.userId) !== Number(req.user?.id) && !["admin", "super_admin"].includes(String(req.user?.role))) {
+        throw new Error("You can only update your own leave request");
+      }
+      const startDate = body.startDate !== undefined ? new Date(body.startDate) : new Date(current.startDate);
+      const endDate = body.endDate !== undefined ? new Date(body.endDate) : new Date(current.endDate);
+      const days = Number(body.days ?? current.days);
+      const leaveType = String(body.leaveType ?? current.leaveType).trim().toLowerCase();
+      const status = String(body.status ?? current.status).toLowerCase();
+      if (!["sick", "casual", "annual", "unpaid", "maternity"].includes(leaveType)) throw new Error("Invalid leave type");
+      if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) throw new Error("Invalid leave date range");
+      if (!Number.isFinite(days) || days <= 0) throw new Error("days must be greater than 0");
+      if (!["pending", "approved", "rejected", "cancelled"].includes(status)) throw new Error("Invalid leave status");
+      if (status !== "pending" && !["admin", "super_admin"].includes(String(req.user?.role))) {
+        throw new Error("Only administrators can approve, reject, or cancel leave requests");
+      }
+      const overlap = await LeaveRequest.findOne({
+        where: {
+          userId: current.userId,
+          ...(req.user?.branchId != null ? { branchId: req.user.branchId } : {}),
+          status: { [Op.in]: ["pending", "approved"] },
+          startDate: { [Op.lte]: endDate },
+          endDate: { [Op.gte]: startDate },
+          id: { [Op.ne]: id },
+        },
+      });
+      if (overlap && status !== "rejected" && status !== "cancelled") throw new Error("An overlapping pending or approved leave already exists");
+      body.userId = current.userId;
+      body.branchId = current.branchId ?? req.user?.branchId;
+      body.leaveType = leaveType;
+      body.startDate = startDate;
+      body.endDate = endDate;
+      body.days = days;
+      if (status !== "pending") {
+        body.processedBy = req.user?.id;
+      } else {
+        delete body.processedBy;
+      }
+      body.status = status;
       return body;
     },
   },
