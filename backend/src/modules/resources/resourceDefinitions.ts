@@ -1391,7 +1391,8 @@ export const RESOURCES: ResourceDefinition[] = [
       body.vehicleId = vehicleId; body.driverId = driverId; body.routeId = routeId; body.assignedOn = assignedOn; body.isActive = active; body.branchId = branchId;
       return body;
     },
-  }
+  },
+  {
     path: "student-transport", model: StudentTransport, searchable: [], permission: "student-transport",
     beforeCreate: async (body, req) => {
       const student = await Student.findByPk(body.studentId);
