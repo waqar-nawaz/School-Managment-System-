@@ -821,10 +821,56 @@ const validateComplaint = async (body: any, req: Request) => {
   return body;
 };
 
+const validateRole = async (body: any, req: Request) => {
+  const existing = await getExisting(Role, req);
+  const name = String(body.name ?? existing?.name ?? "").trim().toLowerCase();
+  const label = String(body.label ?? existing?.label ?? name).trim();
+  if (!name) throw new Error("Role name is required");
+  if (!/^[a-z][a-z0-9_-]{1,49}$/.test(name)) throw new Error("Invalid role name");
+  const duplicate = await Role.findOne({ where: { name, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error("Role name already exists");
+  if (existing?.isSystem) {
+    if (body.name !== undefined && name !== existing.name) throw new Error("System role name cannot be changed");
+    body.name = existing.name;
+    body.isSystem = true;
+  } else {
+    body.name = name;
+    body.isSystem = Boolean(body.isSystem ?? existing?.isSystem ?? false);
+  }
+  body.label = label || name;
+  return body;
+};
+
+const validateBranch = async (body: any, req: Request) => {
+  const existing = await getExisting(Branch, req);
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  const code = String(body.code ?? existing?.code ?? "").trim();
+  const email = String(body.email ?? existing?.email ?? "").trim();
+  const phone = String(body.phone ?? existing?.phone ?? "").trim();
+  const isActive = body.isActive !== undefined ? Boolean(body.isActive) : Boolean(existing?.isActive ?? true);
+  if (!name) throw new Error("Branch name is required");
+  if (code && !/^[A-Za-z0-9_-]{1,50}$/.test(code)) throw new Error("Invalid branch code");
+  if (email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) throw new Error("Invalid branch email");
+  const duplicate = await Branch.findOne({
+    where: { name, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
+  });
+  if (duplicate) throw new Error("Branch name already exists");
+  if (code) {
+    const codeDuplicate = await Branch.findOne({ where: { code, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+    if (codeDuplicate) throw new Error("Branch code already exists");
+  }
+  body.name = name;
+  body.code = code || null;
+  body.email = email || null;
+  body.phone = phone || null;
+  body.isActive = isActive;
+  return body;
+};
+
 export const RESOURCES: ResourceDefinition[] = [
-  { path: "roles", model: Role, searchable: ["name", "label", "description"], permission: "roles" },
-  { path: "permissions", model: Permission, searchable: ["key", "label", "category"], permission: "permissions" },
-  { path: "branches", model: Branch, searchable: ["name", "code", "city", "email"], permission: "branches" },
+  { path: "roles", model: Role, searchable: ["name", "label", "description"], permission: "roles", beforeCreate: validateRole, beforeUpdate: validateRole },
+  { path: "permissions", model: Permission, searchable: ["key", "label", "category"], permission: "permissions", readonly: true },
+  { path: "branches", model: Branch, searchable: ["name", "code", "city", "email"], permission: "branches", beforeCreate: validateBranch, beforeUpdate: validateBranch },
   {
     path: "academic-years", model: AcademicYear, searchable: ["name"], permission: "academic",
     beforeCreate: validateAcademicYear,
