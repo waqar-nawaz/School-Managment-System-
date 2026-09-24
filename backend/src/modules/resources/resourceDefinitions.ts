@@ -231,6 +231,266 @@ const validateExam = async (body: any, req: Request) => {
   return body;
 };
 
+const validateHostel = async (body: any, req: Request) => {
+  const existing=await getExisting(Hostel,req); const name=String(body.name??existing?.name??"").trim(); const gender=String(body.gender??existing?.gender??""); const capacity=Number(body.capacity??existing?.capacity??0);
+  if(!name) throw new Error("Hostel name is required"); if(!["boys","girls","coed"].includes(gender)) throw new Error("Invalid hostel gender"); if(!Number.isInteger(capacity)||capacity<1) throw new Error("Hostel capacity must be a positive integer");
+  body.name=name; body.gender=gender; body.capacity=capacity; return body;
+};
+const validateRoom = async (body:any,req:Request) => {
+  const existing=await getExisting(Room,req); const hostelId=Number(body.hostelId??existing?.hostelId); const roomNo=String(body.roomNo??existing?.roomNo??"").trim(); const capacity=Number(body.capacity??existing?.capacity??4);
+  if(!Number.isInteger(hostelId)||hostelId<=0||!roomNo) throw new Error("hostelId and roomNo are required"); if(!Number.isInteger(capacity)||capacity<1) throw new Error("Room capacity must be positive");
+  const hostel=await Hostel.findByPk(hostelId); if(!hostel||hostel.isActive===false) throw new Error("Hostel not found or inactive");
+  const dup=await Room.findOne({where:{hostelId,roomNo,...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}}); if(dup) throw new Error("Room number already exists in this hostel");
+  body.hostelId=hostelId; body.roomNo=roomNo; body.capacity=capacity; return body;
+};
+const validateBed = async (body:any,req:Request) => {
+  const existing=await getExisting(Bed,req); const roomId=Number(body.roomId??existing?.roomId); const bedNo=String(body.bedNo??existing?.bedNo??"").trim();
+  if(!Number.isInteger(roomId)||roomId<=0||!bedNo) throw new Error("roomId and bedNo are required"); const room=await Room.findByPk(roomId); if(!room) throw new Error("Room not found");
+  const dup=await Bed.findOne({where:{roomId,bedNo,...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}}); if(dup) throw new Error("Bed number already exists in this room"); body.roomId=roomId; body.bedNo=bedNo; return body;
+};
+const validateHostelAllocation = async (body:any,req:Request) => {
+  const existing=await getExisting(HostelAllocation,req); const studentId=Number(body.studentId??existing?.studentId); const bedId=Number(body.bedId??existing?.bedId); const branchId=req.user?.branchId; const status=String(body.status??existing?.status??"active"); const monthlyFee=Number(body.monthlyFee??existing?.monthlyFee??0);
+  if(!Number.isInteger(studentId)||!Number.isInteger(bedId)||studentId<=0||bedId<=0) throw new Error("studentId and bedId are required");
+  const student=await Student.findByPk(studentId); if(!student||(branchId!=null&&Number(student.branchId)!==Number(branchId))) throw new Error("Student does not belong to your branch");
+  const bed=await Bed.findByPk(bedId); if(!bed||bed.status!=="available") throw new Error("Selected bed is not available"); const room=await Room.findByPk(bed.roomId); if(!room) throw new Error("Room not found"); const hostel=await Hostel.findByPk(room.hostelId); if(!hostel||!hostel.isActive) throw new Error("Hostel is inactive");
+  const activeBed=await HostelAllocation.findOne({where:{bedId,status:"active",...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}}); if(activeBed) throw new Error("Selected bed is already allocated");
+  if(status==="active"){const activeStudent=await HostelAllocation.findOne({where:{studentId,status:"active",...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}}); if(activeStudent) throw new Error("Student already has an active hostel allocation");}
+  if(!Number.isFinite(monthlyFee)||monthlyFee<0) throw new Error("monthlyFee must be non-negative"); body.studentId=studentId; body.bedId=bedId; body.roomId=room.id; body.hostelId=hostel.id; body.status=status; body.monthlyFee=monthlyFee; return body;
+};
+
+import { Request } from "express";
+import { Op } from "sequelize";
+import {
+  Role, Permission, Branch, AcademicYear, Term, SchoolClass, Section, Subject, Student,
+  ClassSubject, Enrolment, Parent, Teacher, Staff, Exam, ExamSchedule, ExamResult,
+  ReportCard, Assignment, Submission, GradebookEntry, GradeScale, Timetable, Period,
+  FeeType, Expense, PayrollItem, Payslip, LeaveRequest, Book, BookCopy, BookFine,
+  Route, RouteStop, Vehicle, DriverAssignment, StudentTransport, Hostel, Room, Bed,
+  HostelAllocation, Event, Notice, Announcement, Message, Notification, Syllabus,
+  LessonPlan, HealthRecord, DisciplineRecord, Complaint, InventoryItem, Asset,
+  AuditLog, VisitorLog, User,
+} from "../../models";
+
+export interface ResourceDefinition {
+  path: string;
+  model: any;
+  searchable: string[];
+  permission: string; // module name used for :read/:create/:update/:delete
+  defaultSort?: [string, "ASC" | "DESC"];
+  readonly?: boolean; // no write operations exposed
+  beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
+  beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
+  includes?: any[];
+  decorate?: (row: any) => Record<string, unknown>;
+}
+
+/** Row → plain object (works for Sequelize instances and plain rows). */
+const plain = (row: any): Record<string, any> =>
+  row && typeof row.get === "function" ? row.get({ plain: true }) : { ...row };
+
+const getExisting = async (model: any, req: Request) => {
+  const id = req.params?.id;
+  return id ? model.findByPk(id) : null;
+};
+
+const validateAcademicYear = async (body: any, req: Request) => {
+  const existing = await getExisting(AcademicYear, req);
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  const start = body.startDate !== undefined ? new Date(body.startDate) : (existing?.startDate ? new Date(existing.startDate) : null);
+  const end = body.endDate !== undefined ? new Date(body.endDate) : (existing?.endDate ? new Date(existing.endDate) : null);
+  const isCurrent = body.isCurrent !== undefined ? Boolean(body.isCurrent) : Boolean(existing?.isCurrent);
+  const isClosed = body.isClosed !== undefined ? Boolean(body.isClosed) : Boolean(existing?.isClosed);
+  if (!name) throw new Error("Academic year name is required");
+  if (!start || !end || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end) {
+    throw new Error("Academic year startDate must be before endDate");
+  }
+  if (isClosed && isCurrent) throw new Error("A closed academic year cannot be current");
+  if (isCurrent) {
+    const current = await AcademicYear.findOne({
+      where: { isCurrent: true, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
+    });
+    if (current) throw new Error("Another academic year is already marked as current");
+  }
+  body.name = name;
+  body.startDate = start;
+  body.endDate = end;
+  body.isCurrent = isCurrent;
+  body.isClosed = isClosed;
+  return body;
+};
+
+const validateTerm = async (body: any, req: Request) => {
+  const existing = await getExisting(Term, req);
+  const academicYearId = body.academicYearId ?? existing?.academicYearId;
+  if (!academicYearId) throw new Error("academicYearId is required");
+  const year = await AcademicYear.findByPk(academicYearId);
+  if (!year) throw new Error("Academic year not found");
+  const start = body.startDate !== undefined ? new Date(body.startDate) : existing?.startDate;
+  const end = body.endDate !== undefined ? new Date(body.endDate) : existing?.endDate;
+  if (start && end && (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end)) {
+    throw new Error("Term startDate must be before endDate");
+  }
+  if (start && (start < new Date(year.startDate) || start > new Date(year.endDate))) {
+    throw new Error("Term startDate must be within the academic year");
+  }
+  if (end && (end < new Date(year.startDate) || end > new Date(year.endDate))) {
+    throw new Error("Term endDate must be within the academic year");
+  }
+  return body;
+};
+
+const validateEnrolment = async (body: any, req: Request) => {
+  const existing = await getExisting(Enrolment, req);
+  const classId = Number(body.classId ?? existing?.classId);
+  const sectionId = body.sectionId !== undefined ? (body.sectionId ? Number(body.sectionId) : null) : (existing?.sectionId ?? null);
+  const studentId = Number(body.studentId ?? existing?.studentId);
+  const academicYearId = Number(body.academicYearId ?? existing?.academicYearId);
+  const status = String(body.status ?? existing?.status ?? "active");
+  const branchId = req.user?.branchId;
+  if (!Number.isInteger(studentId) || studentId <= 0 || !Number.isInteger(classId) || classId <= 0 || !Number.isInteger(academicYearId) || academicYearId <= 0) {
+    throw new Error("studentId, academicYearId and classId are required");
+  }
+  if (existing && (Number(existing.studentId) !== studentId || Number(existing.academicYearId) !== academicYearId)) {
+    throw new Error("Student and academic year cannot be changed on an existing enrolment");
+  }
+  if (!["active", "promoted", "graduated", "transferred", "withdrawn", "expelled"].includes(status)) {
+    throw new Error("Invalid enrolment status");
+  }
+  const student = await Student.findByPk(studentId);
+  if (!student) throw new Error("Student not found");
+  if (branchId != null && Number(student.branchId) !== Number(branchId)) throw new Error("Student does not belong to your branch");
+  const schoolClass = await SchoolClass.findByPk(classId);
+  if (!schoolClass || !schoolClass.isActive) throw new Error("Class not found or inactive");
+  if (branchId != null && Number(schoolClass.branchId) !== Number(branchId)) throw new Error("Class does not belong to your branch");
+  if (sectionId) {
+    const section = await Section.findByPk(sectionId);
+    if (!section || !section.isActive) throw new Error("Section not found or inactive");
+    if (Number(section.classId) !== classId) throw new Error("Selected section does not belong to the selected class");
+  }
+  const year = await AcademicYear.findByPk(academicYearId);
+  if (!year) throw new Error("Academic year not found");
+  if (year.isClosed && status === "active") throw new Error("A closed academic year cannot have an active enrolment");
+  const duplicate = await Enrolment.findOne({
+    where: {
+      studentId,
+      academicYearId,
+      status: "active",
+      ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
+    },
+  });
+  if (duplicate) throw new Error("Student already has an active enrolment for this academic year");
+  body.studentId = studentId;
+  body.academicYearId = academicYearId;
+  body.classId = classId;
+  body.sectionId = sectionId;
+  body.status = status;
+  body.branchId = branchId;
+  return body;
+};
+
+const validateExamResult = async (body: any, req: Request) => {
+  const existing = await getExisting(ExamResult, req);
+  const examId = Number(body.examId ?? existing?.examId);
+  const studentId = Number(body.studentId ?? existing?.studentId);
+  const subjectId = Number(body.subjectId ?? existing?.subjectId);
+  const obtained = Number(body.marksObtained ?? existing?.marksObtained);
+  const max = Number(body.maxMarks ?? existing?.maxMarks);
+  const branchId = req.user?.branchId;
+  if (!Number.isInteger(examId) || examId <= 0 || !Number.isInteger(studentId) || studentId <= 0 || !Number.isInteger(subjectId) || subjectId <= 0) {
+    throw new Error("examId, studentId and subjectId are required");
+  }
+  if (!Number.isFinite(max) || max <= 0) throw new Error("maxMarks must be greater than 0");
+  if (!Number.isFinite(obtained) || obtained < 0 || obtained > max) throw new Error("marksObtained must be between 0 and maxMarks");
+  const exam = await Exam.findByPk(examId);
+  if (!exam) throw new Error("Exam not found");
+  const student = await Student.findByPk(studentId);
+  if (!student) throw new Error("Student not found");
+  if (branchId != null && Number(student.branchId) !== Number(branchId)) throw new Error("Student does not belong to your branch");
+  const enrolment = await Enrolment.findOne({
+    where: { studentId, academicYearId: exam.academicYearId, ...(branchId != null ? { branchId } : {}), status: { [Op.notIn]: ["withdrawn", "expelled"] } },
+  });
+  if (!enrolment) throw new Error("Student is not enrolled in the exam academic year");
+  const classSubject = await ClassSubject.findOne({ where: { classId: enrolment.classId, subjectId } });
+  if (!classSubject) throw new Error("Subject is not assigned to the student's class");
+  const duplicate = await ExamResult.findOne({
+    where: { examId, studentId, subjectId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
+  });
+  if (duplicate) throw new Error("Exam result already exists for this student and subject");
+  body.examId = examId;
+  body.studentId = studentId;
+  body.subjectId = subjectId;
+  body.maxMarks = max;
+  body.marksObtained = obtained;
+  body.branchId = branchId;
+  return body;
+};
+
+const parseTimeMinutes = (value: unknown): number | null => {
+  const s = String(value ?? "").trim();
+  const m = /^(\\d{1,2}):(\\d{2})$/.exec(s);
+  if (!m) return null;
+  const h = Number(m[1]), min = Number(m[2]);
+  return h >= 0 && h <= 23 && min >= 0 && min <= 59 ? h * 60 + min : null;
+};
+
+const validateExamSchedule = async (body: any, req: Request) => {
+  const existing = await getExisting(ExamSchedule, req);
+  const examId = body.examId ?? existing?.examId;
+  const classId = body.classId ?? existing?.classId;
+  const sectionId = body.sectionId ?? existing?.sectionId;
+  const subjectId = body.subjectId ?? existing?.subjectId;
+  const date = body.date !== undefined ? new Date(body.date) : existing?.date;
+  const start = parseTimeMinutes(body.startTime ?? existing?.startTime);
+  const end = parseTimeMinutes(body.endTime ?? existing?.endTime);
+  if (!examId || !classId || !subjectId) throw new Error("examId, classId and subjectId are required");
+  if (start === null || end === null || start >= end) throw new Error("Invalid exam schedule time range");
+  if (!date || !Number.isFinite(new Date(date).getTime())) throw new Error("Valid exam date is required");
+  const exam = await Exam.findByPk(examId);
+  if (!exam) throw new Error("Exam not found");
+  if (exam.startDate && date < new Date(exam.startDate)) throw new Error("Exam schedule date is before the exam start date");
+  if (exam.endDate && date > new Date(exam.endDate)) throw new Error("Exam schedule date is after the exam end date");
+  const section = sectionId ? await Section.findByPk(sectionId) : null;
+  if (sectionId && (!section || Number(section.classId) !== Number(classId))) {
+    throw new Error("Selected section does not belong to the selected class");
+  }
+  const schoolClass = await SchoolClass.findByPk(classId);
+  if (!schoolClass || !schoolClass.isActive) throw new Error("Selected class is not active");
+  if (req.user?.branchId != null && Number(schoolClass.branchId) !== Number(req.user.branchId)) throw new Error("Selected class does not belong to your branch");
+  const classSubject = await ClassSubject.findOne({ where: { classId, subjectId } });
+  if (!classSubject) throw new Error("Subject is not assigned to the selected class");
+  body.examId = Number(examId);
+  body.classId = Number(classId);
+  body.sectionId = sectionId ? Number(sectionId) : null;
+  body.subjectId = Number(subjectId);
+  body.date = new Date(date);
+  body.branchId = req.user?.branchId;
+  return body;
+};
+
+
+const validateExam = async (body: any, req: Request) => {
+  const existing = await getExisting(Exam, req);
+  const name = String(body.name ?? existing?.name ?? '').trim();
+  const academicYearId = Number(body.academicYearId ?? existing?.academicYearId);
+  const termId = body.termId !== undefined ? (body.termId ? Number(body.termId) : null) : (existing?.termId ?? null);
+  const start = body.startDate !== undefined ? new Date(body.startDate) : (existing?.startDate ? new Date(existing.startDate) : null);
+  const end = body.endDate !== undefined ? new Date(body.endDate) : (existing?.endDate ? new Date(existing.endDate) : null);
+  const maxMarks = Number(body.maxMarks ?? existing?.maxMarks ?? 100);
+  const type = String(body.examType ?? existing?.examType ?? 'midterm');
+  const status = String(body.status ?? existing?.status ?? 'draft');
+  if (!name || !Number.isInteger(academicYearId) || academicYearId <= 0) throw new Error('name and academicYearId are required');
+  if (!['weekly','monthly','midterm','final','quiz'].includes(type)) throw new Error('Invalid exam type');
+  if (!['draft','published','completed','cancelled'].includes(status)) throw new Error('Invalid exam status');
+  if (!start || !end || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) throw new Error('Invalid exam date range');
+  if (!Number.isInteger(maxMarks) || maxMarks <= 0) throw new Error('maxMarks must be a positive integer');
+  const year = await AcademicYear.findByPk(academicYearId);
+  if (!year) throw new Error('Academic year not found');
+  if (start < new Date(year.startDate) || end > new Date(year.endDate)) throw new Error('Exam dates must be within the academic year');
+  if (termId) { const term = await Term.findByPk(termId); if (!term || Number(term.academicYearId) !== academicYearId) throw new Error('Selected term does not belong to the academic year'); }
+  body.name=name; body.academicYearId=academicYearId; body.termId=termId; body.startDate=start; body.endDate=end; body.maxMarks=maxMarks; body.examType=type; body.status=status; body.branchId=req.user?.branchId;
+  return body;
+};
+
 const validateGradeScale = async (body: any, req: Request) => {
   const existing=await getExisting(GradeScale,req); const name=String(body.name??existing?.name??"").trim(); const grade=String(body.grade??existing?.grade??"").trim();
   const min=Number(body.minPercentage??existing?.minPercentage); const max=Number(body.maxPercentage??existing?.maxPercentage); const branchId=req.user?.branchId;
@@ -847,10 +1107,11 @@ export const RESOURCES: ResourceDefinition[] = [
       return body;
     },
   },
-  { path: "hostels", model: Hostel, searchable: ["name", "wardenName"], permission: "hostels" },
+  { path: "hostels", model: Hostel, searchable: ["name", "wardenName"], permission: "hostels", beforeCreate: validateHostel, beforeUpdate: validateHostel },
   {
     path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "rooms",
     includes: [{ association: "hostel", attributes: ["id", "name"] }],
+    beforeCreate: validateRoom, beforeUpdate: validateRoom,
     decorate: (row) => {
       const p = plain(row);
       p.hostelName = p.hostel?.name ?? "";
@@ -860,6 +1121,7 @@ export const RESOURCES: ResourceDefinition[] = [
   {
     path: "beds", model: Bed, searchable: ["bedNo"], permission: "beds",
     includes: [{ association: "room", attributes: ["id", "roomNo"] }],
+    beforeCreate: validateBed, beforeUpdate: validateBed,
     decorate: (row) => {
       const p = plain(row);
       p.roomNo = p.room?.roomNo ?? "";
@@ -912,6 +1174,80 @@ export const RESOURCES: ResourceDefinition[] = [
       return body;
     },
   },
+  { path: "events", model: Event, searchable: ["title", "category", "venue"], permission: "events" },
+  { path: "notices", model: Notice, searchable: ["title", "type"], permission: "notices" },
+  { path: "announcements", model: Announcement, searchable: ["title", "priority"], permission: "announcements" },
+  {
+    path: "messages", model: Message, searchable: ["subject"], permission: "messages",
+    beforeCreate: (body, req) => {
+      body.senderId = req.user?.id;
+      return body;
+    },
+    beforeUpdate: (body) => {
+      delete body.senderId;
+      return body;
+    },
+  },
+  { path: "notifications", model: Notification, searchable: ["title"], permission: "notifications", readonly: true },
+  { path: "syllabus", model: Syllabus, searchable: ["title"], permission: "syllabus", beforeCreate: (body, req) => validateTeachingPlan(body, req), beforeUpdate: (body, req) => validateTeachingPlan(body, req) },
+  { path: "lesson-plans", model: LessonPlan, searchable: ["title"], permission: "lesson-plans", beforeCreate: (body, req) => validateTeachingPlan({ ...body, __lessonPlan: true }, req), beforeUpdate: (body, req) => validateTeachingPlan({ ...body, __lessonPlan: true }, req) },
+  { path: "health-records", model: HealthRecord, searchable: ["bloodGroup"], permission: "health-records", readonly: true },
+  {
+    path: "discipline-records", model: DisciplineRecord, searchable: ["title", "type", "status"], permission: "discipline-records",
+    beforeCreate: validateDiscipline,
+    beforeUpdate: (body, req) => validateDiscipline(body, req),
+  },
+  {
+    path: "complaints", model: Complaint, searchable: ["title", "category", "status"], permission: "complaints",
+    beforeCreate: (body, req) => {
+      body.submittedBy = req.user?.id;
+      return body;
+    },
+    beforeUpdate: (body) => {
+      delete body.submittedBy;
+      return body;
+    },
+  },
+  {
+    path: "inventory", model: InventoryItem, searchable: ["name", "sku", "category"], permission: "inventory",
+    beforeCreate: validateInventory,
+    beforeUpdate: validateInventory,
+  },
+  {
+    path: "assets", model: Asset, searchable: ["name", "assetCode", "category"], permission: "inventory",
+    beforeCreate: validateAsset,
+    beforeUpdate: validateAsset,
+  },
+  { path: "audit-logs", model: AuditLog, searchable: ["action", "entity"], permission: "audit-logs", readonly: true },
+  {
+    path: "visitor-logs", model: VisitorLog, searchable: ["visitorName", "purpose"], permission: "visitors",
+    beforeCreate: (body, req) => {
+      const checkedIn = body.checkedIn ? new Date(body.checkedIn) : new Date();
+      if (!Number.isFinite(checkedIn.getTime())) throw new Error("Invalid checkedIn date");
+      const checkedOut = body.checkedOut ? new Date(body.checkedOut) : null;
+      if (checkedOut && (!Number.isFinite(checkedOut.getTime()) || checkedOut < checkedIn)) {
+        throw new Error("checkedOut must be after checkedIn");
+      }
+      body.checkedIn = checkedIn;
+      body.checkedOut = checkedOut;
+      body.registeredBy = req.user?.id;
+      return body;
+    },
+    beforeUpdate: async (body, req) => {
+      const current = await VisitorLog.findByPk(req.params.id);
+      if (!current) throw new Error("Visitor log not found");
+      const checkedIn = body.checkedIn !== undefined ? new Date(body.checkedIn) : new Date(current.checkedIn);
+      const checkedOut = body.checkedOut !== undefined ? (body.checkedOut ? new Date(body.checkedOut) : null) : (current.checkedOut ? new Date(current.checkedOut) : null);
+      if (!Number.isFinite(checkedIn.getTime()) || (checkedOut && (!Number.isFinite(checkedOut.getTime()) || checkedOut < checkedIn))) {
+        throw new Error("Invalid visitor check-in/check-out time");
+      }
+      body.checkedIn = checkedIn;
+      body.checkedOut = checkedOut;
+      delete body.registeredBy;
+      return body;
+    },
+  },
+]  },
   { path: "events", model: Event, searchable: ["title", "category", "venue"], permission: "events" },
   { path: "notices", model: Notice, searchable: ["title", "type"], permission: "notices" },
   { path: "announcements", model: Announcement, searchable: ["title", "priority"], permission: "announcements" },
