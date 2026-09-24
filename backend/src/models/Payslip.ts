@@ -1,9 +1,13 @@
 import { Table, Column, Unique, DataType, ForeignKey } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { PayrollItem } from "./PayrollItem";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "payslips" })
 export class Payslip extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @Unique
   @Column({ type: DataType.STRING(40), allowNull: false })
   payslipNo!: string;
