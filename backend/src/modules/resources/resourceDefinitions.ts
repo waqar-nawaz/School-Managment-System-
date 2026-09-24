@@ -1256,11 +1256,10 @@ export const RESOURCES: ResourceDefinition[] = [
       const leaveType = String(body.leaveType ?? "").trim().toLowerCase();
       const startDate = new Date(body.startDate);
       const endDate = new Date(body.endDate);
-      const days = Number(body.days ?? 0);
       if (!userId) throw new Error("Authenticated user is required");
       if (!["sick", "casual", "annual", "unpaid", "maternity"].includes(leaveType)) throw new Error("Invalid leave type");
       if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) throw new Error("Invalid leave date range");
-      if (!Number.isFinite(days) || days <= 0) throw new Error("days must be greater than 0");
+      const days = Math.floor((Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) - Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000) + 1;
       const user = await User.findByPk(userId);
       if (!user || !user.isActive) throw new Error("User is not active");
       if (branchId != null && Number(user.branchId) !== Number(branchId)) throw new Error("User does not belong to your branch");
