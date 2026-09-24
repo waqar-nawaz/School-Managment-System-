@@ -1141,12 +1141,37 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "announcements", model: Announcement, searchable: ["title", "priority"], permission: "announcements" },
   {
     path: "messages", model: Message, searchable: ["subject"], permission: "messages",
-    beforeCreate: (body, req) => {
-      body.senderId = req.user?.id;
+    beforeCreate: async (body, req) => {
+      const senderId = Number(req.user?.id);
+      const branchId = req.user?.branchId;
+      if (!senderId) throw new Error("Authenticated sender is required");
+      const sender = await User.findByPk(senderId);
+      if (!sender || !sender.isActive) throw new Error("Sender is not active");
+      if (branchId != null && Number(sender.branchId) !== Number(branchId)) throw new Error("Sender does not belong to your branch");
+      const kind = String(body.kind ?? "direct").trim().toLowerCase();
+      if (!["direct", "broadcast", "group"].includes(kind)) throw new Error("Invalid message kind");
+      const messageBody = String(body.body ?? "").trim();
+      if (!messageBody) throw new Error("Message body is required");
+      body.senderId = senderId;
+      body.branchId = branchId;
+      body.kind = kind;
+      body.body = messageBody;
+      body.isGroup = kind === "group";
       return body;
     },
-    beforeUpdate: (body) => {
+    beforeUpdate: async (body, req) => {
+      const current = await Message.findByPk(req.params.id);
+      if (!current) throw new Error("Message not found");
+      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw new Error("Message does not belong to your branch");
       delete body.senderId;
+      body.branchId = current.branchId ?? req.user?.branchId;
+      if (body.kind !== undefined) {
+        const kind = String(body.kind).trim().toLowerCase();
+        if (!["direct", "broadcast", "group"].includes(kind)) throw new Error("Invalid message kind");
+        body.kind = kind;
+        body.isGroup = kind === "group";
+      }
+      if (body.body !== undefined && !String(body.body).trim()) throw new Error("Message body is required");
       return body;
     },
   },
