@@ -88,10 +88,14 @@ router.post(
     if (providedEmail && !/^\S+@\S+\.\S+$/.test(providedEmail)) throw ApiError.badRequest("Invalid email");
     const slug = String(admissionNo).toLowerCase().replace(/[^a-z0-9]+/g, "") || "student";
     const unique = `${Date.now().toString(36)}${Math.floor(Math.random() * 10000)}`;
-    const email = providedEmail || `${slug}.${unique}@school.local`;
+    // Student names are not unique. Admission number is the student identity.
+    // The linked login account still needs unique email/username values.
+    let email = providedEmail || `${slug}.${unique}@school.local`;
     let username = String(body.username || "").trim();
     if (!username) username = providedEmail ? providedEmail.split("@")[0] : `student_${unique}`;
     if (username.length < 3) username = `student_${unique}`;
+    if (await User.findOne({ where: { email } })) email = `${slug}.${unique}@school.local`;
+    if (await User.findOne({ where: { username } })) username = `${username}_${unique}`;
 
     const dob = body.dateOfBirth ?? body.dob;
     const currentClassId = body.currentClassId ?? body.classId;
