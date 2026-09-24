@@ -1,4 +1,5 @@
 import { Request } from "express";
+import { ApiError } from "../../utils/ApiError";
 import { Op } from "sequelize";
 import {
   Role, Permission, Branch, AcademicYear, Term, SchoolClass, Section, Subject, Student, Certificate,
