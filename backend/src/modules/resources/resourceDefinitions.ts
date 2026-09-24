@@ -254,7 +254,72 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "route-stops", model: RouteStop, searchable: ["name"], permission: "route-stops" },
   { path: "vehicles", model: Vehicle, searchable: ["registrationNo", "model"], permission: "vehicles" },
   { path: "driver-assignments", model: DriverAssignment, searchable: [], permission: "driver-assignments" },
-  { path: "student-transport", model: StudentTransport, searchable: [], permission: "student-transport" },
+  {
+    path: "student-transport", model: StudentTransport, searchable: [], permission: "student-transport",
+    beforeCreate: async (body, req) => {
+      const student = await Student.findByPk(body.studentId);
+      if (!student) throw new Error("Student not found");
+      if (req.user?.branchId != null && Number(student.branchId) !== Number(req.user.branchId)) {
+        throw new Error("Selected student does not belong to your branch");
+      }
+      const route = await Route.findByPk(body.routeId);
+      if (!route || !route.isActive) throw new Error("Selected route is not active");
+      if (req.user?.branchId != null && Number(route.branchId) !== Number(req.user.branchId)) {
+        throw new Error("Selected route does not belong to your branch");
+      }
+      if (body.stopId) {
+        const stop = await RouteStop.findByPk(body.stopId);
+        if (!stop || Number(stop.routeId) !== Number(body.routeId)) throw new Error("Selected stop does not belong to the selected route");
+      }
+      if (body.vehicleId) {
+        const vehicle = await Vehicle.findByPk(body.vehicleId);
+        if (!vehicle || vehicle.status !== "active") throw new Error("Selected vehicle is not active");
+      }
+      const active = await StudentTransport.findOne({ where: { studentId: body.studentId, isActive: true } });
+      if (active) throw new Error("Student already has an active transport assignment");
+      const start = body.startDate ? new Date(body.startDate) : new Date();
+      const end = body.endDate ? new Date(body.endDate) : null;
+      if (!Number.isFinite(start.getTime()) || (end && (!Number.isFinite(end.getTime()) || end < start))) {
+        throw new Error("Invalid transport date range");
+      }
+      body.startDate = start;
+      body.endDate = end;
+      body.isActive = true;
+      return body;
+    },
+    beforeUpdate: async (body, req) => {
+      const id = Number(req.params.id);
+      const current = await StudentTransport.findByPk(id);
+      if (!current) throw new Error("Student transport assignment not found");
+      const studentId = body.studentId ?? current.studentId;
+      const routeId = body.routeId ?? current.routeId;
+      const student = await Student.findByPk(studentId);
+      const route = await Route.findByPk(routeId);
+      if (!student || !route) throw new Error("Student or route not found");
+      if (req.user?.branchId != null && (Number(student.branchId) !== Number(req.user.branchId) || Number(route.branchId) !== Number(req.user.branchId))) {
+        throw new Error("Student or route does not belong to your branch");
+      }
+      if (body.stopId) {
+        const stop = await RouteStop.findByPk(body.stopId);
+        if (!stop || Number(stop.routeId) !== Number(routeId)) throw new Error("Selected stop does not belong to the selected route");
+      }
+      if (body.vehicleId) {
+        const vehicle = await Vehicle.findByPk(body.vehicleId);
+        if (!vehicle || vehicle.status !== "active") throw new Error("Selected vehicle is not active");
+      }
+      const nextActive = body.isActive !== undefined ? Boolean(body.isActive) : current.isActive;
+      if (nextActive) {
+        const duplicate = await StudentTransport.findOne({ where: { studentId, isActive: true, id: { [Op.ne]: id } } });
+        if (duplicate) throw new Error("Student already has another active transport assignment");
+      }
+      const start = body.startDate !== undefined ? new Date(body.startDate) : new Date(current.startDate);
+      const end = body.endDate !== undefined ? (body.endDate ? new Date(body.endDate) : null) : (current.endDate ? new Date(current.endDate) : null);
+      if (!Number.isFinite(start.getTime()) || (end && (!Number.isFinite(end.getTime()) || end < start))) throw new Error("Invalid transport date range");
+      body.startDate = start;
+      body.endDate = end;
+      return body;
+    },
+  },
   { path: "hostels", model: Hostel, searchable: ["name", "wardenName"], permission: "hostels" },
   {
     path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "rooms",
