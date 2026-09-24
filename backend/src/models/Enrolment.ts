@@ -4,9 +4,14 @@ import { Student } from "./Student";
 import { AcademicYear } from "./AcademicYear";
 import { SchoolClass } from "./SchoolClass";
 import { Section } from "./Section";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "enrolments" })
 export class Enrolment extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
+
   @Unique("uq_enrolment_year_student")
   @ForeignKey(() => Student)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
