@@ -36,12 +36,15 @@ const getExisting = async (model: any, req: Request) => {
 
 const validateStaffProfile = async (body: any, req: Request, model: any, label: string) => {
   const existing = await getExisting(model, req);
-  const branchId = req.user?.branchId;
+  const branchId = Number(req.user?.branchId);
+  const expectedRole = label === "teacher" ? "teacher" : "staff";
+  if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
   const userId = Number(body.userId ?? existing?.userId);
-  if (!Number.isInteger(userId) || userId <= 0) throw new Error("userId is required");
+  if (!Number.isInteger(userId) || userId <= 0) throw ApiError.badRequest("userId is required");
   const user = await User.findByPk(userId);
-  if (!user || !user.isActive) throw new Error(`Selected ${label} user is not active`);
-  if (branchId != null && Number(user.branchId) !== Number(branchId)) throw new Error(`Selected ${label} user does not belong to your branch`);
+  if (!user || !user.isActive) throw ApiError.badRequest(`Selected ${label} user is not active`);
+  if (String(user.role) !== expectedRole) throw ApiError.badRequest(`Selected user must have the ${expectedRole} role`);
+  if (Number(user.branchId) !== branchId) throw ApiError.badRequest(`Selected ${label} user does not belong to your branch`);
   const staffNo = String(body.staffNo ?? existing?.staffNo ?? "").trim();
   if (!staffNo) throw new Error("staffNo is required");
   const duplicate = await model.findOne({ where: { staffNo, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
@@ -55,12 +58,14 @@ const validateStaffProfile = async (body: any, req: Request, model: any, label: 
 
 const validateParentProfile = async (body: any, req: Request) => {
   const existing = await getExisting(Parent, req);
-  const branchId = req.user?.branchId;
+  const branchId = Number(req.user?.branchId);
+  if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
   const userId = Number(body.userId ?? existing?.userId);
-  if (!Number.isInteger(userId) || userId <= 0) throw new Error("userId is required");
+  if (!Number.isInteger(userId) || userId <= 0) throw ApiError.badRequest("userId is required");
   const user = await User.findByPk(userId);
-  if (!user || !user.isActive) throw new Error("Selected parent user is not active");
-  if (branchId != null && Number(user.branchId) !== Number(branchId)) throw new Error("Selected parent user does not belong to your branch");
+  if (!user || !user.isActive) throw ApiError.badRequest("Selected parent user is not active");
+  if (String(user.role) !== "parent") throw ApiError.badRequest("Selected user must have the parent role");
+  if (Number(user.branchId) !== branchId) throw ApiError.badRequest("Selected parent user does not belong to your branch");
   const fullName = String(body.fullName ?? existing?.fullName ?? "").trim();
   if (!fullName) throw new Error("Parent fullName is required");
   body.userId = userId;
