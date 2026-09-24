@@ -154,6 +154,98 @@ const validateExamSchedule = async (body: any, req: Request) => {
   return body;
 };
 
+const validateInventory = async (body: any, req: Request) => {
+  const existing = await getExisting(InventoryItem, req);
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  if (!name) throw new Error("Inventory item name is required");
+
+  const quantity = Number(body.quantity ?? existing?.quantity ?? 0);
+  const minQuantity = Number(body.minQuantity ?? existing?.minQuantity ?? 0);
+  const unitPrice = Number(body.unitPrice ?? existing?.unitPrice ?? 0);
+  if (!Number.isInteger(quantity) || quantity < 0) throw new Error("quantity must be a non-negative integer");
+  if (!Number.isInteger(minQuantity) || minQuantity < 0) throw new Error("minQuantity must be a non-negative integer");
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error("unitPrice must be a non-negative number");
+
+  const sku = String(body.sku ?? existing?.sku ?? "").trim();
+  const branchId = req.user?.branchId;
+  if (sku) {
+    const duplicate = await InventoryItem.findOne({
+      where: {
+        sku,
+        ...(branchId != null ? { branchId } : {}),
+        ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
+      },
+    });
+    if (duplicate) throw new Error("Inventory SKU already exists");
+    body.sku = sku;
+  }
+  body.name = name;
+  body.quantity = quantity;
+  body.minQuantity = minQuantity;
+  body.unitPrice = unitPrice;
+  return body;
+};
+
+const validateAsset = async (body: any, req: Request) => {
+  const existing = await getExisting(Asset, req);
+  const assetCode = String(body.assetCode ?? existing?.assetCode ?? "").trim();
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  if (!assetCode || !name) throw new Error("assetCode and name are required");
+
+  const branchId = req.user?.branchId;
+  const duplicate = await Asset.findOne({
+    where: {
+      assetCode,
+      ...(branchId != null ? { branchId } : {}),
+      ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
+    },
+  });
+  if (duplicate) throw new Error("Asset code already exists");
+
+  if (body.purchaseDate !== undefined || existing?.purchaseDate) {
+    const date = body.purchaseDate !== undefined ? new Date(body.purchaseDate) : new Date(existing.purchaseDate);
+    if (!Number.isFinite(date.getTime())) throw new Error("Invalid purchaseDate");
+    body.purchaseDate = date;
+  }
+  if (body.purchasePrice !== undefined || existing?.purchasePrice !== undefined) {
+    const price = Number(body.purchasePrice ?? existing?.purchasePrice ?? 0);
+    if (!Number.isFinite(price) || price < 0) throw new Error("purchasePrice must be a non-negative number");
+    body.purchasePrice = price;
+  }
+  const allowed = ["in_use", "stored", "maintenance", "scrapped"];
+  const status = String(body.status ?? existing?.status ?? "in_use");
+  if (!allowed.includes(status)) throw new Error("Invalid asset status");
+  body.assetCode = assetCode;
+  body.name = name;
+  body.status = status;
+  return body;
+};
+
+const validateDiscipline = async (body: any, req: Request) => {
+  const existing = await getExisting(DisciplineRecord, req);
+  const studentId = Number(body.studentId ?? existing?.studentId);
+  const type = String(body.type ?? existing?.type ?? "").trim();
+  const recordedOn = body.recordedOn !== undefined ? new Date(body.recordedOn) : new Date(existing?.recordedOn ?? Date.now());
+  if (!Number.isInteger(studentId) || studentId <= 0) throw new Error("Valid studentId is required");
+  if (!type) throw new Error("type is required");
+  if (!["warning", "detention", "suspension", "praise"].includes(type)) {
+    throw new Error("Invalid discipline record type");
+  }
+  if (!Number.isFinite(recordedOn.getTime())) throw new Error("Invalid recordedOn date");
+
+  const student = await Student.findByPk(studentId);
+  if (!student) throw new Error("Student not found");
+  if (req.user?.branchId != null && Number(student.branchId) !== Number(req.user.branchId)) {
+    throw new Error("Student does not belong to your branch");
+  }
+
+  body.studentId = studentId;
+  body.type = type;
+  body.recordedOn = recordedOn;
+  if (req.user?.id != null) body.recordedBy = req.user.id;
+  return body;
+};
+
 export const RESOURCES: ResourceDefinition[] = [
   { path: "roles", model: Role, searchable: ["name", "label", "description"], permission: "roles" },
   { path: "permissions", model: Permission, searchable: ["key", "label", "category"], permission: "permissions" },
@@ -513,7 +605,11 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "syllabus", model: Syllabus, searchable: ["title"], permission: "syllabus" },
   { path: "lesson-plans", model: LessonPlan, searchable: ["title"], permission: "lesson-plans" },
   { path: "health-records", model: HealthRecord, searchable: ["bloodGroup"], permission: "health-records", readonly: true },
-  { path: "discipline-records", model: DisciplineRecord, searchable: ["title", "type", "status"], permission: "discipline-records" },
+  {
+    path: "discipline-records", model: DisciplineRecord, searchable: ["title", "type", "status"], permission: "discipline-records",
+    beforeCreate: validateDiscipline,
+    beforeUpdate: (body, req) => validateDiscipline(body, req),
+  },
   {
     path: "complaints", model: Complaint, searchable: ["title", "category", "status"], permission: "complaints",
     beforeCreate: (body, req) => {
@@ -525,8 +621,16 @@ export const RESOURCES: ResourceDefinition[] = [
       return body;
     },
   },
-  { path: "inventory", model: InventoryItem, searchable: ["name", "sku", "category"], permission: "inventory" },
-  { path: "assets", model: Asset, searchable: ["name", "assetCode", "category"], permission: "inventory" },
+  {
+    path: "inventory", model: InventoryItem, searchable: ["name", "sku", "category"], permission: "inventory",
+    beforeCreate: validateInventory,
+    beforeUpdate: validateInventory,
+  },
+  {
+    path: "assets", model: Asset, searchable: ["name", "assetCode", "category"], permission: "inventory",
+    beforeCreate: validateAsset,
+    beforeUpdate: validateAsset,
+  },
   { path: "audit-logs", model: AuditLog, searchable: ["action", "entity"], permission: "audit-logs", readonly: true },
   {
     path: "visitor-logs", model: VisitorLog, searchable: ["visitorName", "purpose"], permission: "visitors",
