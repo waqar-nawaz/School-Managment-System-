@@ -98,7 +98,7 @@ router.post(
       role: "student",
       gender: body.gender,
       phone: body.phone ?? body.guardianPhone,
-      branchId: req.user!.branchId,
+      branchId: req.user?.branchId ?? undefined,
       sendWelcome: !!body.email,
       generatedBy: req.user!.id,
     });
