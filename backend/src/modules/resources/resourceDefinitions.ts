@@ -1,7 +1,7 @@
 import { Request } from "express";
 import { Op } from "sequelize";
 import {
-  Role, Permission, Branch, AcademicYear, Term, SchoolClass, Section, Subject,
+  Role, Permission, Branch, AcademicYear, Term, SchoolClass, Section, Subject, Student,
   ClassSubject, Enrolment, Parent, Teacher, Staff, Exam, ExamSchedule, ExamResult,
   ReportCard, Assignment, Submission, GradebookEntry, GradeScale, Timetable, Period,
   FeeType, Expense, PayrollItem, Payslip, LeaveRequest, Book, BookCopy, BookFine,
