@@ -193,7 +193,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
       refField('studentId', 'Student', '/students', 'firstName', 'admissionNo', true),
       refField('subjectId', 'Subject', '/subjects', 'name', undefined, true),
       { key: 'marksObtained', label: 'Marks obtained', type: 'number', required: true },
-      { key: 'maxMarks', label: 'Max marks', type: 'number' },
+      { key: 'maxMarks', label: 'Max marks', type: 'number', required: true },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ]),
   },
