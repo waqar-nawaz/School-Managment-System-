@@ -123,7 +123,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   subjects: {
     key: 'subjects', label: 'Subjects', api: '/subjects',
     columns: [nameCol('name'), nameCol('code', 'Code'), { key: 'maxMarks', label: 'Max Marks', type: 'number' }, { key: 'passMarks', label: 'Pass', type: 'number' }, boolCol('isActive', 'Active')],
-    fields: fields([{ key: 'name', label: 'Subject name', required: true }, { key: 'code', label: 'Code' }, { key: 'maxMarks', label: 'Max marks', type: 'number' }, { key: 'passMarks', label: 'Pass marks', type: 'number' }, { key: 'isActive', label: 'Active', type: 'bool' }]),
+    fields: fields([{ key: 'name', label: 'Subject name', required: true }, { key: 'code', label: 'Code' }, { key: 'maxMarks', label: 'Max marks', type: 'number', required: true }, { key: 'passMarks', label: 'Pass marks', type: 'number' }, { key: 'isActive', label: 'Active', type: 'bool' }]),
   },
   enrolments: {
     key: 'enrolments', label: 'Enrolments', api: '/enrolments',
