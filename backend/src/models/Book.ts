@@ -1,4 +1,4 @@
-import { Table, Column, Unique, DataType, Index } from "sequelize-typescript";
+import { Table, Column, Unique, DataType, Index, ForeignKey } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { Branch } from "./Branch";
 
