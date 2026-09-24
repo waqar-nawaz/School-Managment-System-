@@ -1,9 +1,13 @@
 import { Table, Column, DataType, Index, ForeignKey } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { User } from "./User";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "leave_requests" })
 export class LeaveRequest extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @ForeignKey(() => User)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   userId!: number;
