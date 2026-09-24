@@ -21,8 +21,38 @@ const base = createCrudController<Student>({
   includes: [{ association: "enrolments" }],
 });
 
-router.get("/", authorize("students:read"), (req, res, next) => base.list(req, res).catch(next));
-router.get("/:id", authorize("students:read"), (req, res, next) => base.getOne(req, res).catch(next));
+async function assertStudentAccess(req: any, studentId: number): Promise<Student> {
+  const student = await Student.findByPk(studentId);
+  if (!student) throw ApiError.notFound("Student not found");
+
+  // Parents may access only their linked wards; other roles remain branch-scoped.
+  if (req.user?.role === "parent") {
+    const parent = await Parent.findOne({ where: { userId: req.user.id } });
+    if (!parent) throw ApiError.forbidden("Parent profile not found");
+    const link = await StudentGuardian.findOne({ where: { parentId: parent.id, studentId } });
+    if (!link) throw ApiError.forbidden("You can only access your linked students");
+  } else if (req.user?.branchId != null && Number(student.branchId) !== Number(req.user.branchId)) {
+    throw ApiError.notFound("Student not found");
+  }
+  return student;
+}
+
+router.get("/", authorize("students:read"), asyncHandler(async (req, res) => {
+  if (req.user?.role === "parent") {
+    const parent = await Parent.findOne({ where: { userId: req.user.id } });
+    if (!parent) throw ApiError.forbidden("Parent profile not found");
+    const links = await StudentGuardian.findAll({ where: { parentId: parent.id }, attributes: ["studentId"] });
+    const ids = links.map(x => Number(x.studentId));
+    const rows = ids.length ? await Student.findAll({ where: { id: ids }, include: [{ association: "enrolments" }] }) : [];
+    return ApiResponse.success(res, 200, "List fetched", rows);
+  }
+  return base.list(req, res);
+}));
+
+router.get("/:id", authorize("students:read"), asyncHandler(async (req, res) => {
+  const student = await assertStudentAccess(req, Number(req.params.id));
+  ApiResponse.success(res, 200, "Fetched", student);
+}));
 
 /** Full admission flow: creates user account + student + optional guardians + enrolment. */
 router.post(
@@ -68,7 +98,7 @@ router.post(
       role: "student",
       gender: body.gender,
       phone: body.phone ?? body.guardianPhone,
-      branchId: body.branchId,
+      branchId: req.user!.branchId,
       sendWelcome: !!body.email,
       generatedBy: req.user!.id,
     });
@@ -211,7 +241,7 @@ router.get("/:id/attendance", authorize("attendance:read", "students:read"), asy
   const month = String(req.query.month || new Date().toISOString().slice(0, 7));
   const { start, end } = monthRange(month);
   const rows = await Attendance.findAll({
-    where: { studentId: req.params.id, date: { [Op.gte]: start, [Op.lt]: end } },
+    where: { studentId: (await assertStudentAccess(req, Number(req.params.id))).id, date: { [Op.gte]: start, [Op.lt]: end } },
   });
   const summary: Record<string, number> = {};
   for (const r of rows) summary[r.status] = (summary[r.status] || 0) + 1;
