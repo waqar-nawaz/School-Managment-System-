@@ -9,6 +9,7 @@ export interface AuditPayload {
   ip?: string;
   userAgent?: string;
   userId?: number | null;
+  branchId?: number | null;
   role?: string;
   oldData?: Record<string, unknown>;
   newData?: Record<string, unknown>;
@@ -23,6 +24,7 @@ export async function writeAuditLog(payload: AuditPayload): Promise<void> {
       ip: payload.ip?.slice(0, 45),
       userAgent: payload.userAgent?.slice(0, 255),
       userId: payload.userId ?? null,
+      branchId: payload.branchId ?? null,
       role: payload.role ?? null,
       oldData: payload.oldData ?? {},
       newData: payload.newData ?? {},
