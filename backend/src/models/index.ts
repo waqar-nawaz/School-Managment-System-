@@ -134,6 +134,7 @@ export function defineAssociations(): void {
   // Branch
   Branch.hasMany(User, { as: "users", foreignKey: "branchId" });
   Branch.hasMany(SchoolClass, { as: "classes", foreignKey: "branchId" });
+  Branch.hasMany(AdmissionApplication, { as: "admissionApplications", foreignKey: "branchId" });
   Branch.hasMany(Student, { as: "students", foreignKey: "branchId" });
 
   // Roles / permissions
@@ -162,6 +163,8 @@ export function defineAssociations(): void {
 
   Student.belongsToMany(Parent, { through: StudentGuardian, as: "guardians", foreignKey: "studentId", otherKey: "parentId" });
   Parent.belongsToMany(Student, { through: StudentGuardian, as: "wards", foreignKey: "parentId", otherKey: "studentId" });
+
+  AdmissionApplication.belongsTo(Branch, { as: "branch", foreignKey: "branchId" });
 
   // Enrolment / attendance
   Student.hasMany(Enrolment, { as: "enrolments", foreignKey: "studentId" });

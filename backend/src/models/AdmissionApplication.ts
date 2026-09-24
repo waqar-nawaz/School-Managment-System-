@@ -8,11 +8,12 @@ export class AdmissionApplication extends BaseModel {
   @ForeignKey(() => Branch)
   @Column({ type: DataType.BIGINT.UNSIGNED })
   branchId!: number;
+
   @Unique
   @Column({ type: DataType.STRING(30), allowNull: false })
   applicationNo!: string;
 
-  @Column({ type: DataType.STRING(120) })
+  @Column({ type: DataType.STRING(120), allowNull: false })
   studentName!: string;
 
   @Column({ type: DataType.DATE })
@@ -21,7 +22,7 @@ export class AdmissionApplication extends BaseModel {
   @Column({ type: DataType.ENUM("male", "female", "other") })
   gender!: string;
 
-  @Column({ type: DataType.STRING(120) })
+  @Column({ type: DataType.STRING(120), allowNull: false })
   appliedClass!: string;
 
   @Column({ type: DataType.STRING(180) })
@@ -52,4 +53,7 @@ export class AdmissionApplication extends BaseModel {
 
   @BelongsTo(() => User)
   reviewer!: User;
+
+  @BelongsTo(() => Branch)
+  branch!: Branch;
 }
