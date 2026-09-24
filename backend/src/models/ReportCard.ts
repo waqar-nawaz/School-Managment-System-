@@ -3,9 +3,14 @@ import { BaseModel } from "./BaseModel";
 import { Student } from "./Student";
 import { Term } from "./Term";
 import { Enrolment } from "./Enrolment";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "report_cards", indexes: [{ unique: true, fields: ["enrolmentId", "termId"] }] })
 export class ReportCard extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
+
   @ForeignKey(() => Enrolment)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   enrolmentId!: number;
