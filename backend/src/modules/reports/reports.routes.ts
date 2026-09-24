@@ -167,14 +167,22 @@ router.get(
       Student.count({ where: studentWhere }),
       Teacher.count({ where: teacherWhere }),
       Staff.count({ where: staffWhere }),
-      Payment.sum("amount", {
-        where: branchId ? { status: "successful" } : { status: "successful" },
-        ...(branchId ? { include: [{ model: Student, required: true, where: { branchId }, attributes: [] }] } : {}),
-      } as any) || 0,
-      Invoice.count({
-        where: branchId ? { status: { [Op.in]: ["pending", "partial"] } } : { status: { [Op.in]: ["pending", "partial"] } },
-        ...(branchId ? { include: [{ association: "student", required: true, where: { branchId }, attributes: [] }] } : {}),
-      } as any),
+      (async () => {
+        const where: any = { status: "successful" };
+        if (branchId) {
+          const studentIds = await branchStudentIds(branchId) || [];
+          where.studentId = { [Op.in]: studentIds };
+        }
+        return (await Payment.sum("amount", { where })) || 0;
+      })(),
+      (async () => {
+        const where: any = { status: { [Op.in]: ["pending", "partial"] } };
+        if (branchId) {
+          const studentIds = await branchStudentIds(branchId) || [];
+          where.studentId = { [Op.in]: studentIds };
+        }
+        return Invoice.count({ where });
+      })(),
     ]);
 
     ApiResponse.success(res, 200, "Comparison snapshot", {
