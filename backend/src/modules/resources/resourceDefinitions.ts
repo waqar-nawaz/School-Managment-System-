@@ -659,23 +659,30 @@ const validateRoute = async (body: any, req: Request) => {
 };
 const validateRouteStop = async (body: any, req: Request) => {
   const existing = await getExisting(RouteStop, req);
+  const branchId = Number(req.user?.branchId);
   const routeId = Number(body.routeId ?? existing?.routeId);
   const name = String(body.name ?? existing?.name ?? "").trim();
   const orderIndex = Number(body.orderIndex ?? existing?.orderIndex);
-  if (!Number.isInteger(routeId) || routeId <= 0 || !name) throw new Error("routeId and name are required");
-  if (!Number.isInteger(orderIndex) || orderIndex < 0) throw new Error("orderIndex must be a non-negative integer");
-  const route = await Route.findByPk(routeId);
-  if (!route || !route.isActive) throw new Error("Selected route is not active");
-  if (req.user?.branchId != null && Number(route.branchId) !== Number(req.user.branchId)) throw new Error("Selected route does not belong to your branch");
-  if (body.stopFee !== undefined || existing?.stopFee !== undefined) {
-    const fee = Number(body.stopFee ?? existing?.stopFee ?? 0);
-    if (!Number.isFinite(fee) || fee < 0) throw new Error("stopFee must be a non-negative number");
-    body.stopFee = fee;
+  if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
+  if (!Number.isInteger(routeId) || routeId <= 0 || !name) throw ApiError.badRequest("routeId and name are required");
+  if (!Number.isInteger(orderIndex) || orderIndex < 0) throw ApiError.badRequest("orderIndex must be non-negative");
+  const route = await Route.findOne({ where: { id: routeId, branchId } });
+  if (!route || !route.isActive) throw ApiError.badRequest("Route not found, inactive, or outside your branch");
+  const sameOrder = await RouteStop.findOne({ where: { routeId, branchId, orderIndex, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (sameOrder) throw ApiError.badRequest("Another stop already uses this order");
+  for (const field of ["pickupTime", "dropTime"]) {
+    const value = body[field] !== undefined ? body[field] : existing?.[field];
+    if (value != null && value !== "" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))) throw ApiError.badRequest(field + " must be HH:mm");
+    if (value != null) body[field] = String(value);
   }
-  body.routeId = routeId; body.name = name; body.orderIndex = orderIndex; body.branchId = req.user?.branchId;
+  const pickup = body.pickupTime ?? existing?.pickupTime;
+  const drop = body.dropTime ?? existing?.dropTime;
+  if (pickup && drop && String(drop) <= String(pickup)) throw ApiError.badRequest("dropTime must be after pickupTime");
+  const stopFee = Number(body.stopFee ?? existing?.stopFee ?? 0);
+  if (!Number.isFinite(stopFee) || stopFee < 0) throw ApiError.badRequest("stopFee must be non-negative");
+  body.routeId = routeId; body.name = name; body.orderIndex = orderIndex; body.stopFee = stopFee; body.branchId = branchId;
   return body;
 };
-
 const validateVehicle = async (body: any, req: Request) => {
   const existing = await getExisting(Vehicle, req);
   const registrationNo = String(body.registrationNo ?? existing?.registrationNo ?? "").trim();
