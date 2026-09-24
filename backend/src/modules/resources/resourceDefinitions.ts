@@ -371,38 +371,53 @@ const parseTimeMinutes = (value: unknown): number | null => {
 
 const validateExamSchedule = async (body: any, req: Request) => {
   const existing = await getExisting(ExamSchedule, req);
-  const examId = body.examId ?? existing?.examId;
-  const classId = body.classId ?? existing?.classId;
-  const sectionId = body.sectionId ?? existing?.sectionId;
-  const subjectId = body.subjectId ?? existing?.subjectId;
-  const date = body.date !== undefined ? new Date(body.date) : existing?.date;
+  const branchId = Number(req.user?.branchId);
+  const examId = Number(body.examId ?? existing?.examId);
+  const classId = Number(body.classId ?? existing?.classId);
+  const sectionId = body.sectionId !== undefined ? (body.sectionId ? Number(body.sectionId) : null) : (existing?.sectionId ?? null);
+  const subjectId = Number(body.subjectId ?? existing?.subjectId);
+  const date = body.date !== undefined ? new Date(body.date) : (existing?.date ? new Date(existing.date) : null);
   const start = parseTimeMinutes(body.startTime ?? existing?.startTime);
   const end = parseTimeMinutes(body.endTime ?? existing?.endTime);
-  if (!examId || !classId || !subjectId) throw new Error("examId, classId and subjectId are required");
-  if (start === null || end === null || start >= end) throw new Error("Invalid exam schedule time range");
-  if (!date || !Number.isFinite(new Date(date).getTime())) throw new Error("Valid exam date is required");
-  const exam = await Exam.findByPk(examId);
-  if (!exam) throw new Error("Exam not found");
-  if (exam.startDate && date < new Date(exam.startDate)) throw new Error("Exam schedule date is before the exam start date");
-  if (exam.endDate && date > new Date(exam.endDate)) throw new Error("Exam schedule date is after the exam end date");
-  const section = sectionId ? await Section.findByPk(sectionId) : null;
-  if (sectionId && (!section || Number(section.classId) !== Number(classId))) {
-    throw new Error("Selected section does not belong to the selected class");
+
+  if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
+  if (![examId, classId, subjectId].every((v) => Number.isInteger(v) && v > 0)) {
+    throw ApiError.badRequest("examId, classId and subjectId are required");
   }
-  const schoolClass = await SchoolClass.findByPk(classId);
-  if (!schoolClass || !schoolClass.isActive) throw new Error("Selected class is not active");
-  if (req.user?.branchId != null && Number(schoolClass.branchId) !== Number(req.user.branchId)) throw new Error("Selected class does not belong to your branch");
-  const classSubject = await ClassSubject.findOne({ where: { classId, subjectId } });
-  if (!classSubject) throw new Error("Subject is not assigned to the selected class");
-  body.examId = Number(examId);
-  body.classId = Number(classId);
-  body.sectionId = sectionId ? Number(sectionId) : null;
-  body.subjectId = Number(subjectId);
-  body.date = new Date(date);
-  body.branchId = req.user?.branchId;
+  if (start === null || end === null || start >= end) throw ApiError.badRequest("Invalid exam schedule time range");
+  if (!date || !Number.isFinite(date.getTime())) throw ApiError.badRequest("Valid exam date is required");
+
+  const exam = await Exam.findOne({ where: { id: examId, branchId } });
+  if (!exam) throw ApiError.badRequest("Exam not found or outside your branch");
+  if (exam.startDate && date < new Date(exam.startDate)) throw ApiError.badRequest("Exam schedule date is before the exam start date");
+  if (exam.endDate && date > new Date(exam.endDate)) throw ApiError.badRequest("Exam schedule date is after the exam end date");
+
+  const schoolClass = await SchoolClass.findOne({ where: { id: classId, branchId } });
+  if (!schoolClass || !schoolClass.isActive) throw ApiError.badRequest("Selected class is not active or outside your branch");
+  const subject = await Subject.findOne({ where: { id: subjectId, branchId } });
+  if (!subject || !subject.isActive) throw ApiError.badRequest("Selected subject is not active or outside your branch");
+
+  if (sectionId) {
+    const section = await Section.findOne({ where: { id: sectionId, branchId } });
+    if (!section || !section.isActive || Number(section.classId) !== classId) {
+      throw ApiError.badRequest("Selected section is invalid for the selected class");
+    }
+  }
+
+  const classSubject = await ClassSubject.findOne({ where: { classId, subjectId, branchId } });
+  if (!classSubject) throw ApiError.badRequest("Subject is not assigned to the selected class");
+
+  const duplicate = await ExamSchedule.findOne({
+    where: { examId, classId, sectionId: sectionId ?? null, subjectId, branchId, date, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
+  });
+  if (duplicate) throw ApiError.badRequest("This subject is already scheduled for the selected class on this date");
+
+  body.examId = examId; body.classId = classId; body.sectionId = sectionId;
+  body.subjectId = subjectId; body.date = date; body.branchId = branchId;
+  body.startTime = String(body.startTime ?? existing?.startTime ?? "").trim();
+  body.endTime = String(body.endTime ?? existing?.endTime ?? "").trim();
   return body;
 };
-
 
 const validateExam = async (body: any, req: Request) => {
   const existing = await getExisting(Exam, req);
