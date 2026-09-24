@@ -66,9 +66,11 @@ export const RESOURCES: ResourceDefinition[] = [
   {
     path: "payroll", model: PayrollItem, searchable: ["month", "status"], permission: "payroll",
     beforeCreate: (body) => {
-      if (body.netPay === undefined || body.netPay === null || body.netPay === "") {
-        body.netPay = Number(body.basicSalary ?? 0) + Number(body.allowances ?? 0) - Number(body.deductions ?? 0);
-      }
+      body.netPay = Number(body.basicSalary ?? 0) + Number(body.allowances ?? 0) - Number(body.deductions ?? 0);
+      return body;
+    },
+    beforeUpdate: (body) => {
+      body.netPay = Number(body.basicSalary ?? 0) + Number(body.allowances ?? 0) - Number(body.deductions ?? 0);
       return body;
     },
   },
@@ -90,7 +92,11 @@ export const RESOURCES: ResourceDefinition[] = [
   {
     path: "leaves", model: LeaveRequest, searchable: ["leaveType", "status"], permission: "leaves",
     beforeCreate: (body, req) => {
-      if (!body.userId) body.userId = req.user?.id;
+      body.userId = req.user?.id;
+      return body;
+    },
+    beforeUpdate: (body) => {
+      delete body.userId;
       return body;
     },
   },
@@ -140,13 +146,29 @@ export const RESOURCES: ResourceDefinition[] = [
     },
     // Only a student + bed are needed; room and hostel come from the bed.
     beforeCreate: async (body) => {
+      if (!body.bedId) throw new Error("bedId is required");
+      const bed = await Bed.findByPk(body.bedId);
+      if (!bed) throw new Error("Selected bed not found");
+      if (bed.status !== "available") throw new Error("Selected bed is not available");
+      const active = await HostelAllocation.findOne({ where: { bedId: bed.id, status: "active" } });
+      if (active) throw new Error("Selected bed is already allocated");
+      const studentActive = await HostelAllocation.findOne({ where: { studentId: body.studentId, status: "active" } });
+      if (studentActive) throw new Error("Student already has an active hostel allocation");
+      body.roomId = bed.roomId;
+      const room = await Room.findByPk(bed.roomId);
+      if (!room) throw new Error("Selected room not found");
+      body.hostelId = room.hostelId;
+      return body;
+    },
+    beforeUpdate: async (body) => {
       if (body.bedId) {
         const bed = await Bed.findByPk(body.bedId);
-        if (bed) {
-          body.roomId = bed.roomId;
-          const room = await Room.findByPk(bed.roomId);
-          if (room) body.hostelId = room.hostelId;
-        }
+        if (!bed) throw new Error("Selected bed not found");
+        if (bed.status !== "available") throw new Error("Selected bed is not available");
+        body.roomId = bed.roomId;
+        const room = await Room.findByPk(bed.roomId);
+        if (!room) throw new Error("Selected room not found");
+        body.hostelId = room.hostelId;
       }
       return body;
     },
@@ -157,7 +179,11 @@ export const RESOURCES: ResourceDefinition[] = [
   {
     path: "messages", model: Message, searchable: ["subject"], permission: "messages",
     beforeCreate: (body, req) => {
-      if (!body.senderId) body.senderId = req.user?.id;
+      body.senderId = req.user?.id;
+      return body;
+    },
+    beforeUpdate: (body) => {
+      delete body.senderId;
       return body;
     },
   },
@@ -169,7 +195,11 @@ export const RESOURCES: ResourceDefinition[] = [
   {
     path: "complaints", model: Complaint, searchable: ["title", "category", "status"], permission: "complaints",
     beforeCreate: (body, req) => {
-      if (!body.submittedBy) body.submittedBy = req.user?.id;
+      body.submittedBy = req.user?.id;
+      return body;
+    },
+    beforeUpdate: (body) => {
+      delete body.submittedBy;
       return body;
     },
   },
