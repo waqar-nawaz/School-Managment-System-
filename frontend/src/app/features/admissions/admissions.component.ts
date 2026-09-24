@@ -65,9 +65,11 @@ const STATUSES = ['enquiry', 'applied', 'shortlisted', 'admitted', 'rejected', '
                 <td>{{ app.dateApplied | date: 'MMM d, y' }}</td>
                 <td><span class="badge badge-{{ badgeOf(app.status) }}">{{ app.status }}</span></td>
                 <td style="text-align:right;white-space:nowrap">
-                  <button class="btn btn-sm btn-ghost" (click)="registerStudent(app)" title="Create a student record from this application">
-                    <app-icon name="user-check" [size]="14" /> Register
-                  </button>
+                  @if (app.status !== 'admitted' && app.status !== 'rejected') {
+                    <button class="btn btn-sm btn-ghost" (click)="registerStudent(app)" title="Create a student record from this application">
+                      <app-icon name="user-check" [size]="14" /> Register
+                    </button>
+                  }
                   <select class="form-control form-control-sm" style="display:inline-block;width:auto;margin-left:.4rem" [value]="app.status" (change)="transition(app, $event)">
                     @for (s of STATUSES; track s) { <option [value]="s">{{ s | titlecase }}</option> }
                   </select>
@@ -118,11 +120,14 @@ const STATUSES = ['enquiry', 'applied', 'shortlisted', 'admitted', 'rejected', '
               </div>
               <div class="form-group">
                 <label>Phone</label>
-                <input class="form-control" name="phone" [(ngModel)]="form.phone" />
+                <input type="tel" class="form-control" name="phone" [(ngModel)]="form.phone" autocomplete="tel" />
               </div>
               <div class="form-group">
-                <label>Applied for class</label>
-                <input class="form-control" name="appliedClass" [(ngModel)]="form.appliedClass" placeholder="e.g. Grade 5" />
+                <label>Applied for class *</label>
+                <input class="form-control" name="appliedClass" [(ngModel)]="form.appliedClass" placeholder="e.g. Grade 5" required #appliedClass="ngModel" />
+                @if (f.submitted && appliedClass.invalid) {
+                  <div class="field-error">Applied class is required</div>
+                }
               </div>
               <div class="form-group">
                 <label>Status</label>
@@ -217,6 +222,7 @@ export class AdmissionsComponent implements OnInit {
 
   /** Create a student record from this application (the actual admission). */
   registerStudent(app: any): void {
+    if (!app?.id || app.status === 'admitted' || app.status === 'rejected') return;
     const parts = String(app.studentName || '').trim().split(/\s+/);
     const body: Record<string, unknown> = {
       firstName: parts[0] || 'Student',
@@ -225,6 +231,8 @@ export class AdmissionsComponent implements OnInit {
       gender: app.gender || undefined,
       dob: app.dateOfBirth || undefined,
       guardianPhone: app.phone || undefined,
+      admissionNo: app.applicationNo || undefined,
+      admissionDate: new Date().toISOString().slice(0, 10),
     };
     this.api.post('/students', body).subscribe({
       next: () => {
