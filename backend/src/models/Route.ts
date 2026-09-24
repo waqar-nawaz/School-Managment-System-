@@ -30,6 +30,10 @@ export class Route extends BaseModel {
 
 @Table({ tableName: "route_stops" })
 export class RouteStop extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
+
   @ForeignKey(() => Route)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   routeId!: number;
