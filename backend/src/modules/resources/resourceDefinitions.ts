@@ -645,14 +645,18 @@ const validateReportCard = async (body: any, req: Request) => {
 
 const validateRoute = async (body: any, req: Request) => {
   const existing = await getExisting(Route, req);
+  const branchId = Number(req.user?.branchId);
+  if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
   const name = String(body.name ?? existing?.name ?? "").trim();
-  if (!name) throw new Error("Route name is required");
+  if (!name) throw ApiError.badRequest("Route name is required");
+  if (name.length > 120) throw ApiError.badRequest("Route name must be 120 characters or fewer");
   const monthlyFee = Number(body.monthlyFee ?? existing?.monthlyFee ?? 0);
-  if (!Number.isFinite(monthlyFee) || monthlyFee < 0) throw new Error("monthlyFee must be a non-negative number");
-  body.name = name; body.monthlyFee = monthlyFee; body.branchId = req.user?.branchId;
+  if (!Number.isFinite(monthlyFee) || monthlyFee < 0) throw ApiError.badRequest("monthlyFee must be non-negative");
+  const duplicate = await Route.findOne({ where: { branchId, name, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw ApiError.badRequest("Route already exists in this branch");
+  body.name = name; body.monthlyFee = monthlyFee; body.branchId = branchId;
   return body;
 };
-
 const validateRouteStop = async (body: any, req: Request) => {
   const existing = await getExisting(RouteStop, req);
   const routeId = Number(body.routeId ?? existing?.routeId);
