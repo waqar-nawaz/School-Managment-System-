@@ -322,17 +322,17 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   rooms: {
     key: 'rooms', label: 'Rooms', api: '/rooms',
-    columns: [{ key: 'hostelId', label: 'Hostel', type: 'number' }, nameCol('roomNo', 'Room'), { key: 'capacity', label: 'Capacity', type: 'number' }, nameCol('floor'), statusCol()],
+    columns: [{ key: 'hostelName', label: 'Hostel', type: 'text' }, nameCol('roomNo', 'Room'), { key: 'capacity', label: 'Capacity', type: 'number' }, nameCol('floor'), boolCol('isActive', 'Active')],
     fields: fields([refField('hostelId', 'Hostel', '/hostels', 'name', undefined, true), { key: 'roomNo', label: 'Room number', required: true }, { key: 'capacity', label: 'Capacity', type: 'number' }, { key: 'floor', label: 'Floor' }]),
   },
   beds: {
     key: 'beds', label: 'Beds', api: '/beds',
-    columns: [{ key: 'roomId', label: 'Room', type: 'number' }, nameCol('bedNo', 'Bed'), statusCol()],
+    columns: [{ key: 'roomNo', label: 'Room', type: 'text' }, nameCol('bedNo', 'Bed'), boolCol('isActive', 'Active')],
     fields: fields([refField('roomId', 'Room', '/rooms', 'roomNo', undefined, true), { key: 'bedNo', label: 'Bed number', required: true }]),
   },
   'hostel-allocations': {
     key: 'hostel-allocations', label: 'Hostel Allocations', api: '/hostel-allocations',
-    columns: [{ key: 'studentId', label: 'Student', type: 'number' }, { key: 'hostelId', label: 'Hostel', type: 'number' }, { key: 'roomId', label: 'Room', type: 'number' }, { key: 'bedId', label: 'Bed', type: 'number' }, { key: 'checkIn', label: 'Check-in', type: 'date' }, statusCol()],
+    columns: [{ key: 'studentName', label: 'Student', type: 'text' }, { key: 'hostelName', label: 'Hostel', type: 'text' }, { key: 'roomNo', label: 'Room', type: 'text' }, { key: 'bedNo', label: 'Bed', type: 'text' }, { key: 'checkIn', label: 'Check-in', type: 'date' }, statusCol()],
     fields: fields([refField('studentId', 'Student', '/students', 'firstName', 'admissionNo', true), refField('bedId', 'Bed', '/beds', 'bedNo', undefined, true), { key: 'checkIn', label: 'Check-in', type: 'dateonly' }, { key: 'monthlyFee', label: 'Monthly fee', type: 'number' }]),
   },
   events: {

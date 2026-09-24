@@ -19,7 +19,13 @@ export interface ResourceDefinition {
   readonly?: boolean; // no write operations exposed
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
+  includes?: any[];
+  decorate?: (row: any) => Record<string, unknown>;
 }
+
+/** Row → plain object (works for Sequelize instances and plain rows). */
+const plain = (row: any): Record<string, any> =>
+  row && typeof row.get === "function" ? row.get({ plain: true }) : { ...row };
 
 export const RESOURCES: ResourceDefinition[] = [
   { path: "roles", model: Role, searchable: ["name", "label", "description"], permission: "roles" },
@@ -97,10 +103,41 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "driver-assignments", model: DriverAssignment, searchable: [], permission: "driver-assignments" },
   { path: "student-transport", model: StudentTransport, searchable: [], permission: "student-transport" },
   { path: "hostels", model: Hostel, searchable: ["name", "wardenName"], permission: "hostels" },
-  { path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "rooms" },
-  { path: "beds", model: Bed, searchable: ["bedNo"], permission: "beds" },
+  {
+    path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "rooms",
+    includes: [{ association: "hostel", attributes: ["id", "name"] }],
+    decorate: (row) => {
+      const p = plain(row);
+      p.hostelName = p.hostel?.name ?? "";
+      return p;
+    },
+  },
+  {
+    path: "beds", model: Bed, searchable: ["bedNo"], permission: "beds",
+    includes: [{ association: "room", attributes: ["id", "roomNo"] }],
+    decorate: (row) => {
+      const p = plain(row);
+      p.roomNo = p.room?.roomNo ?? "";
+      return p;
+    },
+  },
   {
     path: "hostel-allocations", model: HostelAllocation, searchable: ["status"], permission: "hostel-allocations",
+    includes: [
+      { association: "student", attributes: ["id", "firstName", "lastName", "admissionNo"] },
+      { association: "hostel", attributes: ["id", "name"] },
+      { association: "room", attributes: ["id", "roomNo"] },
+      { association: "bed", attributes: ["id", "bedNo"] },
+    ],
+    decorate: (row) => {
+      const p = plain(row);
+      p.studentName = p.student ? `${p.student.firstName} ${p.student.lastName}`.trim() : "";
+      p.admissionNo = p.student?.admissionNo ?? "";
+      p.hostelName = p.hostel?.name ?? "";
+      p.roomNo = p.room?.roomNo ?? "";
+      p.bedNo = p.bed?.bedNo ?? "";
+      return p;
+    },
     // Only a student + bed are needed; room and hostel come from the bed.
     beforeCreate: async (body) => {
       if (body.bedId) {

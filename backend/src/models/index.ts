@@ -232,12 +232,13 @@ export function defineAssociations(): void {
 
   // Hostel
   Hostel.hasMany(Room, { as: "rooms", foreignKey: "hostelId" });
-  Room.belongsTo(Hostel, { foreignKey: "hostelId" });
+  Room.belongsTo(Hostel, { as: "hostel", foreignKey: "hostelId" });
   Room.hasMany(Bed, { as: "beds", foreignKey: "roomId" });
-  Bed.belongsTo(Room, { foreignKey: "roomId" });
-  HostelAllocation.belongsTo(Room, { foreignKey: "roomId" });
-  HostelAllocation.belongsTo(Bed, { foreignKey: "bedId" });
-  HostelAllocation.belongsTo(Student, { foreignKey: "studentId" });
+  Bed.belongsTo(Room, { as: "room", foreignKey: "roomId" });
+  HostelAllocation.belongsTo(Hostel, { as: "hostel", foreignKey: "hostelId" });
+  HostelAllocation.belongsTo(Room, { as: "room", foreignKey: "roomId" });
+  HostelAllocation.belongsTo(Bed, { as: "bed", foreignKey: "bedId" });
+  HostelAllocation.belongsTo(Student, { as: "student", foreignKey: "studentId" });
 
   // Communication
   User.hasMany(Message, { as: "sentMessages", foreignKey: "senderId" });

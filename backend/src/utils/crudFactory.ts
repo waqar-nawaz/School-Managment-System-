@@ -14,6 +14,8 @@ export interface CrudOptions<M extends Model = Model> {
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   detailIncludes?: FindOptions["include"];
+  /** Add computed fields (e.g. related display names) to a returned row. */
+  decorate?: (row: any) => Record<string, unknown>;
 }
 
 export interface CrudHandlers {
@@ -30,6 +32,7 @@ export function createCrudController<M extends Model = Model>(
 ): CrudHandlers {
   const { model, searchable, defaultSort, includes = [] } = opts;
   const detailIncludes = opts.detailIncludes ?? includes;
+  const present = (row: any) => (opts.decorate ? opts.decorate(row) : row);
 
   const buildWhere = (req: Request): WhereOptions => {
     const where: Record<string, unknown> = {};
@@ -75,7 +78,7 @@ export function createCrudController<M extends Model = Model>(
         include: includes as any,
       });
       const meta: PaginationMeta = buildPaginationMeta(p.page, p.limit, count);
-      ApiResponse.success(res, 200, "List fetched", rows, meta);
+      ApiResponse.success(res, 200, "List fetched", rows.map(present), meta);
     },
 
     getOne: async (req, res) => {
@@ -83,7 +86,7 @@ export function createCrudController<M extends Model = Model>(
       if (!Number.isInteger(id)) throw ApiError.badRequest("Invalid id");
       const row = await model.findByPk(id, { include: detailIncludes as any });
       if (!row) throw ApiError.notFound(`${model.name} not found`);
-      ApiResponse.success(res, 200, "Fetched", row);
+      ApiResponse.success(res, 200, "Fetched", present(row));
     },
 
     create: async (req, res) => {
@@ -91,7 +94,7 @@ export function createCrudController<M extends Model = Model>(
         ? await opts.beforeCreate(req.body, req)
         : req.body;
       const row = await model.create(body);
-      ApiResponse.success(res, 201, `${model.name} created`, row);
+      ApiResponse.success(res, 201, `${model.name} created`, present(row));
     },
 
     update: async (req, res) => {
@@ -103,7 +106,7 @@ export function createCrudController<M extends Model = Model>(
         ? await opts.beforeUpdate(req.body, req)
         : req.body;
       await (row as any).update(body);
-      ApiResponse.success(res, 200, `${model.name} updated`, row);
+      ApiResponse.success(res, 200, `${model.name} updated`, present(row));
     },
 
     remove: async (req, res) => {
