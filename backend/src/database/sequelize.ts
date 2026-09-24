@@ -1,7 +1,7 @@
 import { Sequelize, ModelCtor, DataType } from "sequelize-typescript";
 import env from "../config";
 import { logger } from "../config/logger";
-import { models } from "../models";
+import { models, Section, SchoolClass } from "../models";
 
 const commonOptions = {
   timezone: "+00:00",
@@ -121,6 +121,23 @@ async function ensureColumns(): Promise<void> {
     } catch {
       /* table not created yet — sync handles it next boot */
     }
+  }
+
+  // Backfill legacy section rows created before branch isolation existed.
+  // The section's class is the authoritative source for its branch.
+  try {
+    const legacySections = await Section.findAll({ where: { branchId: null } });
+    for (const section of legacySections) {
+      const schoolClass = await SchoolClass.findByPk(section.classId);
+      if (schoolClass?.branchId) {
+        await section.update({ branchId: schoolClass.branchId });
+      }
+    }
+    if (legacySections.length) {
+      logger.info(`Backfilled branchId for ${legacySections.length} legacy section row(s)`);
+    }
+  } catch {
+    /* legacy data cleanup must never prevent the application from starting */
   }
 }
 
