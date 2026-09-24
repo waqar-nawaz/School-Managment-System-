@@ -72,16 +72,40 @@ const validateParentProfile = async (body: any, req: Request) => {
 const validateSubject = async (body: any, req: Request) => {
   const existing = await getExisting(Subject, req);
   const name = String(body.name ?? existing?.name ?? "").trim();
+  const normalizedName = name.toLowerCase();
   const code = String(body.code ?? existing?.code ?? "").trim();
   const maxMarks = Number(body.maxMarks ?? existing?.maxMarks ?? 100);
   const passMarks = Number(body.passMarks ?? existing?.passMarks ?? 35);
-  const branchId = req.user?.branchId;
-  if (!name) throw new Error("Subject name is required");
-  if (!Number.isInteger(maxMarks) || maxMarks <= 0) throw new Error("maxMarks must be a positive integer");
-  if (!Number.isInteger(passMarks) || passMarks < 0 || passMarks > maxMarks) throw new Error("passMarks must be between 0 and maxMarks");
-  const duplicate = await Subject.findOne({ where: { name, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw new Error("Subject already exists in this branch");
-  body.name = name; body.code = code || null; body.maxMarks = maxMarks; body.passMarks = passMarks; body.branchId = branchId;
+  const isActive = body.isActive !== undefined ? Boolean(body.isActive) : Boolean(existing?.isActive ?? true);
+  const branchId = Number(req.user?.branchId);
+
+  if (!name) throw ApiError.badRequest("Subject name is required");
+  if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
+  if (name.length > 120) throw ApiError.badRequest("Subject name must be 120 characters or fewer");
+  if (code.length > 10) throw ApiError.badRequest("Subject code must be 10 characters or fewer");
+  if (!Number.isInteger(maxMarks) || maxMarks <= 0) throw ApiError.badRequest("maxMarks must be a positive integer");
+  if (!Number.isInteger(passMarks) || passMarks < 0 || passMarks > maxMarks) {
+    throw ApiError.badRequest("passMarks must be between 0 and maxMarks");
+  }
+
+  const subjects = await Subject.findAll({
+    where: {
+      branchId,
+      ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
+    },
+    attributes: ["id", "name"],
+  });
+  const duplicate = subjects.find(
+    (subject) => String(subject.name ?? "").trim().toLowerCase() === normalizedName,
+  );
+  if (duplicate) throw ApiError.badRequest("Subject already exists in this branch");
+
+  body.name = name;
+  body.code = code || null;
+  body.maxMarks = maxMarks;
+  body.passMarks = passMarks;
+  body.isActive = isActive;
+  body.branchId = branchId;
   return body;
 };
 
