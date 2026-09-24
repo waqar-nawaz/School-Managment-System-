@@ -867,6 +867,54 @@ const validateBranch = async (body: any, req: Request) => {
   return body;
 };
 
+const validateBook = async (body: any, req: Request) => {
+  const existing = await getExisting(Book, req);
+  const branchId = req.user?.branchId;
+  const isbn = String(body.isbn ?? existing?.isbn ?? "").trim();
+  const title = String(body.title ?? existing?.title ?? "").trim();
+  const copies = Number(body.copies ?? existing?.copies ?? 1);
+  const price = Number(body.price ?? existing?.price ?? 0);
+  if (!isbn || !title) throw new Error("ISBN and title are required");
+  if (!Number.isInteger(copies) || copies < 0) throw new Error("copies must be a non-negative integer");
+  if (!Number.isFinite(price) || price < 0) throw new Error("price must be non-negative");
+  const duplicate = await Book.findOne({ where: { isbn, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error("ISBN already exists in this branch");
+  body.isbn = isbn; body.title = title; body.copies = copies; body.price = price; body.branchId = branchId;
+  return body;
+};
+
+const validateBookCopy = async (body: any, req: Request) => {
+  const existing = await getExisting(BookCopy, req);
+  const branchId = req.user?.branchId;
+  const bookId = Number(body.bookId ?? existing?.bookId);
+  const accessionNo = String(body.accessionNo ?? existing?.accessionNo ?? "").trim();
+  if (!Number.isInteger(bookId) || bookId <= 0 || !accessionNo) throw new Error("bookId and accessionNo are required");
+  const book = await Book.findByPk(bookId);
+  if (!book || (branchId != null && Number(book.branchId) !== Number(branchId))) throw new Error("Book does not belong to your branch");
+  const duplicate = await BookCopy.findOne({ where: { accessionNo, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error("Accession number already exists in this branch");
+  if (body.status !== undefined && !["available","issued","reserved","damaged","lost"].includes(String(body.status))) throw new Error("Invalid copy status");
+  body.bookId = bookId; body.accessionNo = accessionNo; body.branchId = branchId;
+  if (existing) delete body.status;
+  return body;
+};
+
+const validateBookFine = async (body: any, req: Request) => {
+  const existing = await getExisting(BookFine, req);
+  const branchId = req.user?.branchId;
+  const issueId = Number(body.bookIssueId ?? existing?.bookIssueId);
+  const userId = Number(body.userId ?? existing?.userId);
+  const amount = Number(body.amount ?? existing?.amount);
+  const issue = await BookIssue.findByPk(issueId);
+  if (!issue || (branchId != null && Number(issue.branchId) !== Number(branchId))) throw new Error("Book issue does not belong to your branch");
+  if (!Number.isInteger(userId) || userId <= 0) throw new Error("userId is required");
+  const user = await User.findByPk(userId);
+  if (!user || (branchId != null && Number(user.branchId) !== Number(branchId))) throw new Error("User does not belong to your branch");
+  if (!Number.isFinite(amount) || amount < 0) throw new Error("Fine amount must be non-negative");
+  body.bookIssueId = issueId; body.userId = userId; body.amount = amount; body.branchId = branchId;
+  return body;
+};
+
 export const RESOURCES: ResourceDefinition[] = [
   { path: "roles", model: Role, searchable: ["name", "label", "description"], permission: "roles", beforeCreate: validateRole, beforeUpdate: validateRole },
   { path: "permissions", model: Permission, searchable: ["key", "label", "category"], permission: "permissions", readonly: true },
@@ -1117,7 +1165,7 @@ export const RESOURCES: ResourceDefinition[] = [
     },
   },
   { path: "books", model: Book, searchable: ["title", "author", "isbn", "category"], permission: "library" },
-  { path: "book-copies", model: BookCopy, searchable: ["accessionNo", "status"], permission: "library" },
+  { path: "book-copies", model: BookCopy, searchable: ["accessionNo", "status"], permission: "library", beforeCreate: validateBookCopy, beforeUpdate: validateBookCopy },
   { path: "book-fines", model: BookFine, searchable: ["receiptNo", "status"], permission: "book-fines" },
   { path: "routes", model: Route, searchable: ["name", "startPoint", "endPoint"], permission: "routes", beforeCreate: validateRoute, beforeUpdate: validateRoute },
   { path: "route-stops", model: RouteStop, searchable: ["name"], permission: "route-stops", beforeCreate: validateRouteStop, beforeUpdate: validateRouteStop },
