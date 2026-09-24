@@ -673,6 +673,61 @@ const validateHostelAllocation = async (body: any, req: Request) => {
   return body;
 };
 
+const validateCertificate = async (body: any, req: Request) => {
+  const existing = await getExisting(Certificate, req);
+  const studentId = Number(body.studentId ?? existing?.studentId);
+  const certNo = String(body.certNo ?? existing?.certNo ?? "").trim();
+  const type = String(body.type ?? existing?.type ?? "");
+  const issuedOn = body.issuedOn !== undefined ? new Date(body.issuedOn) : (existing?.issuedOn ? new Date(existing.issuedOn) : new Date());
+  const branchId = req.user?.branchId;
+  if (!certNo || !Number.isInteger(studentId) || studentId <= 0) throw new Error("certNo and studentId are required");
+  if (!["transfer", "character", "bonafide", "provisional", "mark_sheet"].includes(type)) throw new Error("Invalid certificate type");
+  if (!Number.isFinite(issuedOn.getTime())) throw new Error("Invalid issuedOn date");
+  const student = await Student.findByPk(studentId);
+  if (!student || (branchId != null && Number(student.branchId) !== Number(branchId))) throw new Error("Student does not belong to your branch");
+  const duplicate = await Certificate.findOne({ where: { certNo, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error("Certificate number already exists");
+  body.studentId = studentId; body.certNo = certNo; body.type = type; body.issuedOn = issuedOn; body.branchId = branchId;
+  return body;
+};
+
+const validateHealthRecord = async (body: any, req: Request) => {
+  const existing = await getExisting(HealthRecord, req);
+  const studentId = Number(body.studentId ?? existing?.studentId);
+  const branchId = req.user?.branchId;
+  if (!Number.isInteger(studentId) || studentId <= 0) throw new Error("studentId is required");
+  const student = await Student.findByPk(studentId);
+  if (!student || (branchId != null && Number(student.branchId) !== Number(branchId))) throw new Error("Student does not belong to your branch");
+  body.studentId = studentId; body.branchId = branchId;
+  if (body.lastCheckup !== undefined && body.lastCheckup) {
+    const d = new Date(body.lastCheckup); if (!Number.isFinite(d.getTime())) throw new Error("Invalid lastCheckup date"); body.lastCheckup = d;
+  }
+  return body;
+};
+
+const validateComplaint = async (body: any, req: Request) => {
+  const existing = await getExisting(Complaint, req);
+  const title = String(body.title ?? existing?.title ?? "").trim();
+  const description = String(body.description ?? existing?.description ?? "").trim();
+  const category = String(body.category ?? existing?.category ?? "");
+  const status = String(body.status ?? existing?.status ?? "open");
+  const priority = String(body.priority ?? existing?.priority ?? "low");
+  const branchId = req.user?.branchId;
+  if (!title || !description) throw new Error("Complaint title and description are required");
+  if (!["grievance", "harassment", "infrastructure", "other"].includes(category)) throw new Error("Invalid complaint category");
+  if (!["open", "in_progress", "resolved", "closed", "rejected"].includes(status)) throw new Error("Invalid complaint status");
+  if (!["low", "medium", "high", "urgent"].includes(priority)) throw new Error("Invalid complaint priority");
+  const assignedTo = body.assignedTo ?? existing?.assignedTo;
+  if (assignedTo != null) {
+    const user = await User.findByPk(Number(assignedTo));
+    if (!user || !user.isActive || (branchId != null && Number(user.branchId) !== Number(branchId))) throw new Error("Assigned user does not belong to your branch");
+    body.assignedTo = Number(assignedTo);
+  }
+  body.title = title; body.description = description; body.category = category; body.status = status; body.priority = priority; body.branchId = branchId;
+  if (status === "resolved" || status === "closed") body.resolvedAt = body.resolvedAt ? new Date(body.resolvedAt) : (existing?.resolvedAt ?? new Date());
+  return body;
+};
+
 export const RESOURCES: ResourceDefinition[] = [
   { path: "roles", model: Role, searchable: ["name", "label", "description"], permission: "roles" },
   { path: "permissions", model: Permission, searchable: ["key", "label", "category"], permission: "permissions" },
@@ -1002,7 +1057,7 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "notifications", model: Notification, searchable: ["title"], permission: "notifications", readonly: true },
   { path: "syllabus", model: Syllabus, searchable: ["title"], permission: "syllabus", beforeCreate: (body, req) => validateTeachingPlan(body, req), beforeUpdate: (body, req) => validateTeachingPlan(body, req) },
   { path: "lesson-plans", model: LessonPlan, searchable: ["title"], permission: "lesson-plans", beforeCreate: (body, req) => validateTeachingPlan({ ...body, __lessonPlan: true }, req), beforeUpdate: (body, req) => validateTeachingPlan({ ...body, __lessonPlan: true }, req) },
-  { path: "health-records", model: HealthRecord, searchable: ["bloodGroup"], permission: "health-records", readonly: true },
+  { path: "health-records", model: HealthRecord, searchable: ["bloodGroup"], permission: "health-records", beforeCreate: validateHealthRecord, beforeUpdate: validateHealthRecord },
   {
     path: "discipline-records", model: DisciplineRecord, searchable: ["title", "type", "status"], permission: "discipline-records",
     beforeCreate: validateDiscipline,
