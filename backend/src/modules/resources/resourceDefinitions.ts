@@ -84,6 +84,31 @@ const validateSubject = async (body: any, req: Request) => {
   return body;
 };
 
+const validateSchoolClass = async (body: any, req: Request) => {
+  const existing = await getExisting(SchoolClass, req);
+  const branchId = req.user?.branchId;
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  const level = String(body.level ?? existing?.level ?? "").trim();
+  const capacity = Number(body.capacity ?? existing?.capacity ?? 0);
+  const isActive = body.isActive !== undefined ? Boolean(body.isActive) : Boolean(existing?.isActive ?? true);
+  if (!name) throw new Error("Class name is required");
+  if (!Number.isInteger(capacity) || capacity < 0) throw new Error("Class capacity must be a non-negative integer");
+  const duplicate = await SchoolClass.findOne({
+    where: {
+      name,
+      ...(branchId != null ? { branchId } : {}),
+      ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
+    },
+  });
+  if (duplicate) throw new Error("Class already exists in this branch");
+  body.name = name;
+  body.level = level || null;
+  body.capacity = capacity;
+  body.isActive = isActive;
+  body.branchId = branchId;
+  return body;
+};
+
 const validateSection = async (body: any, req: Request) => {
   const existing = await getExisting(Section, req);
   const classId = Number(body.classId ?? existing?.classId);
@@ -810,7 +835,7 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeCreate: validateTerm,
     beforeUpdate: validateTerm,
   },
-  { path: "classes", model: SchoolClass, searchable: ["name", "level"], permission: "classes" },
+  { path: "classes", model: SchoolClass, searchable: ["name", "level"], permission: "classes", beforeCreate: validateSchoolClass, beforeUpdate: validateSchoolClass },
   { path: "sections", model: Section, searchable: ["name"], permission: "sections", beforeCreate: validateSection, beforeUpdate: validateSection },
   { path: "subjects", model: Subject, searchable: ["name", "code"], permission: "subjects", beforeCreate: validateSubject, beforeUpdate: validateSubject },
   { path: "class-subjects", model: ClassSubject, searchable: [], permission: "subjects", beforeCreate: validateClassSubject, beforeUpdate: validateClassSubject },
