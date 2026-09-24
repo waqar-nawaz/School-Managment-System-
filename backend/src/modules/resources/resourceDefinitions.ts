@@ -652,9 +652,15 @@ const validateRoute = async (body: any, req: Request) => {
   if (name.length > 120) throw ApiError.badRequest("Route name must be 120 characters or fewer");
   const monthlyFee = Number(body.monthlyFee ?? existing?.monthlyFee ?? 0);
   if (!Number.isFinite(monthlyFee) || monthlyFee < 0) throw ApiError.badRequest("monthlyFee must be non-negative");
+  const startPoint = String(body.startPoint ?? existing?.startPoint ?? "").trim();
+  const endPoint = String(body.endPoint ?? existing?.endPoint ?? "").trim();
+  const description = body.description !== undefined ? String(body.description ?? "").trim() : existing?.description;
+  if (startPoint.length > 120 || endPoint.length > 120) throw ApiError.badRequest("Route points must be 120 characters or fewer");
+  if (description != null && String(description).length > 2000) throw ApiError.badRequest("Route description is too long");
   const duplicate = await Route.findOne({ where: { branchId, name, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
   if (duplicate) throw ApiError.badRequest("Route already exists in this branch");
-  body.name = name; body.monthlyFee = monthlyFee; body.branchId = branchId;
+  body.name = name; body.startPoint = startPoint; body.endPoint = endPoint; body.description = description ?? null;
+  body.monthlyFee = monthlyFee; body.isActive = body.isActive !== undefined ? Boolean(body.isActive) : Boolean(existing?.isActive ?? true); body.branchId = branchId;
   return body;
 };
 const validateRouteStop = async (body: any, req: Request) => {
@@ -666,6 +672,7 @@ const validateRouteStop = async (body: any, req: Request) => {
   if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
   if (!Number.isInteger(routeId) || routeId <= 0 || !name) throw ApiError.badRequest("routeId and name are required");
   if (!Number.isInteger(orderIndex) || orderIndex < 0) throw ApiError.badRequest("orderIndex must be non-negative");
+  if (name.length > 180) throw ApiError.badRequest("Stop name must be 180 characters or fewer");
   const route = await Route.findOne({ where: { id: routeId, branchId } });
   if (!route || !route.isActive) throw ApiError.badRequest("Route not found, inactive, or outside your branch");
   const sameOrder = await RouteStop.findOne({ where: { routeId, branchId, orderIndex, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
@@ -691,18 +698,28 @@ const validateVehicle = async (body: any, req: Request) => {
   if (!registrationNo) throw ApiError.badRequest("registrationNo is required");
   const capacity = Number(body.capacity ?? existing?.capacity);
   if (!Number.isInteger(capacity) || capacity <= 0) throw ApiError.badRequest("capacity must be positive");
-  const status = String(body.status ?? existing?.status ?? "active");
+  const status = String(body.status ?? existing?.status ?? "active").trim().toLowerCase();
   if (!["active","maintenance","inactive"].includes(status)) throw ApiError.badRequest("Invalid vehicle status");
+  const fuelType = String(body.fuelType ?? existing?.fuelType ?? "").trim().toLowerCase();
+  if (fuelType && !["petrol","diesel","cng","electric"].includes(fuelType)) throw ApiError.badRequest("Invalid vehicle fuel type");
   const duplicate = await Vehicle.findOne({ where: { registrationNo, branchId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
   if (duplicate) throw ApiError.badRequest("Vehicle registration number already exists in this branch");
   for (const field of ["insuranceExpiry", "fitnessExpiry"]) {
-    if (body[field] !== undefined || existing?.[field]) {
-      const date = new Date(body[field] !== undefined ? body[field] : existing[field]);
+    if (body[field] !== undefined) {
+      if (body[field] === null || body[field] === "") {
+        body[field] = null;
+      } else {
+        const date = new Date(body[field]);
+        if (!Number.isFinite(date.getTime())) throw ApiError.badRequest("Invalid vehicle expiry date");
+        body[field] = date;
+      }
+    } else if (existing?.[field]) {
+      const date = new Date(existing[field]);
       if (!Number.isFinite(date.getTime())) throw ApiError.badRequest("Invalid vehicle expiry date");
       body[field] = date;
     }
   }
-  body.registrationNo = registrationNo; body.capacity = capacity; body.status = status; body.branchId = branchId;
+  body.registrationNo = registrationNo; body.capacity = capacity; body.fuelType = fuelType || null; body.status = status; body.branchId = branchId;
   return body;
 };
 const validateInventory = async (body: any, req: Request) => {
