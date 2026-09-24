@@ -54,6 +54,4 @@ export class AdmissionApplication extends BaseModel {
   @BelongsTo(() => User)
   reviewer!: User;
 
-  @BelongsTo(() => Branch)
-  branch!: Branch;
 }
