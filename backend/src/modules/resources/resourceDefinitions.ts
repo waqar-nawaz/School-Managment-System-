@@ -474,5 +474,32 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "inventory", model: InventoryItem, searchable: ["name", "sku", "category"], permission: "inventory" },
   { path: "assets", model: Asset, searchable: ["name", "assetCode", "category"], permission: "inventory" },
   { path: "audit-logs", model: AuditLog, searchable: ["action", "entity"], permission: "audit-logs", readonly: true },
-  { path: "visitor-logs", model: VisitorLog, searchable: ["visitorName", "purpose"], permission: "visitors" },
+  {
+    path: "visitor-logs", model: VisitorLog, searchable: ["visitorName", "purpose"], permission: "visitors",
+    beforeCreate: (body, req) => {
+      const checkedIn = body.checkedIn ? new Date(body.checkedIn) : new Date();
+      if (!Number.isFinite(checkedIn.getTime())) throw new Error("Invalid checkedIn date");
+      const checkedOut = body.checkedOut ? new Date(body.checkedOut) : null;
+      if (checkedOut && (!Number.isFinite(checkedOut.getTime()) || checkedOut < checkedIn)) {
+        throw new Error("checkedOut must be after checkedIn");
+      }
+      body.checkedIn = checkedIn;
+      body.checkedOut = checkedOut;
+      body.registeredBy = req.user?.id;
+      return body;
+    },
+    beforeUpdate: async (body, req) => {
+      const current = await VisitorLog.findByPk(req.params.id);
+      if (!current) throw new Error("Visitor log not found");
+      const checkedIn = body.checkedIn !== undefined ? new Date(body.checkedIn) : new Date(current.checkedIn);
+      const checkedOut = body.checkedOut !== undefined ? (body.checkedOut ? new Date(body.checkedOut) : null) : (current.checkedOut ? new Date(current.checkedOut) : null);
+      if (!Number.isFinite(checkedIn.getTime()) || (checkedOut && (!Number.isFinite(checkedOut.getTime()) || checkedOut < checkedIn))) {
+        throw new Error("Invalid visitor check-in/check-out time");
+      }
+      body.checkedIn = checkedIn;
+      body.checkedOut = checkedOut;
+      delete body.registeredBy;
+      return body;
+    },
+  },
 ];
