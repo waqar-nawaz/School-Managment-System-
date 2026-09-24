@@ -94,6 +94,7 @@ function exportCsv(def: ResourceDefinition) {
       action: "export",
       entity: def.path,
       userId: req.user?.id ?? null,
+      branchId: req.user?.branchId ?? null,
       role: req.user?.role,
       ip: req.ip,
       newData: { format: "csv" },
