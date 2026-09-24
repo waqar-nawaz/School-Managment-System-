@@ -468,16 +468,32 @@ const validateClassSubject = async (body: any, req: Request) => {
   const existing = await getExisting(ClassSubject, req);
   const classId = Number(body.classId ?? existing?.classId);
   const subjectId = Number(body.subjectId ?? existing?.subjectId);
-  const branchId = req.user?.branchId;
-  if (!Number.isInteger(classId) || classId <= 0 || !Number.isInteger(subjectId) || subjectId <= 0) throw new Error("classId and subjectId are required");
-  const schoolClass = await SchoolClass.findByPk(classId);
-  if (!schoolClass || !schoolClass.isActive) throw new Error("Class not found or inactive");
-  if (branchId != null && Number(schoolClass.branchId) !== Number(branchId)) throw new Error("Class does not belong to your branch");
-  const subject = await Subject.findByPk(subjectId);
-  if (!subject || !subject.isActive) throw new Error("Subject not found or inactive");
-  const duplicate = await ClassSubject.findOne({ where: { classId, subjectId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw new Error("Subject is already assigned to this class");
-  body.classId = classId; body.subjectId = subjectId; body.branchId = branchId;
+  const branchId = Number(req.user?.branchId);
+
+  if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
+  if (!Number.isInteger(classId) || classId <= 0 || !Number.isInteger(subjectId) || subjectId <= 0) {
+    throw ApiError.badRequest("classId and subjectId are required");
+  }
+
+  const schoolClass = await SchoolClass.findOne({ where: { id: classId, branchId } });
+  if (!schoolClass || !schoolClass.isActive) throw ApiError.badRequest("Class not found, inactive, or outside your branch");
+
+  const subject = await Subject.findOne({ where: { id: subjectId, branchId } });
+  if (!subject || !subject.isActive) throw ApiError.badRequest("Subject not found, inactive, or outside your branch");
+
+  const duplicate = await ClassSubject.findOne({
+    where: {
+      classId,
+      subjectId,
+      branchId,
+      ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
+    },
+  });
+  if (duplicate) throw ApiError.badRequest("Subject is already assigned to this class");
+
+  body.classId = classId;
+  body.subjectId = subjectId;
+  body.branchId = branchId;
   return body;
 };
 
