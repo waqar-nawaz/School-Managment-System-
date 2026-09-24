@@ -6,6 +6,7 @@ import { signAccessToken, signRefreshToken } from "../../utils/token.util";
 import { sendMail } from "../../services/email.service";
 import { writeAuditLog } from "../../services/audit.service";
 import { permissionsForRole } from "../../config/permissions";
+import env from "../../config";
 
 export interface LoginInput {
   identifier: string;
@@ -52,7 +53,7 @@ export async function login(input: LoginInput, ip?: string, userAgent?: string):
     tokenHash: sha256(refreshToken),
     ip: ip?.slice(0, 45),
     userAgent: (userAgent ?? "").slice(0, 255),
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    expiresAt: new Date(Date.now() + parseDurationMs(env.jwt.refreshExpiresIn)),
   });
 
   await user.update({
@@ -93,7 +94,7 @@ export async function refresh(refreshToken: string, ip?: string): Promise<AuthRe
     userId: user.id,
     tokenHash: sha256(newToken),
     ip: ip?.slice(0, 45),
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    expiresAt: new Date(Date.now() + parseDurationMs(env.jwt.refreshExpiresIn)),
   });
 
   return {
@@ -121,6 +122,10 @@ export async function changePassword(userId: number, current: string, next: stri
     passwordHash: await hashPassword(next),
     passwordChangedAt: new Date(),
   });
+  await RefreshToken.update(
+    { revoked: true, revokedAt: new Date() },
+    { where: { userId, revoked: false } }
+  );
 }
 
 export async function forgotPassword(
@@ -128,7 +133,7 @@ export async function forgotPassword(
   baseUrl: string
 ): Promise<{ resetUrl: string; mailed: boolean }> {
   const user = await User.findOne({ where: { email } });
-  if (!user) throw ApiError.notFound("No account found for that email");
+  if (!user) return { resetUrl: "", mailed: false };
 
   const token = crypto.randomBytes(32).toString("hex");
   const hashed = crypto.createHash("sha256").update(token).digest("hex");
@@ -181,4 +186,13 @@ export async function verifyEmail(token: string): Promise<void> {
 
 export function sha256(value: string): string {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function parseDurationMs(value: string): number {
+  const m = String(value || "").trim().match(/^(\d+)\s*(s|m|h|d)$/i);
+  if (!m) return 7 * 24 * 60 * 60 * 1000;
+  const n = Number(m[1]);
+  const unit = m[2].toLowerCase();
+  const factor = unit === "s" ? 1000 : unit === "m" ? 60 * 1000 : unit === "h" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  return n * factor;
 }
