@@ -1343,61 +1343,55 @@ export const RESOURCES: ResourceDefinition[] = [
   {
     path: "driver-assignments", model: DriverAssignment, searchable: [], permission: "driver-assignments",
     beforeCreate: async (body, req) => {
-      if (!body.vehicleId || !body.driverId) throw new Error("vehicleId and driverId are required");
-      const vehicle = await Vehicle.findByPk(body.vehicleId);
-      if (!vehicle) throw new Error("Vehicle not found");
-      if (vehicle.status !== "active") throw new Error("Selected vehicle is not active");
-      const driver = await User.findByPk(body.driverId);
-      if (!driver || !driver.isActive) throw new Error("Selected driver is not active");
-      if (body.routeId) {
-        const route = await Route.findByPk(body.routeId);
-        if (!route || !route.isActive) throw new Error("Selected route is not active");
-        if (req.user?.branchId != null && Number(route.branchId) !== Number(req.user.branchId)) {
-          throw new Error("Selected route does not belong to your branch");
-        }
+      const branchId = Number(req.user?.branchId);
+      const vehicleId = Number(body.vehicleId);
+      const driverId = Number(body.driverId);
+      if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
+      if (!Number.isInteger(vehicleId) || !Number.isInteger(driverId)) throw ApiError.badRequest("vehicleId and driverId are required");
+      const vehicle = await Vehicle.findOne({ where: { id: vehicleId, branchId } });
+      const driver = await User.findOne({ where: { id: driverId, branchId } });
+      if (!vehicle) throw ApiError.badRequest("Vehicle not found or outside your branch");
+      if (vehicle.status !== "active") throw ApiError.badRequest("Selected vehicle is not active");
+      if (!driver || !driver.isActive) throw ApiError.badRequest("Driver is not active or outside your branch");
+      const routeId = body.routeId ? Number(body.routeId) : null;
+      if (routeId) {
+        const route = await Route.findOne({ where: { id: routeId, branchId } });
+        if (!route || !route.isActive) throw ApiError.badRequest("Route not found, inactive, or outside your branch");
       }
-      const activeVehicle = await DriverAssignment.findOne({ where: { vehicleId: body.vehicleId, isActive: true } });
-      if (activeVehicle) throw new Error("Vehicle already has an active driver assignment");
-      const activeDriver = await DriverAssignment.findOne({ where: { driverId: body.driverId, isActive: true } });
-      if (activeDriver) throw new Error("Driver already has an active vehicle assignment");
+      if (await DriverAssignment.findOne({ where: { vehicleId, branchId, isActive: true } })) throw ApiError.badRequest("Vehicle already has an active driver");
+      if (await DriverAssignment.findOne({ where: { driverId, branchId, isActive: true } })) throw ApiError.badRequest("Driver already has an active vehicle");
       const assignedOn = body.assignedOn ? new Date(body.assignedOn) : new Date();
-      if (!Number.isFinite(assignedOn.getTime())) throw new Error("Invalid assignedOn date");
-      body.assignedOn = assignedOn;
-      body.isActive = body.isActive !== false;
+      if (!Number.isFinite(assignedOn.getTime())) throw ApiError.badRequest("Invalid assignedOn date");
+      body.vehicleId = vehicleId; body.driverId = driverId; body.routeId = routeId; body.assignedOn = assignedOn; body.isActive = body.isActive !== false; body.branchId = branchId;
       return body;
     },
     beforeUpdate: async (body, req) => {
       const id = Number(req.params.id);
+      const branchId = Number(req.user?.branchId);
       const current = await DriverAssignment.findByPk(id);
-      if (!current) throw new Error("Driver assignment not found");
-      const vehicleId = body.vehicleId ?? current.vehicleId;
-      const driverId = body.driverId ?? current.driverId;
-      const vehicle = await Vehicle.findByPk(vehicleId);
-      const driver = await User.findByPk(driverId);
-      if (!vehicle || vehicle.status !== "active") throw new Error("Selected vehicle is not active");
-      if (!driver || !driver.isActive) throw new Error("Selected driver is not active");
-      const routeId = body.routeId ?? current.routeId;
+      if (!current || Number(current.branchId) !== branchId) throw ApiError.badRequest("Driver assignment not found or outside your branch");
+      const vehicleId = Number(body.vehicleId ?? current.vehicleId);
+      const driverId = Number(body.driverId ?? current.driverId);
+      const vehicle = await Vehicle.findOne({ where: { id: vehicleId, branchId } });
+      const driver = await User.findOne({ where: { id: driverId, branchId } });
+      if (!vehicle || vehicle.status !== "active") throw ApiError.badRequest("Selected vehicle is not active or outside your branch");
+      if (!driver || !driver.isActive) throw ApiError.badRequest("Driver is not active or outside your branch");
+      const routeId = body.routeId !== undefined ? (body.routeId ? Number(body.routeId) : null) : (current.routeId ?? null);
       if (routeId) {
-        const route = await Route.findByPk(routeId);
-        if (!route || !route.isActive) throw new Error("Selected route is not active");
-        if (req.user?.branchId != null && Number(route.branchId) !== Number(req.user.branchId)) {
-          throw new Error("Selected route does not belong to your branch");
-        }
+        const route = await Route.findOne({ where: { id: routeId, branchId } });
+        if (!route || !route.isActive) throw ApiError.badRequest("Route not found, inactive, or outside your branch");
       }
-      const nextActive = body.isActive !== undefined ? Boolean(body.isActive) : current.isActive;
-      if (nextActive) {
-        const vehicleConflict = await DriverAssignment.findOne({ where: { vehicleId, isActive: true, id: { [Op.ne]: id } } });
-        if (vehicleConflict) throw new Error("Vehicle already has another active driver assignment");
-        const driverConflict = await DriverAssignment.findOne({ where: { driverId, isActive: true, id: { [Op.ne]: id } } });
-        if (driverConflict) throw new Error("Driver already has another active vehicle assignment");
+      const active = body.isActive !== undefined ? Boolean(body.isActive) : current.isActive;
+      if (active) {
+        if (await DriverAssignment.findOne({ where: { vehicleId, branchId, isActive: true, id: { [Op.ne]: id } } })) throw ApiError.badRequest("Vehicle already has another active driver");
+        if (await DriverAssignment.findOne({ where: { driverId, branchId, isActive: true, id: { [Op.ne]: id } } })) throw ApiError.badRequest("Driver already has another active vehicle");
       }
       const assignedOn = body.assignedOn !== undefined ? new Date(body.assignedOn) : new Date(current.assignedOn);
-      if (!Number.isFinite(assignedOn.getTime())) throw new Error("Invalid assignedOn date");
-      body.assignedOn = assignedOn;
+      if (!Number.isFinite(assignedOn.getTime())) throw ApiError.badRequest("Invalid assignedOn date");
+      body.vehicleId = vehicleId; body.driverId = driverId; body.routeId = routeId; body.assignedOn = assignedOn; body.isActive = active; body.branchId = branchId;
       return body;
     },
-  },
-  {
+  }
     path: "student-transport", model: StudentTransport, searchable: [], permission: "student-transport",
     beforeCreate: async (body, req) => {
       const student = await Student.findByPk(body.studentId);
