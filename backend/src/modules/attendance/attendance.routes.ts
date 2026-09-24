@@ -5,7 +5,7 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { Attendance, Enrolment, Student } from "../../models";
+import { Attendance, Enrolment, Student, SchoolClass, Section } from "../../models";
 import { ATTENDANCE_STATUS } from "../../utils/constants";
 import { monthRange } from "../../utils/dateRange";
 
@@ -18,19 +18,38 @@ function dateFromQuery(req: { query: Record<string, unknown>; body?: Record<stri
   return d;
 }
 
+function branchFilter(req: { user?: { branchId?: number | null } }): Record<string, unknown> {
+  return req.user?.branchId != null ? { branchId: req.user.branchId } : {};
+}
+
+async function validateClassScope(classId: number, sectionId: number | undefined, req: any): Promise<void> {
+  const cls = await SchoolClass.findByPk(classId);
+  if (!cls || !cls.isActive) throw ApiError.badRequest("Class not found or inactive");
+  if (req.user?.branchId != null && Number(cls.branchId) !== Number(req.user.branchId)) {
+    throw ApiError.forbidden("Class does not belong to your branch");
+  }
+  if (sectionId !== undefined) {
+    const section = await Section.findByPk(sectionId);
+    if (!section || !section.isActive || Number(section.classId) !== classId) {
+      throw ApiError.badRequest("Selected section does not belong to the selected class");
+    }
+  }
+}
+
 /** Attendance for one class/section on a date (teacher-facing register). */
 router.get("/register", authorize("attendance:read"), asyncHandler(async (req, res) => {
   const date = dateFromQuery(req);
   const classId = Number(req.query.classId);
   const sectionId = req.query.sectionId ? Number(req.query.sectionId) : undefined;
-  if (!classId) throw ApiError.badRequest("classId required");
+  if (!Number.isInteger(classId) || classId <= 0) throw ApiError.badRequest("classId required");
+  if (sectionId !== undefined && (!Number.isInteger(sectionId) || sectionId <= 0)) throw ApiError.badRequest("Invalid sectionId");
+  await validateClassScope(classId, sectionId, req);
 
   const sectionWhere = sectionId ? { sectionId } : {};
+  const scope = branchFilter(req);
 
-  // Prefer active enrolments; fall back to the student's own current
-  // class/section for records created without an enrolment.
   const enrolments = await Enrolment.findAll({
-    where: { classId, ...sectionWhere, status: "active" },
+    where: { ...scope, classId, ...sectionWhere, status: "active" },
   });
   let roster: Array<{ studentId: number; rollNo: string | null }> = enrolments.map((e) => ({
     studentId: Number(e.studentId),
@@ -39,6 +58,7 @@ router.get("/register", authorize("attendance:read"), asyncHandler(async (req, r
   if (!roster.length) {
     const byClass = await Student.findAll({
       where: {
+        ...scope,
         currentClassId: classId,
         ...(sectionId ? { currentSectionId: sectionId } : {}),
         isActive: true,
@@ -48,11 +68,11 @@ router.get("/register", authorize("attendance:read"), asyncHandler(async (req, r
     roster = byClass.map((s) => ({ studentId: Number(s.id), rollNo: null }));
   }
 
-  const records = await Attendance.findAll({ where: { date, classId, ...sectionWhere } });
+  const records = await Attendance.findAll({ where: { ...scope, date, classId, ...sectionWhere } });
   const studentIds = roster.map((r) => r.studentId);
   const students = studentIds.length
     ? await Student.findAll({
-        where: { id: studentIds },
+        where: { ...scope, id: studentIds },
         attributes: ["id", "firstName", "lastName", "admissionNo"],
       })
     : [];
@@ -84,10 +104,14 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
     entries: Array<{ studentId: number; status: string; lateMinutes?: number; reason?: string }>;
   };
   if (!Array.isArray(entries) || !entries.length) throw ApiError.badRequest("entries array required");
-  if (!Number.isInteger(Number(classId))) throw ApiError.badRequest("classId required");
-  if (sectionId !== undefined && !Number.isInteger(Number(sectionId))) throw ApiError.badRequest("Invalid sectionId");
+  if (!Number.isInteger(Number(classId)) || Number(classId) <= 0) throw ApiError.badRequest("classId required");
+  if (sectionId !== undefined && (!Number.isInteger(Number(sectionId)) || Number(sectionId) <= 0)) throw ApiError.badRequest("Invalid sectionId");
+  await validateClassScope(Number(classId), sectionId !== undefined ? Number(sectionId) : undefined, req);
+
+  const scope = branchFilter(req);
   const enrolments = await Enrolment.findAll({
     where: {
+      ...scope,
       classId: Number(classId),
       ...(sectionId !== undefined ? { sectionId: Number(sectionId) } : {}),
       status: "active",
@@ -109,6 +133,7 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
       throw ApiError.badRequest(`Invalid lateMinutes for student ${studentId}`);
     }
     return {
+      ...scope,
       studentId,
       date,
       status,
@@ -122,9 +147,7 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
 
   const t = await Attendance.sequelize!.transaction();
   try {
-    for (const row of cleaned) {
-      await Attendance.upsert(row, { transaction: t });
-    }
+    for (const row of cleaned) await Attendance.upsert(row, { transaction: t });
     await t.commit();
   } catch (e) {
     await t.rollback();
@@ -138,9 +161,12 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
 router.get("/summary", authorize("attendance:read"), asyncHandler(async (req, res) => {
   const month = String(req.query.month || new Date().toISOString().slice(0, 7));
   const classId = req.query.classId ? Number(req.query.classId) : undefined;
+  if (classId !== undefined && (!Number.isInteger(classId) || classId <= 0)) throw ApiError.badRequest("Invalid classId");
+  if (classId !== undefined) await validateClassScope(classId, undefined, req);
 
   const { start, end } = monthRange(month);
   const where: Record<string, unknown> = {
+    ...branchFilter(req),
     date: { [Op.gte]: start, [Op.lt]: end },
     ...(classId ? { classId } : {}),
   };
@@ -155,10 +181,17 @@ router.get("/summary", authorize("attendance:read"), asyncHandler(async (req, re
 
 /** Per-student monthly record. */
 router.get("/student/:studentId", authorize("attendance:read"), asyncHandler(async (req, res) => {
+  const studentId = Number(req.params.studentId);
+  if (!Number.isInteger(studentId) || studentId <= 0) throw ApiError.badRequest("Invalid studentId");
+  const student = await Student.findByPk(studentId);
+  if (!student) throw ApiError.notFound("Student not found");
+  if (req.user?.branchId != null && Number(student.branchId) !== Number(req.user.branchId)) {
+    throw ApiError.forbidden("Student does not belong to your branch");
+  }
   const month = String(req.query.month || new Date().toISOString().slice(0, 7));
   const { start, end } = monthRange(month);
   const rows = await Attendance.findAll({
-    where: { studentId: req.params.studentId, date: { [Op.gte]: start, [Op.lt]: end } },
+    where: { ...branchFilter(req), studentId, date: { [Op.gte]: start, [Op.lt]: end } },
     order: [["date", "ASC"]],
   });
   ApiResponse.success(res, 200, "Student attendance", rows);
