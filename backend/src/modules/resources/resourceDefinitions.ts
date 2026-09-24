@@ -35,21 +35,27 @@ const getExisting = async (model: any, req: Request) => {
 
 const validateAcademicYear = async (body: any, req: Request) => {
   const existing = await getExisting(AcademicYear, req);
-  const start = body.startDate !== undefined ? new Date(body.startDate) : existing?.startDate;
-  const end = body.endDate !== undefined ? new Date(body.endDate) : existing?.endDate;
-  if (start && end && (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end)) {
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  const start = body.startDate !== undefined ? new Date(body.startDate) : (existing?.startDate ? new Date(existing.startDate) : null);
+  const end = body.endDate !== undefined ? new Date(body.endDate) : (existing?.endDate ? new Date(existing.endDate) : null);
+  const isCurrent = body.isCurrent !== undefined ? Boolean(body.isCurrent) : Boolean(existing?.isCurrent);
+  const isClosed = body.isClosed !== undefined ? Boolean(body.isClosed) : Boolean(existing?.isClosed);
+  if (!name) throw new Error("Academic year name is required");
+  if (!start || !end || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end) {
     throw new Error("Academic year startDate must be before endDate");
   }
-  const wantsCurrent = body.isCurrent === true;
-  if (wantsCurrent) {
+  if (isClosed && isCurrent) throw new Error("A closed academic year cannot be current");
+  if (isCurrent) {
     const current = await AcademicYear.findOne({
       where: { isCurrent: true, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
     });
     if (current) throw new Error("Another academic year is already marked as current");
   }
-  if (body.isClosed === true && wantsCurrent) {
-    throw new Error("A closed academic year cannot be current");
-  }
+  body.name = name;
+  body.startDate = start;
+  body.endDate = end;
+  body.isCurrent = isCurrent;
+  body.isClosed = isClosed;
   return body;
 };
 
@@ -75,49 +81,87 @@ const validateTerm = async (body: any, req: Request) => {
 
 const validateEnrolment = async (body: any, req: Request) => {
   const existing = await getExisting(Enrolment, req);
-  const classId = body.classId ?? existing?.classId;
-  const sectionId = body.sectionId ?? existing?.sectionId;
-  const studentId = body.studentId ?? existing?.studentId;
-  const academicYearId = body.academicYearId ?? existing?.academicYearId;
-  if (!studentId || !classId || !academicYearId) throw new Error("studentId, academicYearId and classId are required");
+  const classId = Number(body.classId ?? existing?.classId);
+  const sectionId = body.sectionId !== undefined ? (body.sectionId ? Number(body.sectionId) : null) : (existing?.sectionId ?? null);
+  const studentId = Number(body.studentId ?? existing?.studentId);
+  const academicYearId = Number(body.academicYearId ?? existing?.academicYearId);
+  const status = String(body.status ?? existing?.status ?? "active");
+  const branchId = req.user?.branchId;
+  if (!Number.isInteger(studentId) || studentId <= 0 || !Number.isInteger(classId) || classId <= 0 || !Number.isInteger(academicYearId) || academicYearId <= 0) {
+    throw new Error("studentId, academicYearId and classId are required");
+  }
+  if (existing && (Number(existing.studentId) !== studentId || Number(existing.academicYearId) !== academicYearId)) {
+    throw new Error("Student and academic year cannot be changed on an existing enrolment");
+  }
+  if (!["active", "promoted", "graduated", "transferred", "withdrawn", "expelled"].includes(status)) {
+    throw new Error("Invalid enrolment status");
+  }
   const student = await Student.findByPk(studentId);
   if (!student) throw new Error("Student not found");
+  if (branchId != null && Number(student.branchId) !== Number(branchId)) throw new Error("Student does not belong to your branch");
   const schoolClass = await SchoolClass.findByPk(classId);
-  if (!schoolClass) throw new Error("Class not found");
+  if (!schoolClass || !schoolClass.isActive) throw new Error("Class not found or inactive");
+  if (branchId != null && Number(schoolClass.branchId) !== Number(branchId)) throw new Error("Class does not belong to your branch");
   if (sectionId) {
     const section = await Section.findByPk(sectionId);
-    if (!section) throw new Error("Section not found");
-    if (Number(section.classId) !== Number(classId)) {
-      throw new Error("Selected section does not belong to the selected class");
-    }
+    if (!section || !section.isActive) throw new Error("Section not found or inactive");
+    if (Number(section.classId) !== classId) throw new Error("Selected section does not belong to the selected class");
   }
   const year = await AcademicYear.findByPk(academicYearId);
   if (!year) throw new Error("Academic year not found");
+  if (year.isClosed && status === "active") throw new Error("A closed academic year cannot have an active enrolment");
+  const duplicate = await Enrolment.findOne({
+    where: {
+      studentId,
+      academicYearId,
+      status: "active",
+      ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
+    },
+  });
+  if (duplicate) throw new Error("Student already has an active enrolment for this academic year");
+  body.studentId = studentId;
+  body.academicYearId = academicYearId;
+  body.classId = classId;
+  body.sectionId = sectionId;
+  body.status = status;
+  body.branchId = branchId;
   return body;
 };
 
 const validateExamResult = async (body: any, req: Request) => {
   const existing = await getExisting(ExamResult, req);
-  const examId = body.examId ?? existing?.examId;
-  const studentId = body.studentId ?? existing?.studentId;
-  const subjectId = body.subjectId ?? existing?.subjectId;
+  const examId = Number(body.examId ?? existing?.examId);
+  const studentId = Number(body.studentId ?? existing?.studentId);
+  const subjectId = Number(body.subjectId ?? existing?.subjectId);
   const obtained = Number(body.marksObtained ?? existing?.marksObtained);
   const max = Number(body.maxMarks ?? existing?.maxMarks);
-  if (!examId || !studentId || !subjectId) throw new Error("examId, studentId and subjectId are required");
-  if (!Number.isFinite(max) || max <= 0) throw new Error("maxMarks must be greater than 0");
-  if (!Number.isFinite(obtained) || obtained < 0 || obtained > max) {
-    throw new Error("marksObtained must be between 0 and maxMarks");
+  const branchId = req.user?.branchId;
+  if (!Number.isInteger(examId) || examId <= 0 || !Number.isInteger(studentId) || studentId <= 0 || !Number.isInteger(subjectId) || subjectId <= 0) {
+    throw new Error("examId, studentId and subjectId are required");
   }
+  if (!Number.isFinite(max) || max <= 0) throw new Error("maxMarks must be greater than 0");
+  if (!Number.isFinite(obtained) || obtained < 0 || obtained > max) throw new Error("marksObtained must be between 0 and maxMarks");
   const exam = await Exam.findByPk(examId);
   if (!exam) throw new Error("Exam not found");
   const student = await Student.findByPk(studentId);
   if (!student) throw new Error("Student not found");
+  if (branchId != null && Number(student.branchId) !== Number(branchId)) throw new Error("Student does not belong to your branch");
   const enrolment = await Enrolment.findOne({
-    where: { studentId, academicYearId: exam.academicYearId, status: { [Op.notIn]: ["withdrawn", "expelled"] } },
+    where: { studentId, academicYearId: exam.academicYearId, ...(branchId != null ? { branchId } : {}), status: { [Op.notIn]: ["withdrawn", "expelled"] } },
   });
   if (!enrolment) throw new Error("Student is not enrolled in the exam academic year");
   const classSubject = await ClassSubject.findOne({ where: { classId: enrolment.classId, subjectId } });
   if (!classSubject) throw new Error("Subject is not assigned to the student's class");
+  const duplicate = await ExamResult.findOne({
+    where: { examId, studentId, subjectId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
+  });
+  if (duplicate) throw new Error("Exam result already exists for this student and subject");
+  body.examId = examId;
+  body.studentId = studentId;
+  body.subjectId = subjectId;
+  body.maxMarks = max;
+  body.marksObtained = obtained;
+  body.branchId = branchId;
   return body;
 };
 
