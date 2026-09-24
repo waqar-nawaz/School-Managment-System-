@@ -129,7 +129,7 @@ const validateSection = async (body: any, req: Request) => {
       ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
     },
   });
-  if (duplicate) throw new Error("Section already exists in this class");
+  if (duplicate) throw ApiError.badRequest("Section already exists in this class");
 
   // If the class has an explicit capacity, the combined capacity of its
   // sections must not exceed the class capacity.
