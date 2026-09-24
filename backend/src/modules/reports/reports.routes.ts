@@ -104,19 +104,13 @@ router.get(
     const invoiceWhere: any = { issueDate: { [Op.between]: [from, to] } };
     const paymentWhere: any = { paidOn: { [Op.between]: [from, to] }, status: "successful" };
     if (branchId) {
-      invoiceWhere["$student.branchId$"] = branchId;
-      paymentWhere["$student.branchId$"] = branchId;
+      const studentIds = await branchStudentIds(branchId) || [];
+      invoiceWhere.studentId = { [Op.in]: studentIds };
+      paymentWhere.studentId = { [Op.in]: studentIds };
     }
 
-    const invoiced = await Invoice.sum("totalDue", {
-      where: invoiceWhere,
-      include: branchId ? [{ association: "student", attributes: [], required: true }] : [],
-    }) || 0;
-
-    const collected = await Payment.sum("amount", {
-      where: paymentWhere,
-      include: branchId ? [{ model: Student, attributes: [], required: true, where: { branchId } }] : [],
-    }) || 0;
+    const invoiced = await Invoice.sum("totalDue", { where: invoiceWhere }) || 0;
+    const collected = await Payment.sum("amount", { where: paymentWhere }) || 0;
 
     let spentWhere: any = { expensedOn: { [Op.between]: [from, to] }, status: "approved" };
     if (branchId) {
