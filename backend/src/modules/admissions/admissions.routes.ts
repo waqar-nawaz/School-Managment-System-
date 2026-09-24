@@ -79,11 +79,5 @@ router.patch("/:id/status", authorize("admissions:update"), asyncHandler(async (
   ApiResponse.success(res, 200, `Application marked ${status}`, app);
 }));
 
-router.get("/stats/pipeline", authorize("admissions:read"), asyncHandler(async (_req, res) => {
-  const apps = await AdmissionApplication.findAll({ attributes: ["status"] });
-  const pipeline: Record<string, number> = {};
-  for (const a of apps) pipeline[a.status] = (pipeline[a.status] || 0) + 1;
-  ApiResponse.success(res, 200, "Admission pipeline", pipeline);
-}));
 
 export default router;
