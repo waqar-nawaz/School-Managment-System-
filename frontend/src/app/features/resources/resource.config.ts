@@ -81,6 +81,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
     key: 'permissions', label: 'Permissions', api: '/permissions',
     columns: [nameCol('key', 'Key'), nameCol('label', 'Label'), nameCol('category', 'Category')],
     fields: fields([{ key: 'key', label: 'Permission key', required: true }, { key: 'label', label: 'Label' }, { key: 'category', label: 'Category' }]),
+    canCreate: false,
   },
   branches: {
     key: 'branches', label: 'Branches', api: '/branches',
@@ -89,7 +90,9 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
       { key: 'name', label: 'Branch name', required: true },
       { key: 'code', label: 'Code' },
       { key: 'address', label: 'Address', type: 'textarea' },
-      { key: 'city', label: 'City' }, { key: 'phone', label: 'Phone' }, { key: 'email', label: 'Email' },
+      { key: 'city', label: 'City' }, { key: 'state', label: 'State' }, { key: 'country', label: 'Country' },
+      { key: 'phone', label: 'Phone' }, { key: 'email', label: 'Email' }, { key: 'website', label: 'Website' }, { key: 'postalCode', label: 'Postal code' },
+      { key: 'isActive', label: 'Active', type: 'bool' },
     ]),
   },
   'academic-years': {
