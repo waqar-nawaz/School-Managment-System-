@@ -1,6 +1,7 @@
 import { Table, Column, Unique, DataType, Index, ForeignKey } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { SchoolClass } from "./SchoolClass";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "sections" })
 export class Section extends BaseModel {
@@ -12,6 +13,10 @@ export class Section extends BaseModel {
   @ForeignKey(() => SchoolClass)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   classId!: number;
+
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
 
   @Index
   @Column({ type: DataType.INTEGER.UNSIGNED, defaultValue: 0 })
