@@ -291,7 +291,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   routes: {
     key: 'routes', label: 'Transport Routes', api: '/routes',
     columns: [nameCol('name'), nameCol('startPoint', 'Start'), nameCol('endPoint', 'End'), { key: 'monthlyFee', label: 'Fee', type: 'money' }, boolCol('isActive', 'Active')],
-    fields: fields([{ key: 'name', label: 'Route name', required: true }, { key: 'startPoint', label: 'Start point' }, { key: 'endPoint', label: 'End point' }, { key: 'monthlyFee', label: 'Monthly fee', type: 'number' }, { key: 'description', label: 'Description', type: 'textarea' }, boolCol('isActive', 'Active')]),
+    fields: fields([{ key: 'name', label: 'Route name', required: true }, { key: 'startPoint', label: 'Start point' }, { key: 'endPoint', label: 'End point' }, { key: 'monthlyFee', label: 'Monthly fee', type: 'number' }, { key: 'description', label: 'Description', type: 'textarea' }, { key: 'isActive', label: 'Active', type: 'bool' }]),
   },
   'route-stops': {
     key: 'route-stops', label: 'Route Stops', api: '/route-stops',
