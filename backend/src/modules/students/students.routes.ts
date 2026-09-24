@@ -122,7 +122,7 @@ router.post(
       currentSectionId,
       medicalInfo: body.medicalInfo,
       userId: user.id,
-      branchId: body.branchId,
+      branchId: req.user!.branchId,
     });
 
     if (guardians.length) {
@@ -176,8 +176,7 @@ router.post(
 );
 
 router.put("/:id", authorize("students:update"), asyncHandler(async (req, res) => {
-  const student = await Student.findByPk(req.params.id);
-  if (!student) throw ApiError.notFound("Student not found");
+  const student = await assertStudentAccess(req, Number(req.params.id));
   const b = req.body as Record<string, unknown>;
   const patch: Record<string, unknown> = { ...b };
   // Accept both form keys (dob/classId/sectionId) and model keys.
@@ -221,18 +220,15 @@ router.put("/:id", authorize("students:update"), asyncHandler(async (req, res) =
 }));
 
 router.delete("/:id", authorize("students:delete"), asyncHandler(async (req, res) => {
-  const student = await Student.findByPk(req.params.id);
-  if (!student) throw ApiError.notFound("Student not found");
+  const student = await assertStudentAccess(req, Number(req.params.id));
   await student.update({ isActive: false });
   ApiResponse.success(res, 200, "Student deactivated", null);
 }));
 
 /** Guardians associated with a student. */
 router.get("/:id/guardians", authorize("students:read"), asyncHandler(async (req, res) => {
-  const student = await Student.findByPk(req.params.id, {
-    include: [{ association: "guardians" }],
-  });
-  if (!student) throw ApiError.notFound("Student not found");
+  const student = await assertStudentAccess(req, Number(req.params.id));
+  await student.reload({ include: [{ association: "guardians" }] });
   ApiResponse.success(res, 200, "Guardians", (student as any).guardians || []);
 }));
 
@@ -250,6 +246,7 @@ router.get("/:id/attendance", authorize("attendance:read", "students:read"), asy
 
 /** Fee summary: invoices + payments for a student. */
 router.get("/:id/fees", authorize("students:read"), asyncHandler(async (req, res) => {
+  await assertStudentAccess(req, Number(req.params.id));
   const invoices = await Invoice.findAll({
     where: { studentId: req.params.id },
     include: [{ association: "payments" }],
