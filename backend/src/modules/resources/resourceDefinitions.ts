@@ -1,4 +1,5 @@
 import { Request } from "express";
+import { Op } from "sequelize";
 import {
   Role, Permission, Branch, AcademicYear, Term, SchoolClass, Section, Subject,
   ClassSubject, Enrolment, Parent, Teacher, Staff, Exam, ExamSchedule, ExamResult,
@@ -27,23 +28,169 @@ export interface ResourceDefinition {
 const plain = (row: any): Record<string, any> =>
   row && typeof row.get === "function" ? row.get({ plain: true }) : { ...row };
 
+const getExisting = async (model: any, req: Request) => {
+  const id = req.params?.id;
+  return id ? model.findByPk(id) : null;
+};
+
+const validateAcademicYear = async (body: any, req: Request) => {
+  const existing = await getExisting(AcademicYear, req);
+  const start = body.startDate !== undefined ? new Date(body.startDate) : existing?.startDate;
+  const end = body.endDate !== undefined ? new Date(body.endDate) : existing?.endDate;
+  if (start && end && (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end)) {
+    throw new Error("Academic year startDate must be before endDate");
+  }
+  const wantsCurrent = body.isCurrent === true;
+  if (wantsCurrent) {
+    const current = await AcademicYear.findOne({
+      where: { isCurrent: true, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
+    });
+    if (current) throw new Error("Another academic year is already marked as current");
+  }
+  if (body.isClosed === true && wantsCurrent) {
+    throw new Error("A closed academic year cannot be current");
+  }
+  return body;
+};
+
+const validateTerm = async (body: any, req: Request) => {
+  const existing = await getExisting(Term, req);
+  const academicYearId = body.academicYearId ?? existing?.academicYearId;
+  if (!academicYearId) throw new Error("academicYearId is required");
+  const year = await AcademicYear.findByPk(academicYearId);
+  if (!year) throw new Error("Academic year not found");
+  const start = body.startDate !== undefined ? new Date(body.startDate) : existing?.startDate;
+  const end = body.endDate !== undefined ? new Date(body.endDate) : existing?.endDate;
+  if (start && end && (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end)) {
+    throw new Error("Term startDate must be before endDate");
+  }
+  if (start && (start < new Date(year.startDate) || start > new Date(year.endDate))) {
+    throw new Error("Term startDate must be within the academic year");
+  }
+  if (end && (end < new Date(year.startDate) || end > new Date(year.endDate))) {
+    throw new Error("Term endDate must be within the academic year");
+  }
+  return body;
+};
+
+const validateEnrolment = async (body: any, req: Request) => {
+  const existing = await getExisting(Enrolment, req);
+  const classId = body.classId ?? existing?.classId;
+  const sectionId = body.sectionId ?? existing?.sectionId;
+  const studentId = body.studentId ?? existing?.studentId;
+  const academicYearId = body.academicYearId ?? existing?.academicYearId;
+  if (!studentId || !classId || !academicYearId) throw new Error("studentId, academicYearId and classId are required");
+  const student = await Student.findByPk(studentId);
+  if (!student) throw new Error("Student not found");
+  const schoolClass = await SchoolClass.findByPk(classId);
+  if (!schoolClass) throw new Error("Class not found");
+  if (sectionId) {
+    const section = await Section.findByPk(sectionId);
+    if (!section) throw new Error("Section not found");
+    if (Number(section.classId) !== Number(classId)) {
+      throw new Error("Selected section does not belong to the selected class");
+    }
+  }
+  const year = await AcademicYear.findByPk(academicYearId);
+  if (!year) throw new Error("Academic year not found");
+  return body;
+};
+
+const validateExamResult = async (body: any, req: Request) => {
+  const existing = await getExisting(ExamResult, req);
+  const examId = body.examId ?? existing?.examId;
+  const studentId = body.studentId ?? existing?.studentId;
+  const subjectId = body.subjectId ?? existing?.subjectId;
+  const obtained = Number(body.marksObtained ?? existing?.marksObtained);
+  const max = Number(body.maxMarks ?? existing?.maxMarks);
+  if (!examId || !studentId || !subjectId) throw new Error("examId, studentId and subjectId are required");
+  if (!Number.isFinite(max) || max <= 0) throw new Error("maxMarks must be greater than 0");
+  if (!Number.isFinite(obtained) || obtained < 0 || obtained > max) {
+    throw new Error("marksObtained must be between 0 and maxMarks");
+  }
+  const exam = await Exam.findByPk(examId);
+  if (!exam) throw new Error("Exam not found");
+  const student = await Student.findByPk(studentId);
+  if (!student) throw new Error("Student not found");
+  const enrolment = await Enrolment.findOne({
+    where: { studentId, academicYearId: exam.academicYearId, status: { [Op.notIn]: ["withdrawn", "expelled"] } },
+  });
+  if (!enrolment) throw new Error("Student is not enrolled in the exam academic year");
+  const classSubject = await ClassSubject.findOne({ where: { classId: enrolment.classId, subjectId } });
+  if (!classSubject) throw new Error("Subject is not assigned to the student's class");
+  return body;
+};
+
+const parseTimeMinutes = (value: unknown): number | null => {
+  const s = String(value ?? "").trim();
+  const m = /^(\\d{1,2}):(\\d{2})$/.exec(s);
+  if (!m) return null;
+  const h = Number(m[1]), min = Number(m[2]);
+  return h >= 0 && h <= 23 && min >= 0 && min <= 59 ? h * 60 + min : null;
+};
+
+const validateExamSchedule = async (body: any, req: Request) => {
+  const existing = await getExisting(ExamSchedule, req);
+  const examId = body.examId ?? existing?.examId;
+  const classId = body.classId ?? existing?.classId;
+  const sectionId = body.sectionId ?? existing?.sectionId;
+  const subjectId = body.subjectId ?? existing?.subjectId;
+  const date = body.date !== undefined ? new Date(body.date) : existing?.date;
+  const start = parseTimeMinutes(body.startTime ?? existing?.startTime);
+  const end = parseTimeMinutes(body.endTime ?? existing?.endTime);
+  if (!examId || !classId || !subjectId) throw new Error("examId, classId and subjectId are required");
+  if (start === null || end === null || start >= end) throw new Error("Invalid exam schedule time range");
+  if (!date || !Number.isFinite(new Date(date).getTime())) throw new Error("Valid exam date is required");
+  const exam = await Exam.findByPk(examId);
+  if (!exam) throw new Error("Exam not found");
+  if (exam.startDate && date < new Date(exam.startDate)) throw new Error("Exam schedule date is before the exam start date");
+  if (exam.endDate && date > new Date(exam.endDate)) throw new Error("Exam schedule date is after the exam end date");
+  const section = sectionId ? await Section.findByPk(sectionId) : null;
+  if (sectionId && (!section || Number(section.classId) !== Number(classId))) {
+    throw new Error("Selected section does not belong to the selected class");
+  }
+  const classSubject = await ClassSubject.findOne({ where: { classId, subjectId } });
+  if (!classSubject) throw new Error("Subject is not assigned to the selected class");
+  return body;
+};
+
 export const RESOURCES: ResourceDefinition[] = [
   { path: "roles", model: Role, searchable: ["name", "label", "description"], permission: "roles" },
   { path: "permissions", model: Permission, searchable: ["key", "label", "category"], permission: "permissions" },
   { path: "branches", model: Branch, searchable: ["name", "code", "city", "email"], permission: "branches" },
-  { path: "academic-years", model: AcademicYear, searchable: ["name"], permission: "academic" },
-  { path: "terms", model: Term, searchable: ["name"], permission: "academic" },
+  {
+    path: "academic-years", model: AcademicYear, searchable: ["name"], permission: "academic",
+    beforeCreate: validateAcademicYear,
+    beforeUpdate: validateAcademicYear,
+  },
+  {
+    path: "terms", model: Term, searchable: ["name"], permission: "academic",
+    beforeCreate: validateTerm,
+    beforeUpdate: validateTerm,
+  },
   { path: "classes", model: SchoolClass, searchable: ["name", "level"], permission: "classes" },
   { path: "sections", model: Section, searchable: ["name"], permission: "sections" },
   { path: "subjects", model: Subject, searchable: ["name", "code"], permission: "subjects" },
   { path: "class-subjects", model: ClassSubject, searchable: [], permission: "subjects" },
-  { path: "enrolments", model: Enrolment, searchable: ["rollNo", "status"], permission: "students" },
+  {
+    path: "enrolments", model: Enrolment, searchable: ["rollNo", "status"], permission: "students",
+    beforeCreate: validateEnrolment,
+    beforeUpdate: validateEnrolment,
+  },
   { path: "parents", model: Parent, searchable: ["fullName", "phone", "email"], permission: "students" },
   { path: "teachers", model: Teacher, searchable: ["staffNo", "firstName", "lastName", "email"], permission: "teachers" },
   { path: "staff", model: Staff, searchable: ["staffNo", "firstName", "lastName", "department"], permission: "staff" },
   { path: "exams", model: Exam, searchable: ["name", "examType", "status"], permission: "exams" },
-  { path: "exam-schedules", model: ExamSchedule, searchable: ["room", "startTime"], permission: "exams" },
-  { path: "exam-results", model: ExamResult, searchable: ["grade", "remarks"], permission: "exam-results" },
+  {
+    path: "exam-schedules", model: ExamSchedule, searchable: ["room", "startTime"], permission: "exams",
+    beforeCreate: validateExamSchedule,
+    beforeUpdate: validateExamSchedule,
+  },
+  {
+    path: "exam-results", model: ExamResult, searchable: ["grade", "remarks"], permission: "exam-results",
+    beforeCreate: validateExamResult,
+    beforeUpdate: validateExamResult,
+  },
   {
     path: "report-cards", model: ReportCard, searchable: ["grade"], permission: "exam-results",
     // studentId is required by the model but not on the form — derive it from the enrolment.
