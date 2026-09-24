@@ -6,6 +6,9 @@ import { Branch } from "./Branch";
 
 @Table({ tableName: "certificates" })
 export class Certificate extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @Unique
   @Column({ type: DataType.STRING(40), allowNull: false })
   certNo!: string;
@@ -39,6 +42,9 @@ export class Certificate extends BaseModel {
 
 @Table({ tableName: "health_records" })
 export class HealthRecord extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @ForeignKey(() => Student)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   studentId!: number;
