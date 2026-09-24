@@ -581,10 +581,11 @@ const validateHostel = async (body: any, req: Request) => {
   const name = String(body.name ?? existing?.name ?? "").trim();
   const gender = String(body.gender ?? existing?.gender ?? "");
   const capacity = Number(body.capacity ?? existing?.capacity ?? 0);
+  const branchId = req.user?.branchId;
   if (!name) throw new Error("Hostel name is required");
   if (!["boys", "girls", "coed"].includes(gender)) throw new Error("Invalid hostel gender");
   if (!Number.isInteger(capacity) || capacity < 1) throw new Error("Hostel capacity must be a positive integer");
-  body.name = name; body.gender = gender; body.capacity = capacity;
+  body.name = name; body.gender = gender; body.capacity = capacity; body.branchId = branchId;
   return body;
 };
 
@@ -593,13 +594,16 @@ const validateRoom = async (body: any, req: Request) => {
   const hostelId = Number(body.hostelId ?? existing?.hostelId);
   const roomNo = String(body.roomNo ?? existing?.roomNo ?? "").trim();
   const capacity = Number(body.capacity ?? existing?.capacity ?? 4);
+  const branchId = req.user?.branchId;
   if (!Number.isInteger(hostelId) || hostelId <= 0 || !roomNo) throw new Error("hostelId and roomNo are required");
   if (!Number.isInteger(capacity) || capacity < 1) throw new Error("Room capacity must be positive");
   const hostel = await Hostel.findByPk(hostelId);
-  if (!hostel || hostel.isActive === false) throw new Error("Hostel not found or inactive");
+  if (!hostel || hostel.isActive === false || (branchId != null && Number(hostel.branchId) !== Number(branchId))) {
+    throw new Error("Hostel does not belong to your branch or is inactive");
+  }
   const duplicate = await Room.findOne({ where: { hostelId, roomNo, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
   if (duplicate) throw new Error("Room number already exists in this hostel");
-  body.hostelId = hostelId; body.roomNo = roomNo; body.capacity = capacity;
+  body.hostelId = hostelId; body.roomNo = roomNo; body.capacity = capacity; body.branchId = branchId;
   return body;
 };
 
@@ -607,12 +611,13 @@ const validateBed = async (body: any, req: Request) => {
   const existing = await getExisting(Bed, req);
   const roomId = Number(body.roomId ?? existing?.roomId);
   const bedNo = String(body.bedNo ?? existing?.bedNo ?? "").trim();
+  const branchId = req.user?.branchId;
   if (!Number.isInteger(roomId) || roomId <= 0 || !bedNo) throw new Error("roomId and bedNo are required");
   const room = await Room.findByPk(roomId);
-  if (!room) throw new Error("Room not found");
+  if (!room || (branchId != null && Number(room.branchId) !== Number(branchId))) throw new Error("Room does not belong to your branch");
   const duplicate = await Bed.findOne({ where: { roomId, bedNo, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
   if (duplicate) throw new Error("Bed number already exists in this room");
-  body.roomId = roomId; body.bedNo = bedNo;
+  body.roomId = roomId; body.bedNo = bedNo; body.branchId = branchId;
   return body;
 };
 
@@ -626,50 +631,34 @@ const validateHostelAllocation = async (body: any, req: Request) => {
   const checkIn = body.checkIn !== undefined ? new Date(body.checkIn) : (existing?.checkIn ? new Date(existing.checkIn) : new Date());
   const checkOut = body.checkOut !== undefined ? (body.checkOut ? new Date(body.checkOut) : null) : (existing?.checkOut ? new Date(existing.checkOut) : null);
 
-  if (!Number.isInteger(studentId) || studentId <= 0 || !Number.isInteger(bedId) || bedId <= 0) {
-    throw new Error("studentId and bedId are required");
-  }
+  if (!Number.isInteger(studentId) || studentId <= 0 || !Number.isInteger(bedId) || bedId <= 0) throw new Error("studentId and bedId are required");
   if (!["active", "checked_out", "transferred"].includes(status)) throw new Error("Invalid hostel allocation status");
   if (!Number.isFinite(monthlyFee) || monthlyFee < 0) throw new Error("monthlyFee must be non-negative");
-  if (!Number.isFinite(checkIn.getTime()) || (checkOut && (!Number.isFinite(checkOut.getTime()) || checkOut < checkIn))) {
-    throw new Error("Invalid hostel allocation date range");
-  }
+  if (!Number.isFinite(checkIn.getTime()) || (checkOut && (!Number.isFinite(checkOut.getTime()) || checkOut < checkIn))) throw new Error("Invalid hostel allocation date range");
 
   const student = await Student.findByPk(studentId);
-  if (!student || (branchId != null && Number(student.branchId) !== Number(branchId))) {
-    throw new Error("Student does not belong to your branch");
-  }
+  if (!student || (branchId != null && Number(student.branchId) !== Number(branchId))) throw new Error("Student does not belong to your branch");
 
   const bed = await Bed.findByPk(bedId);
-  if (!bed) throw new Error("Selected bed not found");
+  if (!bed || (branchId != null && Number(bed.branchId) !== Number(branchId))) throw new Error("Selected bed does not belong to your branch");
   const changingBed = !existing || Number(existing.bedId) !== bedId;
   if (changingBed && bed.status !== "available") throw new Error("Selected bed is not available");
 
   const room = await Room.findByPk(bed.roomId);
-  if (!room) throw new Error("Room not found");
+  if (!room || (branchId != null && Number(room.branchId) !== Number(branchId))) throw new Error("Room does not belong to your branch");
   const hostel = await Hostel.findByPk(room.hostelId);
-  if (!hostel || hostel.isActive === false) throw new Error("Hostel is inactive");
+  if (!hostel || hostel.isActive === false || (branchId != null && Number(hostel.branchId) !== Number(branchId))) throw new Error("Hostel does not belong to your branch or is inactive");
 
-  const activeBed = await HostelAllocation.findOne({
-    where: { bedId, status: "active", ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
-  });
+  const activeBed = await HostelAllocation.findOne({ where: { bedId, status: "active", ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
   if (status === "active" && activeBed) throw new Error("Selected bed is already allocated");
 
-  if (status === "active") {
-    const activeStudent = await HostelAllocation.findOne({
-      where: { studentId, status: "active", ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
-    });
-    if (activeStudent) throw new Error("Student already has an active hostel allocation");
-  }
+  const activeStudent = status === "active"
+    ? await HostelAllocation.findOne({ where: { studentId, status: "active", ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } })
+    : null;
+  if (activeStudent) throw new Error("Student already has an active hostel allocation");
 
-  body.studentId = studentId;
-  body.bedId = bedId;
-  body.roomId = room.id;
-  body.hostelId = hostel.id;
-  body.status = status;
-  body.monthlyFee = monthlyFee;
-  body.checkIn = checkIn;
-  body.checkOut = checkOut;
+  body.studentId = studentId; body.bedId = bedId; body.roomId = room.id; body.hostelId = hostel.id;
+  body.status = status; body.monthlyFee = monthlyFee; body.checkIn = checkIn; body.checkOut = checkOut; body.branchId = branchId;
   return body;
 };
 
