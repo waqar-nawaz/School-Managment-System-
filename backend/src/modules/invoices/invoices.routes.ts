@@ -79,7 +79,16 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
 router.patch("/:id/status", authorize("invoices:update"), asyncHandler(async (req, res) => {
   const invoice = await Invoice.findByPk(req.params.id);
   if (!invoice) throw ApiError.notFound("Invoice not found");
-  await invoice.update({ status: req.body.status });
+  const nextStatus = String(req.body.status || "");
+  const allowed = ["pending", "partial", "paid", "overdue", "cancelled"];
+  if (!allowed.includes(nextStatus)) throw ApiError.badRequest("Invalid invoice status");
+  if (nextStatus === "paid" && Number(invoice.amountPaid) < Number(invoice.totalDue)) {
+    throw ApiError.badRequest("Invoice cannot be marked paid before the full amount is received");
+  }
+  if (invoice.status === "cancelled" && nextStatus !== "cancelled") {
+    throw ApiError.badRequest("Cancelled invoices cannot be reopened manually");
+  }
+  await invoice.update({ status: nextStatus });
   ApiResponse.success(res, 200, "Invoice updated", invoice);
 }));
 
@@ -91,34 +100,45 @@ router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, r
   const amount = Number(req.body.amount);
   if (!(amount > 0)) throw ApiError.badRequest("amount must be positive");
 
-  const payment = await Payment.create({
-    receiptNo: `PAY-${Date.now()}`,
-    invoiceId: invoice.id,
-    studentId: invoice.studentId,
-    amount,
-    method: req.body.method || "cash",
-    reference: req.body.reference,
-    paidOn: req.body.paidOn || new Date(),
-    status: "successful",
-    notes: req.body.notes,
-    recordedBy: req.user!.id,
-  });
+  if (invoice.status === "cancelled") throw ApiError.badRequest("Cancelled invoices cannot receive payments");
+  const remaining = Math.max(0, Number(invoice.totalDue) - Number(invoice.amountPaid));
+  if (amount > remaining) throw ApiError.badRequest(`Payment exceeds remaining balance of ${remaining}`);
 
-  const paid = Number(invoice.amountPaid) + amount;
-  const status = paid >= Number(invoice.totalDue) ? "paid" : "partial";
-  await invoice.update({ amountPaid: paid, status });
+  const t = await Invoice.sequelize!.transaction();
+  try {
+    const payment = await Payment.create({
+      receiptNo: `PAY-${Date.now()}`,
+      invoiceId: invoice.id,
+      studentId: invoice.studentId,
+      amount,
+      method: req.body.method || "cash",
+      reference: req.body.reference,
+      paidOn: req.body.paidOn || new Date(),
+      status: "successful",
+      notes: req.body.notes,
+      recordedBy: req.user!.id,
+    }, { transaction: t });
 
-  const receipt = await Receipt.create({
-    receiptNo: `RCT-${Date.now()}`,
-    paymentId: payment.id,
-    invoiceId: invoice.id,
-    amount,
-    headline: `Payment received for ${invoice.invoiceNo}`,
-    body: `Received ${amount} ${req.body.currency || "USD"} towards ${invoice.invoiceNo}. Balance due: ${Math.max(0, Number(invoice.totalDue) - paid)}.`,
-    currency: req.body.currency || "USD",
-  });
+    const paid = Number(invoice.amountPaid) + amount;
+    const status = paid >= Number(invoice.totalDue) ? "paid" : "partial";
+    await invoice.update({ amountPaid: paid, status }, { transaction: t });
 
-  ApiResponse.success(res, 201, "Payment recorded", { payment, receipt, balanceDue: Math.max(0, Number(invoice.totalDue) - paid) });
+    const receipt = await Receipt.create({
+      receiptNo: `RCT-${Date.now()}`,
+      paymentId: payment.id,
+      invoiceId: invoice.id,
+      amount,
+      headline: `Payment received for ${invoice.invoiceNo}`,
+      body: `Received ${amount} ${req.body.currency || "USD"} towards ${invoice.invoiceNo}. Balance due: ${Math.max(0, Number(invoice.totalDue) - paid)}.`,
+      currency: req.body.currency || "USD",
+    }, { transaction: t });
+
+    await t.commit();
+    ApiResponse.success(res, 201, "Payment recorded", { payment, receipt, balanceDue: Math.max(0, Number(invoice.totalDue) - paid) });
+  } catch (e) {
+    await t.rollback();
+    throw e;
+  }
 }));
 
 export default router;
