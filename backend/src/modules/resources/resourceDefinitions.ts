@@ -8,7 +8,7 @@ import {
   Route, RouteStop, Vehicle, DriverAssignment, StudentTransport, Hostel, Room, Bed,
   HostelAllocation, Event, Notice, Announcement, Message, Notification, Syllabus,
   LessonPlan, HealthRecord, DisciplineRecord, Complaint, InventoryItem, Asset,
-  AuditLog, VisitorLog, User,
+  AuditLog, VisitorLog, User, BookIssue,
 } from "../../models";
 
 export interface ResourceDefinition {
