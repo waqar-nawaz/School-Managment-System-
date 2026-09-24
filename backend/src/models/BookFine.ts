@@ -2,9 +2,13 @@ import { Table, Column, DataType, ForeignKey } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { BookIssue } from "./BookIssue";
 import { User } from "./User";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "book_fines" })
 export class BookFine extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @ForeignKey(() => BookIssue)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   bookIssueId!: number;
