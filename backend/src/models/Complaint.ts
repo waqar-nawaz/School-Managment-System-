@@ -1,6 +1,7 @@
 import { Table, Column, DataType, Index, ForeignKey } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { User } from "./User";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "complaints" })
 export class Complaint extends BaseModel {
@@ -39,6 +40,10 @@ export class Complaint extends BaseModel {
 
 @Table({ tableName: "inventory" })
 export class InventoryItem extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
+
   @Column({ type: DataType.STRING(180), allowNull: false })
   name!: string;
 
@@ -70,6 +75,10 @@ export class InventoryItem extends BaseModel {
 
 @Table({ tableName: "assets" })
 export class Asset extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
+
   @Column({ type: DataType.STRING(40), allowNull: false })
   assetCode!: string;
 
