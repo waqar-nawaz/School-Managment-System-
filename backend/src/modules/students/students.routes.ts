@@ -50,6 +50,16 @@ router.get("/", authorize("students:read"), asyncHandler(async (req, res) => {
   return base.list(req, res);
 }));
 
+router.get("/inactive", authorize("students:read"), asyncHandler(async (req, res) => {
+  if (req.user?.role === "parent") throw ApiError.forbidden("Parents cannot access inactive students");
+  const rows = await Student.findAll({
+    where: { branchId: req.user?.branchId, isActive: false },
+    include: [{ association: "enrolments" }],
+    order: [["admissionNo", "ASC"]],
+  });
+  ApiResponse.success(res, 200, "Inactive students", rows);
+}));
+
 router.get("/:id", authorize("students:read"), asyncHandler(async (req, res) => {
   const student = await assertStudentAccess(req, Number(req.params.id));
   ApiResponse.success(res, 200, "Fetched", student);
@@ -154,6 +164,23 @@ router.post(
       }
 
       if (currentClassId) {
+        if (currentSectionId) {
+          const section = await Section.findOne({
+            where: { id: Number(currentSectionId), classId: Number(currentClassId), branchId, isActive: true },
+            transaction,
+          });
+          if (!section) throw ApiError.badRequest("Selected section is inactive or does not belong to the selected class");
+          if (Number(section.capacity) > 0) {
+            const activeCount = await Enrolment.count({
+              where: { sectionId: section.id, branchId, status: "active" },
+              transaction,
+            });
+            if (activeCount >= Number(section.capacity)) {
+              throw ApiError.badRequest("Section " + section.name + " is full (capacity " + section.capacity + ")");
+            }
+          }
+        }
+
         let academicYearId: number | undefined = body.academicYearId;
         if (academicYearId) {
           const selectedYear = await AcademicYear.findOne({ where: { id: Number(academicYearId), branchId }, transaction });
@@ -225,15 +252,21 @@ router.put("/:id", authorize("students:update"), asyncHandler(async (req, res) =
 
   if (newClassId) {
     const schoolClass = await SchoolClass.findByPk(newClassId);
-    if (!schoolClass) throw ApiError.badRequest("Class not found");
+    if (!schoolClass || !schoolClass.isActive) throw ApiError.badRequest("Class not found or inactive");
     if (req.user?.branchId != null && Number(schoolClass.branchId) !== Number(req.user.branchId)) {
       throw ApiError.badRequest("Selected class does not belong to your branch");
     }
     if (newSectionId != null) {
       const section = await Section.findByPk(newSectionId);
-      if (!section) throw ApiError.badRequest("Section not found");
-      if (Number(section.classId) !== newClassId) {
-        throw ApiError.badRequest("Selected section does not belong to the selected class");
+      if (!section || !section.isActive) throw ApiError.badRequest("Section not found or inactive");
+      if (Number(section.classId) !== newClassId || Number(section.branchId) !== Number(req.user?.branchId)) {
+        throw ApiError.badRequest("Selected section does not belong to the selected class or branch");
+      }
+      const activeCount = await Enrolment.count({
+        where: { sectionId: newSectionId, branchId: req.user?.branchId, status: "active", studentId: { [Op.ne]: student.id } },
+      });
+      if (Number(section.capacity) > 0 && activeCount >= Number(section.capacity)) {
+        throw ApiError.badRequest("Section " + section.name + " is full (capacity " + section.capacity + ")");
       }
     }
   }
@@ -242,8 +275,8 @@ router.put("/:id", authorize("students:update"), asyncHandler(async (req, res) =
 
   if (newClassId) {
     const academicYear =
-      (await AcademicYear.findOne({ where: { isCurrent: true } })) ||
-      (await AcademicYear.findOne({ order: [["startDate", "DESC"]] }));
+      (await AcademicYear.findOne({ where: { isCurrent: true, branchId: req.user?.branchId } })) ||
+      (await AcademicYear.findOne({ where: { branchId: req.user?.branchId }, order: [["startDate", "DESC"]] }));
     if (academicYear) {
       const [enrolment] = await Enrolment.findOrCreate({
         where: { studentId: student.id, academicYearId: academicYear.id },
@@ -263,6 +296,35 @@ router.delete("/:id", authorize("students:delete"), asyncHandler(async (req, res
   const student = await assertStudentAccess(req, Number(req.params.id));
   await student.update({ isActive: false });
   ApiResponse.success(res, 200, "Student deactivated", null);
+}));
+
+router.patch("/:id/reactivate", authorize("students:update"), asyncHandler(async (req, res) => {
+  const student = await assertStudentAccess(req, Number(req.params.id));
+  if (student.isActive) return ApiResponse.success(res, 200, "Student is already active", student);
+
+  const classId = Number(student.currentClassId ?? 0);
+  const sectionId = student.currentSectionId != null ? Number(student.currentSectionId) : null;
+  if (classId && sectionId) {
+    const section = await Section.findOne({
+      where: { id: sectionId, classId, branchId: req.user?.branchId, isActive: true },
+    });
+    if (!section) throw ApiError.badRequest("Student's current section is inactive or no longer belongs to the class");
+    if (Number(section.capacity) > 0) {
+      const activeCount = await Enrolment.count({
+        where: { sectionId, branchId: req.user?.branchId, status: "active" },
+      });
+      if (activeCount >= Number(section.capacity)) {
+        throw ApiError.badRequest("Section " + section.name + " is full (capacity " + section.capacity + ")");
+      }
+    }
+  }
+
+  await student.update({ isActive: true });
+  await writeAuditLog({
+    action: "update", entity: "student", entityId: student.id, userId: req.user!.id,
+    role: req.user!.role, ip: req.ip, newData: { isActive: true },
+  });
+  ApiResponse.success(res, 200, "Student reactivated", student);
 }));
 
 router.get("/:id/guardians", authorize("students:read"), asyncHandler(async (req, res) => {
