@@ -52,6 +52,9 @@ export const sequelize = env.db.url
 async function ensureColumns(): Promise<void> {
   const qi = sequelize.getQueryInterface();
   const wanted: Array<{ table: string; column: string; def: Record<string, unknown> }> = [
+    { table: "parents", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
+    { table: "teachers", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
+    { table: "staff", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "academic_years", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "terms", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "subjects", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
