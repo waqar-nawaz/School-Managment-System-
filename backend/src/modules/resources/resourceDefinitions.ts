@@ -193,8 +193,17 @@ const validateExamSchedule = async (body: any, req: Request) => {
   if (sectionId && (!section || Number(section.classId) !== Number(classId))) {
     throw new Error("Selected section does not belong to the selected class");
   }
+  const schoolClass = await SchoolClass.findByPk(classId);
+  if (!schoolClass || !schoolClass.isActive) throw new Error("Selected class is not active");
+  if (req.user?.branchId != null && Number(schoolClass.branchId) !== Number(req.user.branchId)) throw new Error("Selected class does not belong to your branch");
   const classSubject = await ClassSubject.findOne({ where: { classId, subjectId } });
   if (!classSubject) throw new Error("Subject is not assigned to the selected class");
+  body.examId = Number(examId);
+  body.classId = Number(classId);
+  body.sectionId = sectionId ? Number(sectionId) : null;
+  body.subjectId = Number(subjectId);
+  body.date = new Date(date);
+  body.branchId = req.user?.branchId;
   return body;
 };
 
