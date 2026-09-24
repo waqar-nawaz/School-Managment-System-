@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { Op } from "sequelize";
 import { authenticate } from "../../middlewares/authenticate";
 import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
@@ -26,29 +27,42 @@ router.post("/:id/refund", authorize("payments:create"), asyncHandler(async (req
   if (payment.status !== "successful") throw ApiError.badRequest("Only successful payments can be refunded");
 
   const amount = Number(req.body.amount ?? payment.amount);
-  if (amount > Number(payment.amount)) throw ApiError.badRequest("Refund amount exceeds payment");
+  if (!(amount > 0)) throw ApiError.badRequest("Refund amount must be positive");
+  const prior = await Refund.sum("amount", { where: { paymentId: payment.id, status: { [Op.in]: ["pending", "processed"] } } });
+  const refundable = Number(payment.amount) - Number(prior || 0);
+  if (amount > refundable) throw ApiError.badRequest(`Refund exceeds refundable payment balance of ${refundable}`);
 
-  const refund = await Refund.create({
-    paymentId: payment.id,
-    invoiceId: payment.invoiceId,
-    amount,
-    method: req.body.method || "bank",
-    reason: req.body.reason || "",
-    refundedOn: req.body.refundedOn || new Date(),
-    status: req.body.approve ? "processed" : "pending",
-    approvedBy: req.body.approve ? req.user!.id : null,
-  });
+  const t = await Payment.sequelize!.transaction();
+  try {
+    const refund = await Refund.create({
+      paymentId: payment.id,
+      invoiceId: payment.invoiceId,
+      amount,
+      method: req.body.method || "bank",
+      reason: req.body.reason || "",
+      refundedOn: req.body.refundedOn || new Date(),
+      status: req.body.approve ? "processed" : "pending",
+      approvedBy: req.body.approve ? req.user!.id : null,
+    }, { transaction: t });
 
-  if (req.body.approve) {
-    await payment.update({ status: refund.amount >= Number(payment.amount) ? "refunded" : "reversed" });
-    const invoice = await Invoice.findByPk(payment.invoiceId);
-    if (invoice) {
-      const amountPaid = Math.max(0, Number(invoice.amountPaid) - Number(refund.amount));
-      await invoice.update({ amountPaid, status: amountPaid >= Number(invoice.totalDue) ? "paid" : amountPaid > 0 ? "partial" : "pending" });
+    if (req.body.approve) {
+      await payment.update({ status: amount >= Number(payment.amount) ? "refunded" : "reversed" }, { transaction: t });
+      const invoice = await Invoice.findByPk(payment.invoiceId, { transaction: t, lock: t.LOCK.UPDATE });
+      if (invoice) {
+        const amountPaid = Math.max(0, Number(invoice.amountPaid) - amount);
+        await invoice.update({
+          amountPaid,
+          status: amountPaid >= Number(invoice.totalDue) ? "paid" : amountPaid > 0 ? "partial" : "pending",
+        }, { transaction: t });
+      }
     }
-  }
 
-  ApiResponse.success(res, 201, "Refund recorded", refund);
+    await t.commit();
+    ApiResponse.success(res, 201, "Refund recorded", refund);
+  } catch (e) {
+    await t.rollback();
+    throw e;
+  }
 }));
 
 router.get("/receipts/:paymentId", authorize("payments:read"), asyncHandler(async (req, res) => {
