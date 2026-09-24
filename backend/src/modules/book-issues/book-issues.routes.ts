@@ -10,6 +10,8 @@ import { BookCopy, Book, BookIssue, BookFine, User, Student } from "../../models
 import { createCrudController } from "../../utils/crudFactory";
 
 const router = Router();
+const branchOf = (req: any) => req.user?.branchId == null ? null : Number(req.user.branchId);
+const assertBranch = (row: any, req: any, label: string) => { const b = branchOf(req); if (b != null && (!row || Number(row.branchId) !== b)) throw ApiError.forbidden(`${label} does not belong to your branch`); };
 router.use(authenticate);
 
 const base = createCrudController<BookIssue>({
@@ -34,6 +36,7 @@ router.post("/", authorize("book-issues:create"), asyncHandler(async (req, res) 
       copy = await BookCopy.findOne({ where: { bookId, status: "available" }, transaction, lock: transaction.LOCK.UPDATE });
     }
     if (!copy || copy.status !== "available") throw ApiError.badRequest("No available copy for this book");
+    assertBranch(copy, req, "Book copy");
 
     let borrowerId = userId;
     if (!borrowerId && studentId) {
@@ -41,6 +44,7 @@ router.post("/", authorize("book-issues:create"), asyncHandler(async (req, res) 
       borrowerId = student?.userId;
     }
     const borrower = borrowerId ? await User.findByPk(borrowerId, { transaction }) : null;
+    assertBranch(borrower, req, "Borrower");
     if (!borrower) throw ApiError.badRequest("Borrower not found: provide a valid userId or studentId");
 
     const days = Number(dueInDays);
@@ -48,7 +52,7 @@ router.post("/", authorize("book-issues:create"), asyncHandler(async (req, res) 
 
     await copy.update({ status: "issued" }, { transaction });
     return BookIssue.create({
-      bookCopyId: copy.id, userId: borrowerId, issueDate: new Date(),
+      bookCopyId: copy.id, userId: borrowerId, branchId: branchOf(req), issueDate: new Date(),
       dueDate: new Date(Date.now() + days * 86400000), requestedFor, status: "issued", fine: 0,
     }, { transaction });
   });
@@ -58,6 +62,7 @@ router.post("/", authorize("book-issues:create"), asyncHandler(async (req, res) 
 router.put("/:id", authorize("book-issues:update"), asyncHandler(async (req, res) => {
   const issue = await BookIssue.findByPk(req.params.id);
   if (!issue) throw ApiError.notFound("Issue not found");
+  assertBranch(issue, req, "Book issue");
   const { dueDate, status, requestedFor } = req.body;
   if (status !== undefined && status !== issue.status) throw ApiError.badRequest("Use the return or mark-lost action to change status");
   if (dueDate !== undefined && Number.isNaN(new Date(dueDate).getTime())) throw ApiError.badRequest("Invalid dueDate");
@@ -72,6 +77,8 @@ router.post("/:id/return", authorize("book-issues:update"), asyncHandler(async (
   const issue = await sequelize.transaction(async (transaction) => {
     const current = await BookIssue.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!current) throw ApiError.notFound("Issue not found");
+    assertBranch(current, req, "Book issue");
+    assertBranch(current, req, "Book issue");
     if (current.status !== "issued") throw ApiError.badRequest("Only issued books can be returned");
     const copy = await BookCopy.findByPk(current.bookCopyId, { transaction, lock: transaction.LOCK.UPDATE });
     if (!copy || copy.status !== "issued") throw ApiError.badRequest("Book copy is not currently issued");
@@ -110,9 +117,9 @@ router.post("/:id/mark-lost", authorize("book-issues:update"), asyncHandler(asyn
   ApiResponse.success(res, 200, "Book marked lost", issue);
 }));
 
-router.get("/overdue/list", authorize("library:read"), asyncHandler(async (_req, res) => {
+router.get("/overdue/list", authorize("library:read"), asyncHandler(async (req, res) => {
   const issues = await BookIssue.findAll({
-    where: { status: "issued", dueDate: { [Op.lt]: new Date() } },
+    where: { status: "issued", dueDate: { [Op.lt]: new Date() }, ...(branchOf(req) != null ? { branchId: branchOf(req) } : {}) },
     include: [{ association: "borrower", attributes: ["id", "firstName", "lastName", "email"] }],
     order: [["dueDate", "ASC"]],
   });
