@@ -191,8 +191,8 @@ router.post(
       return student;
     });
 
-    await writeAuditLog({ action: "create", entity: "student", entityId: student.id, userId: req.user!.id, role: req.user!.role, ip: req.ip, newData: { admissionNo: student.admissionNo } });
-    ApiResponse.success(res, 201, "Student admitted", student);
+    await writeAuditLog({ action: "create", entity: "student", entityId: result.id, userId: req.user!.id, role: req.user!.role, ip: req.ip, newData: { admissionNo: result.admissionNo } });
+    ApiResponse.success(res, 201, "Student admitted", result);
   })
 );
 
