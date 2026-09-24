@@ -222,9 +222,9 @@ export const RESOURCES: ResourceDefinition[] = [
       if ((payeeType === "teacher" && (!teacherId || staffId)) || (payeeType === "staff" && (!staffId || teacherId))) {
         throw new Error("Payroll must reference exactly one matching teacher or staff member");
       }
-      const payeeModel = payeeType === "teacher" ? Teacher : Staff;
-      const payeeId = payeeType === "teacher" ? teacherId : staffId;
-      const payee = await payeeModel.findByPk(payeeId, { include: [{ model: User, where: req.user?.branchId != null ? { branchId: req.user.branchId } : undefined, required: req.user?.branchId != null }] });
+      const payee = payeeType === "teacher"
+        ? await Teacher.findByPk(teacherId, { include: [{ model: User, where: req.user?.branchId != null ? { branchId: req.user.branchId } : undefined, required: req.user?.branchId != null }] })
+        : await Staff.findByPk(staffId, { include: [{ model: User, where: req.user?.branchId != null ? { branchId: req.user.branchId } : undefined, required: req.user?.branchId != null }] });
       if (!payee || !payee.isActive) throw new Error("Selected payroll payee is not active or does not belong to your branch");
       const duplicateWhere = payeeType === "teacher" ? { month, teacherId } : { month, staffId };
       const duplicate = await PayrollItem.findOne({ where: duplicateWhere });
@@ -252,9 +252,9 @@ export const RESOURCES: ResourceDefinition[] = [
       if ((payeeType === "teacher" && (!teacherId || staffId)) || (payeeType === "staff" && (!staffId || teacherId))) {
         throw new Error("Payroll must reference exactly one matching teacher or staff member");
       }
-      const payeeModel = payeeType === "teacher" ? Teacher : Staff;
-      const payeeId = payeeType === "teacher" ? teacherId : staffId;
-      const payee = await payeeModel.findByPk(payeeId, { include: [{ model: User, where: req.user?.branchId != null ? { branchId: req.user.branchId } : undefined, required: req.user?.branchId != null }] });
+      const payee = payeeType === "teacher"
+        ? await Teacher.findByPk(teacherId, { include: [{ model: User, where: req.user?.branchId != null ? { branchId: req.user.branchId } : undefined, required: req.user?.branchId != null }] })
+        : await Staff.findByPk(staffId, { include: [{ model: User, where: req.user?.branchId != null ? { branchId: req.user.branchId } : undefined, required: req.user?.branchId != null }] });
       if (!payee || !payee.isActive) throw new Error("Selected payroll payee is not active or does not belong to your branch");
       const duplicateWhere = payeeType === "teacher" ? { month, teacherId, id: { [Op.ne]: id } } : { month, staffId, id: { [Op.ne]: id } };
       const duplicate = await PayrollItem.findOne({ where: duplicateWhere });
