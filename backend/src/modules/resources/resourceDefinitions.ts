@@ -772,6 +772,7 @@ export const RESOURCES: ResourceDefinition[] = [
     path: "payroll", model: PayrollItem, searchable: ["month", "status"], permission: "payroll",
     beforeCreate: async (body, req) => {
       const month = String(body.month ?? "").trim();
+      const branchId = req.user?.branchId;
       if (!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("month must be in YYYY-MM format");
       const payeeType = body.payeeType === "staff" ? "staff" : body.payeeType === "teacher" ? "teacher" : null;
       if (!payeeType) throw new Error("payeeType must be teacher or staff");
@@ -781,11 +782,10 @@ export const RESOURCES: ResourceDefinition[] = [
         throw new Error("Payroll must reference exactly one matching teacher or staff member");
       }
       const payee = payeeType === "teacher"
-        ? await Teacher.findByPk(teacherId as number, { include: [{ model: User, where: req.user?.branchId != null ? { branchId: req.user.branchId } : undefined, required: req.user?.branchId != null }] })
-        : await Staff.findByPk(staffId as number, { include: [{ model: User, where: req.user?.branchId != null ? { branchId: req.user.branchId } : undefined, required: req.user?.branchId != null }] });
+        ? await Teacher.findByPk(teacherId as number, { include: [{ model: User, where: branchId != null ? { branchId } : undefined, required: branchId != null }] })
+        : await Staff.findByPk(staffId as number, { include: [{ model: User, where: branchId != null ? { branchId } : undefined, required: branchId != null }] });
       if (!payee || !payee.isActive) throw new Error("Selected payroll payee is not active or does not belong to your branch");
-      const duplicateWhere = payeeType === "teacher" ? { month, teacherId } : { month, staffId };
-      const duplicate = await PayrollItem.findOne({ where: duplicateWhere });
+      const duplicate = await PayrollItem.findOne({ where: { ...(branchId != null ? { branchId } : {}), ...(payeeType === "teacher" ? { teacherId } : { staffId }), month } });
       if (duplicate) throw new Error("Payroll already exists for this payee and month");
       const basicSalary = Number(body.basicSalary);
       const allowances = Number(body.allowances ?? 0);
@@ -793,7 +793,18 @@ export const RESOURCES: ResourceDefinition[] = [
       if (!Number.isFinite(basicSalary) || basicSalary < 0 || !Number.isFinite(allowances) || allowances < 0 || !Number.isFinite(deductions) || deductions < 0) {
         throw new Error("Salary amounts must be valid non-negative numbers");
       }
-      if (body.status === "paid" && !body.paidOn) throw new Error("paidOn is required when payroll status is paid");
+      const status = String(body.status ?? "draft");
+      if (!["draft", "approved", "paid"].includes(status)) throw new Error("Invalid payroll status");
+      if (status === "paid" && !body.paidOn) throw new Error("paidOn is required when payroll status is paid");
+      if (body.paidOn && !Number.isFinite(new Date(body.paidOn).getTime())) throw new Error("Invalid paidOn date");
+      body.branchId = branchId;
+      body.month = month;
+      body.payeeType = payeeType;
+      body.teacherId = payeeType === "teacher" ? teacherId : null;
+      body.staffId = payeeType === "staff" ? staffId : null;
+      body.basicSalary = basicSalary;
+      body.allowances = allowances;
+      body.deductions = deductions;
       body.netPay = basicSalary + allowances - deductions;
       return body;
     },
@@ -801,6 +812,8 @@ export const RESOURCES: ResourceDefinition[] = [
       const id = Number(req.params.id);
       const current = await PayrollItem.findByPk(id);
       if (!current) throw new Error("Payroll item not found");
+      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw new Error("Payroll item does not belong to your branch");
+      const branchId = req.user?.branchId;
       const month = String(body.month ?? current.month ?? "").trim();
       if (!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("month must be in YYYY-MM format");
       const payeeType = body.payeeType ?? current.payeeType;
@@ -811,11 +824,10 @@ export const RESOURCES: ResourceDefinition[] = [
         throw new Error("Payroll must reference exactly one matching teacher or staff member");
       }
       const payee = payeeType === "teacher"
-        ? await Teacher.findByPk(teacherId as number, { include: [{ model: User, where: req.user?.branchId != null ? { branchId: req.user.branchId } : undefined, required: req.user?.branchId != null }] })
-        : await Staff.findByPk(staffId as number, { include: [{ model: User, where: req.user?.branchId != null ? { branchId: req.user.branchId } : undefined, required: req.user?.branchId != null }] });
+        ? await Teacher.findByPk(teacherId as number, { include: [{ model: User, where: branchId != null ? { branchId } : undefined, required: branchId != null }] })
+        : await Staff.findByPk(staffId as number, { include: [{ model: User, where: branchId != null ? { branchId } : undefined, required: branchId != null }] });
       if (!payee || !payee.isActive) throw new Error("Selected payroll payee is not active or does not belong to your branch");
-      const duplicateWhere = payeeType === "teacher" ? { month, teacherId, id: { [Op.ne]: id } } : { month, staffId, id: { [Op.ne]: id } };
-      const duplicate = await PayrollItem.findOne({ where: duplicateWhere });
+      const duplicate = await PayrollItem.findOne({ where: { ...(branchId != null ? { branchId } : {}), ...(payeeType === "teacher" ? { teacherId } : { staffId }), month, id: { [Op.ne]: id } } });
       if (duplicate) throw new Error("Payroll already exists for this payee and month");
       const basicSalary = Number(body.basicSalary ?? current.basicSalary);
       const allowances = Number(body.allowances ?? current.allowances ?? 0);
@@ -823,28 +835,58 @@ export const RESOURCES: ResourceDefinition[] = [
       if (!Number.isFinite(basicSalary) || basicSalary < 0 || !Number.isFinite(allowances) || allowances < 0 || !Number.isFinite(deductions) || deductions < 0) {
         throw new Error("Salary amounts must be valid non-negative numbers");
       }
-      const status = body.status ?? current.status;
+      const status = String(body.status ?? current.status);
+      if (!["draft", "approved", "paid"].includes(status)) throw new Error("Invalid payroll status");
       if (status === "paid" && !(body.paidOn ?? current.paidOn)) throw new Error("paidOn is required when payroll status is paid");
+      if (body.paidOn && !Number.isFinite(new Date(body.paidOn).getTime())) throw new Error("Invalid paidOn date");
+      body.branchId = current.branchId ?? branchId;
       body.month = month;
       body.payeeType = payeeType;
       body.teacherId = payeeType === "teacher" ? teacherId : null;
       body.staffId = payeeType === "staff" ? staffId : null;
+      body.basicSalary = basicSalary;
+      body.allowances = allowances;
+      body.deductions = deductions;
       body.netPay = basicSalary + allowances - deductions;
       return body;
     },
   },
   {
     path: "payslips", model: Payslip, searchable: ["payslipNo"], permission: "payroll",
-    beforeCreate: async (body) => {
-      if ((body.gross === undefined || body.gross === null || body.gross === "") && body.payrollItemId) {
-        const item = await PayrollItem.findByPk(body.payrollItemId);
-        if (item) {
-          body.gross = Number(item.basicSalary) + Number(item.allowances ?? 0);
-          body.net = Number(item.netPay ?? body.gross);
-        }
+    beforeCreate: async (body, req) => {
+      const branchId = req.user?.branchId;
+      const payrollItemId = Number(body.payrollItemId);
+      if (!Number.isInteger(payrollItemId) || payrollItemId <= 0) throw new Error("payrollItemId is required");
+      const item = await PayrollItem.findByPk(payrollItemId);
+      if (!item) throw new Error("Payroll item not found");
+      if (branchId != null && Number(item.branchId) !== Number(branchId)) throw new Error("Payroll item does not belong to your branch");
+      const existing = await Payslip.findOne({ where: { payrollItemId, ...(branchId != null ? { branchId } : {}) } });
+      if (existing) throw new Error("A payslip already exists for this payroll item");
+      if ((body.gross === undefined || body.gross === null || body.gross === "") || (body.net === undefined || body.net === null || body.net === "")) {
+        body.gross = Number(item.basicSalary) + Number(item.allowances ?? 0);
+        body.net = Number(item.netPay ?? body.gross);
       }
-      if (body.gross === undefined || body.gross === null || body.gross === "") body.gross = 0;
-      if (body.net === undefined || body.net === null || body.net === "") body.net = body.gross;
+      const gross = Number(body.gross);
+      const net = Number(body.net);
+      if (!Number.isFinite(gross) || gross < 0 || !Number.isFinite(net) || net < 0 || net > gross) throw new Error("Payslip gross/net amounts are invalid");
+      body.branchId = item.branchId ?? branchId;
+      body.gross = gross;
+      body.net = net;
+      return body;
+    },
+    beforeUpdate: async (body, req) => {
+      const id = Number(req.params.id);
+      const current = await Payslip.findByPk(id);
+      if (!current) throw new Error("Payslip not found");
+      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw new Error("Payslip does not belong to your branch");
+      if (body.payrollItemId !== undefined && Number(body.payrollItemId) !== Number(current.payrollItemId)) throw new Error("Payroll item cannot be changed on a payslip");
+      const gross = Number(body.gross ?? current.gross);
+      const net = Number(body.net ?? current.net);
+      if (!Number.isFinite(gross) || gross < 0 || !Number.isFinite(net) || net < 0 || net > gross) throw new Error("Payslip gross/net amounts are invalid");
+      body.payrollItemId = current.payrollItemId;
+      body.branchId = current.branchId ?? req.user?.branchId;
+      body.gross = gross;
+      body.net = net;
       return body;
     },
   },
