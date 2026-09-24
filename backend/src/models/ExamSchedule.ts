@@ -4,9 +4,14 @@ import { Exam } from "./Exam";
 import { SchoolClass } from "./SchoolClass";
 import { Section } from "./Section";
 import { Subject } from "./Subject";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "exam_schedules" })
 export class ExamSchedule extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
+
   @ForeignKey(() => Exam)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   examId!: number;
