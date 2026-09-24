@@ -33,6 +33,41 @@ const getExisting = async (model: any, req: Request) => {
   return id ? model.findByPk(id) : null;
 };
 
+const validateStaffProfile = async (body: any, req: Request, model: any, label: string) => {
+  const existing = await getExisting(model, req);
+  const branchId = req.user?.branchId;
+  const userId = Number(body.userId ?? existing?.userId);
+  if (!Number.isInteger(userId) || userId <= 0) throw new Error("userId is required");
+  const user = await User.findByPk(userId);
+  if (!user || !user.isActive) throw new Error(`Selected ${label} user is not active`);
+  if (branchId != null && Number(user.branchId) !== Number(branchId)) throw new Error(`Selected ${label} user does not belong to your branch`);
+  const staffNo = String(body.staffNo ?? existing?.staffNo ?? "").trim();
+  if (!staffNo) throw new Error("staffNo is required");
+  const duplicate = await model.findOne({ where: { staffNo, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error(`${label} staffNo already exists in this branch`);
+  body.userId = userId;
+  body.staffNo = staffNo;
+  body.branchId = branchId;
+  if (body.isActive === undefined) body.isActive = existing?.isActive ?? true;
+  return body;
+};
+
+const validateParentProfile = async (body: any, req: Request) => {
+  const existing = await getExisting(Parent, req);
+  const branchId = req.user?.branchId;
+  const userId = Number(body.userId ?? existing?.userId);
+  if (!Number.isInteger(userId) || userId <= 0) throw new Error("userId is required");
+  const user = await User.findByPk(userId);
+  if (!user || !user.isActive) throw new Error("Selected parent user is not active");
+  if (branchId != null && Number(user.branchId) !== Number(branchId)) throw new Error("Selected parent user does not belong to your branch");
+  const fullName = String(body.fullName ?? existing?.fullName ?? "").trim();
+  if (!fullName) throw new Error("Parent fullName is required");
+  body.userId = userId;
+  body.fullName = fullName;
+  body.branchId = branchId;
+  return body;
+};
+
 const validateSubject = async (body: any, req: Request) => {
   const existing = await getExisting(Subject, req);
   const name = String(body.name ?? existing?.name ?? "").trim();
@@ -784,9 +819,9 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeCreate: validateEnrolment,
     beforeUpdate: validateEnrolment,
   },
-  { path: "parents", model: Parent, searchable: ["fullName", "phone", "email"], permission: "students" },
-  { path: "teachers", model: Teacher, searchable: ["staffNo", "firstName", "lastName", "email"], permission: "teachers" },
-  { path: "staff", model: Staff, searchable: ["staffNo", "firstName", "lastName", "department"], permission: "staff" },
+  { path: "parents", model: Parent, searchable: ["fullName", "phone", "email"], permission: "students", beforeCreate: validateParentProfile, beforeUpdate: validateParentProfile },
+  { path: "teachers", model: Teacher, searchable: ["staffNo", "firstName", "lastName", "email"], permission: "teachers", beforeCreate: (body, req) => validateStaffProfile(body, req, Teacher, "teacher"), beforeUpdate: (body, req) => validateStaffProfile(body, req, Teacher, "teacher") },
+  { path: "staff", model: Staff, searchable: ["staffNo", "firstName", "lastName", "department"], permission: "staff", beforeCreate: (body, req) => validateStaffProfile(body, req, Staff, "staff"), beforeUpdate: (body, req) => validateStaffProfile(body, req, Staff, "staff") },
   { path: "exams", model: Exam, searchable: ["name", "examType", "status"], permission: "exams", beforeCreate: validateExam, beforeUpdate: validateExam },
   {
     path: "exam-schedules", model: ExamSchedule, searchable: ["room", "startTime"], permission: "exams",
