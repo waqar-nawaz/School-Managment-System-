@@ -16,6 +16,8 @@ export interface CrudOptions<M extends Model = Model> {
   detailIncludes?: FindOptions["include"];
   /** Add computed fields (e.g. related display names) to a returned row. */
   decorate?: (row: any) => Record<string, unknown>;
+  /** Additional fixed filters applied to list/count queries. */
+  defaultWhere?: WhereOptions;
 }
 
 export interface CrudHandlers {
@@ -35,7 +37,7 @@ export function createCrudController<M extends Model = Model>(
   const present = (row: any) => (opts.decorate ? opts.decorate(row) : row);
 
   const buildWhere = (req: Request): WhereOptions => {
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { ...(opts.defaultWhere as Record<string, unknown> | undefined) };
     const f = req.query as Record<string, unknown>;
 
     // Support both flat (filter[field]=x with the simple parser) and nested
