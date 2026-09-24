@@ -1,9 +1,13 @@
 import { Table, Column, DataType, Index, ForeignKey } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { SchoolClass } from "./SchoolClass";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "syllabus" })
 export class Syllabus extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @Column({ type: DataType.STRING(180), allowNull: false })
   title!: string;
 
@@ -30,6 +34,9 @@ export class Syllabus extends BaseModel {
 
 @Table({ tableName: "lesson_plans" })
 export class LessonPlan extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @Column({ type: DataType.STRING(180), allowNull: false })
   title!: string;
 

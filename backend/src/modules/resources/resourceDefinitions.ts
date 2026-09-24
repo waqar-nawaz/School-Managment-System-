@@ -231,6 +231,25 @@ const validateExam = async (body: any, req: Request) => {
   return body;
 };
 
+const validateGradeScale = async (body: any, req: Request) => {
+  const existing=await getExisting(GradeScale,req); const name=String(body.name??existing?.name??"").trim(); const grade=String(body.grade??existing?.grade??"").trim();
+  const min=Number(body.minPercentage??existing?.minPercentage); const max=Number(body.maxPercentage??existing?.maxPercentage); const branchId=req.user?.branchId;
+  if(!name||!grade) throw new Error("Grade scale name and grade are required");
+  if(!Number.isFinite(min)||!Number.isFinite(max)||min<0||max>100||min>=max) throw new Error("Grade percentages must be 0-100 and minPercentage must be below maxPercentage");
+  const duplicate=await GradeScale.findOne({where:{grade,...(branchId!=null?{branchId}:{}),...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}}); if(duplicate) throw new Error("Grade already exists in this branch");
+  const overlap=await GradeScale.findOne({where:{...(branchId!=null?{branchId}:{}),minPercentage:{[Op.lt]:max},maxPercentage:{[Op.gt]:min},...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}}); if(overlap) throw new Error("Grade percentage range overlaps another grade");
+  body.name=name; body.grade=grade; body.minPercentage=min; body.maxPercentage=max; body.branchId=branchId; return body;
+};
+
+const validateTeachingPlan = async (body: any, req: Request) => {
+  const model=body.__lessonPlan ? LessonPlan : Syllabus; const existing=await getExisting(model,req); const title=String(body.title??existing?.title??"").trim(); const classId=Number(body.classId??existing?.classId); const subjectId=body.subjectId!=null?Number(body.subjectId):Number(existing?.subjectId); const branchId=req.user?.branchId;
+  if(!title||!Number.isInteger(classId)||classId<=0) throw new Error("title and classId are required");
+  const cls=await SchoolClass.findByPk(classId); if(!cls||cls.isActive===false||(branchId!=null&&Number(cls.branchId)!==Number(branchId))) throw new Error("Class does not belong to your branch or is inactive");
+  if(subjectId){const subject=await Subject.findByPk(subjectId); if(!subject) throw new Error("Subject not found");}
+  if(body.plannedDate!==undefined && body.plannedDate && !Number.isFinite(new Date(body.plannedDate).getTime())) throw new Error("Invalid plannedDate");
+  body.title=title; body.classId=classId; if(body.subjectId!==undefined) body.subjectId=subjectId||null; body.branchId=branchId; return body;
+};
+
 const validateFeeType = async (body: any, req: Request) => {
   const existing = await getExisting(FeeType, req);
   const name=String(body.name ?? existing?.name ?? "").trim();
@@ -603,7 +622,7 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "assignments", model: Assignment, searchable: ["title", "description"], permission: "assignments", beforeCreate: validateAssignment, beforeUpdate: validateAssignment },
   { path: "submissions", model: Submission, searchable: ["status"], permission: "assignments", beforeCreate: validateSubmission, beforeUpdate: validateSubmission },
   { path: "gradebook", model: GradebookEntry, searchable: ["grade"], permission: "gradebook", beforeCreate: validateGradebook, beforeUpdate: validateGradebook },
-  { path: "grade-scales", model: GradeScale, searchable: ["name", "grade"], permission: "gradebook" },
+  { path: "grade-scales", model: GradeScale, searchable: ["name", "grade"], permission: "gradebook", beforeCreate: validateGradeScale, beforeUpdate: validateGradeScale },
   { path: "timetable", model: Timetable, searchable: ["name"], permission: "timetable", beforeCreate: validateTimetable, beforeUpdate: validateTimetable },
   { path: "periods", model: Period, searchable: ["dayOfWeek", "room"], permission: "timetable", beforeCreate: validatePeriod, beforeUpdate: validatePeriod },
   { path: "fee-types", model: FeeType, searchable: ["name", "category"], permission: "fees", beforeCreate: validateFeeType, beforeUpdate: validateFeeType },
@@ -908,8 +927,8 @@ export const RESOURCES: ResourceDefinition[] = [
     },
   },
   { path: "notifications", model: Notification, searchable: ["title"], permission: "notifications", readonly: true },
-  { path: "syllabus", model: Syllabus, searchable: ["title"], permission: "syllabus" },
-  { path: "lesson-plans", model: LessonPlan, searchable: ["title"], permission: "lesson-plans" },
+  { path: "syllabus", model: Syllabus, searchable: ["title"], permission: "syllabus", beforeCreate: (body, req) => validateTeachingPlan(body, req), beforeUpdate: (body, req) => validateTeachingPlan(body, req) },
+  { path: "lesson-plans", model: LessonPlan, searchable: ["title"], permission: "lesson-plans", beforeCreate: (body, req) => validateTeachingPlan({ ...body, __lessonPlan: true }, req), beforeUpdate: (body, req) => validateTeachingPlan({ ...body, __lessonPlan: true }, req) },
   { path: "health-records", model: HealthRecord, searchable: ["bloodGroup"], permission: "health-records", readonly: true },
   {
     path: "discipline-records", model: DisciplineRecord, searchable: ["title", "type", "status"], permission: "discipline-records",
