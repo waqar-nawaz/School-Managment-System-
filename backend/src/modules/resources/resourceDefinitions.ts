@@ -114,38 +114,59 @@ const validateSection = async (body: any, req: Request) => {
   const existing = await getExisting(Section, req);
   const classId = Number(body.classId ?? existing?.classId);
   const name = String(body.name ?? existing?.name ?? "").trim();
+  const normalizedName = name.toLowerCase();
   const capacity = Number(body.capacity ?? existing?.capacity ?? 0);
-  const branchId = req.user?.branchId;
-  if (!Number.isInteger(classId) || classId <= 0 || !name) throw new Error("classId and section name are required");
-  const schoolClass = await SchoolClass.findByPk(classId);
-  if (!schoolClass || !schoolClass.isActive) throw new Error("Class not found or inactive");
-  if (branchId != null && Number(schoolClass.branchId) !== Number(branchId)) throw new Error("Class does not belong to your branch");
-  if (!Number.isInteger(capacity) || capacity < 0) throw new Error("Section capacity must be non-negative");
-  if (name.length > 20) throw new Error("Section name must be 20 characters or fewer");
+  const branchId = Number(req.user?.branchId);
 
-  const duplicate = await Section.findOne({
+  if (!Number.isInteger(classId) || classId <= 0 || !name) {
+    throw ApiError.badRequest("classId and section name are required");
+  }
+  if (!Number.isInteger(branchId) || branchId <= 0) {
+    throw ApiError.badRequest("User is not assigned to a branch");
+  }
+
+  const schoolClass = await SchoolClass.findOne({
+    where: { id: classId, branchId },
+  });
+  if (!schoolClass || !schoolClass.isActive) {
+    throw ApiError.badRequest("Class not found, inactive, or outside your branch");
+  }
+  if (!Number.isInteger(capacity) || capacity < 0) {
+    throw ApiError.badRequest("Section capacity must be non-negative");
+  }
+  if (name.length > 20) {
+    throw ApiError.badRequest("Section name must be 20 characters or fewer");
+  }
+
+  // Compare normalized names so A/a/ A  cannot create duplicates.
+  const existingSections = await Section.findAll({
     where: {
       classId,
-      name,
+      branchId,
       ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
     },
+    attributes: ["id", "name"],
   });
-  if (duplicate) throw ApiError.badRequest("Section already exists in this class");
+  const duplicate = existingSections.find(
+    (section) => String(section.name ?? "").trim().toLowerCase() === normalizedName,
+  );
+  if (duplicate) {
+    throw ApiError.badRequest("Section already exists in this class");
+  }
 
-  // If the class has an explicit capacity, the combined capacity of its
-  // sections must not exceed the class capacity.
   const classCapacity = Number(schoolClass.capacity ?? 0);
   if (classCapacity > 0) {
     const sectionRows = await Section.findAll({
       where: {
         classId,
+        branchId,
         ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
       },
       attributes: ["capacity"],
     });
     const usedCapacity = sectionRows.reduce((sum, row) => sum + Number(row.capacity ?? 0), 0);
     if (usedCapacity + capacity > classCapacity) {
-      throw new Error("Total section capacity cannot exceed class capacity");
+      throw ApiError.badRequest("Total section capacity cannot exceed class capacity");
     }
   }
 
