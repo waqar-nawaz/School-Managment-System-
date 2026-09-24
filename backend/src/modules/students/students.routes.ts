@@ -64,10 +64,17 @@ router.post(
       guardians.push({ fullName: body.guardianName || "Guardian", phone: body.guardianPhone, relation: "guardian" });
     }
 
-    const firstName = body.firstName || "Student";
-    const lastName = body.lastName || "";
-    const admissionNo = body.admissionNo || `STU-${Date.now()}`;
-    const providedEmail = body.email ? String(body.email).trim() : "";
+    const firstName = String(body.firstName || "").trim();
+    const lastName = String(body.lastName || "").trim();
+    const branchId = Number(req.user?.branchId);
+    if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
+    if (!firstName) throw ApiError.badRequest("firstName is required");
+    if (firstName.length > 120 || lastName.length > 120) throw ApiError.badRequest("Student name is too long");
+    const admissionNo = String(body.admissionNo || `STU-${Date.now()}`).trim();
+    const duplicateAdmission = await Student.findOne({ where: { admissionNo } });
+    if (duplicateAdmission) throw ApiError.conflict("Admission number already exists");
+    const providedEmail = body.email ? String(body.email).trim().toLowerCase() : "";
+    if (providedEmail && !/^\S+@\S+\.\S+$/.test(providedEmail)) throw ApiError.badRequest("Invalid email");
     const slug = String(admissionNo).toLowerCase().replace(/[^a-z0-9]+/g, "") || "student";
     const unique = `${Date.now().toString(36)}${Math.floor(Math.random() * 10000)}`;
     const email = providedEmail || `${slug}.${unique}@school.local`;
@@ -79,11 +86,22 @@ router.post(
     const currentClassId = body.currentClassId ?? body.classId;
     const currentSectionId = body.currentSectionId ?? body.sectionId;
 
+    if (currentClassId) {
+      const schoolClass = await SchoolClass.findOne({ where: { id: Number(currentClassId), branchId } });
+      if (!schoolClass || !schoolClass.isActive) throw ApiError.badRequest("Selected class is inactive or outside your branch");
+      if (currentSectionId) {
+        const section = await Section.findOne({ where: { id: Number(currentSectionId), branchId } });
+        if (!section || !section.isActive || Number(section.classId) !== Number(currentClassId)) {
+          throw ApiError.badRequest("Selected section does not belong to the selected class");
+        }
+      }
+    }
+
     const result = await sequelize.transaction(async (transaction) => {
       const user = await createUser({
         username, email, firstName, lastName, role: "student",
         gender: body.gender, phone: body.phone ?? body.guardianPhone,
-        branchId: req.user?.branchId ?? undefined, sendWelcome: !!body.email,
+        branchId, sendWelcome: !!providedEmail,
         generatedBy: req.user!.id, transaction,
       });
 
@@ -94,7 +112,7 @@ router.post(
         guardianPhone: body.guardianPhone, address: body.address, email: body.email,
         admissionDate: body.admissionDate || new Date(), admissionStatus: "admitted",
         currentClassId, currentSectionId, medicalInfo: body.medicalInfo,
-        userId: user.id, branchId: req.user!.branchId,
+        userId: user.id, branchId,
       }, { transaction });
 
       if (guardians.length) {
@@ -117,11 +135,11 @@ router.post(
               username: `${gName.replace(/\s+/g, "_").toLowerCase()}_${Date.now()}`,
               email: g.email || `${student.admissionNo}-p@school.local`,
               firstName: gName, lastName: "", role: "parent", phone: g.phone,
-              branchId: req.user?.branchId ?? undefined,
+              branchId,
               sendWelcome: false, generatedBy: req.user!.id, transaction,
             });
             parent = await Parent.create({
-              fullName: gName, phone: g.phone, email: g.email,
+              fullName: gName, phone: g.phone, email: g.email, branchId,
               relation: g.relation || "guardian", occupation: g.occupation,
               address: g.address, userId: pUser.id,
             }, { transaction });
@@ -138,8 +156,8 @@ router.post(
         let academicYearId: number | undefined = body.academicYearId;
         if (!academicYearId) {
           const currentYear =
-            (await AcademicYear.findOne({ where: { isCurrent: true }, transaction })) ||
-            (await AcademicYear.findOne({ order: [["startDate", "DESC"]], transaction }));
+            (await AcademicYear.findOne({ where: { isCurrent: true, branchId }, transaction })) ||
+            (await AcademicYear.findOne({ where: { branchId }, order: [["startDate", "DESC"]], transaction }));
           academicYearId = currentYear?.id;
         }
         if (!academicYearId) throw ApiError.badRequest("No academic year configured; create one first");
