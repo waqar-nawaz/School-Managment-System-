@@ -62,6 +62,9 @@ export function createCrudController<M extends Model = Model>(
       }));
     }
 
+    const userBranchId = (req as any).user?.branchId;
+    const attrs = (model as any).rawAttributes || {};
+    if (userBranchId != null && attrs.branchId) (where as any).branchId = userBranchId;
     return where as WhereOptions;
   };
 
@@ -84,7 +87,11 @@ export function createCrudController<M extends Model = Model>(
     getOne: async (req, res) => {
       const id = Number(req.params.id);
       if (!Number.isInteger(id)) throw ApiError.badRequest("Invalid id");
-      const row = await model.findByPk(id, { include: detailIncludes as any });
+      const lookup: any = { id };
+      const userBranchId = (req as any).user?.branchId;
+      const attrs = (model as any).rawAttributes || {};
+      if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
+      const row = await model.findOne({ where: lookup, include: detailIncludes as any });
       if (!row) throw ApiError.notFound(`${model.name} not found`);
       ApiResponse.success(res, 200, "Fetched", present(row));
     },
@@ -93,6 +100,9 @@ export function createCrudController<M extends Model = Model>(
       const body = opts.beforeCreate
         ? await opts.beforeCreate(req.body, req)
         : req.body;
+      const attrs = (model as any).rawAttributes || {};
+      const userBranchId = (req as any).user?.branchId;
+      if (userBranchId != null && attrs.branchId) body.branchId = userBranchId;
       const row = await model.create(body);
       ApiResponse.success(res, 201, `${model.name} created`, present(row));
     },
@@ -100,11 +110,16 @@ export function createCrudController<M extends Model = Model>(
     update: async (req, res) => {
       const id = Number(req.params.id);
       if (!Number.isInteger(id)) throw ApiError.badRequest("Invalid id");
-      const row = await model.findByPk(id) as Model | null;
+      const attrs = (model as any).rawAttributes || {};
+      const userBranchId = (req as any).user?.branchId;
+      const lookup: any = { id };
+      if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
+      const row = await model.findOne({ where: lookup }) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
       const body = opts.beforeUpdate
         ? await opts.beforeUpdate(req.body, req)
         : req.body;
+      if (userBranchId != null && attrs.branchId) body.branchId = userBranchId;
       await (row as any).update(body);
       ApiResponse.success(res, 200, `${model.name} updated`, present(row));
     },
@@ -112,7 +127,11 @@ export function createCrudController<M extends Model = Model>(
     remove: async (req, res) => {
       const id = Number(req.params.id);
       if (!Number.isInteger(id)) throw ApiError.badRequest("Invalid id");
-      const row = await model.findByPk(id) as Model | null;
+      const attrs = (model as any).rawAttributes || {};
+      const userBranchId = (req as any).user?.branchId;
+      const lookup: any = { id };
+      if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
+      const row = await model.findOne({ where: lookup }) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
       await (row as any).destroy();
       ApiResponse.success(res, 200, `${model.name} deleted`, null);
