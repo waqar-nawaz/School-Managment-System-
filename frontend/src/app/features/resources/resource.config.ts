@@ -397,7 +397,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   'audit-logs': {
     key: 'audit-logs', label: 'Audit Logs', api: '/audit-logs',
-    columns: [{ key: 'userId', label: 'User', type: 'number' }, nameCol('role', 'Role'), nameCol('action'), nameCol('entity'), nameCol('entityId', 'Entity ID'), nameCol('ip', 'IP'), { key: 'createdAt', label: 'Time', type: 'datetime' }],
+    columns: [{ key: 'userId', label: 'User', type: 'number' }, nameCol('role', 'Role'), nameCol('action'), nameCol('entity'), nameCol('entityId', 'Entity ID'), nameCol('ip', 'IP'), nameCol('userAgent', 'User Agent'), { key: 'createdAt', label: 'Time', type: 'datetime' }],
     fields: [],
     canCreate: false,
   },
