@@ -231,6 +231,41 @@ const validateExam = async (body: any, req: Request) => {
   return body;
 };
 
+const validateFeeType = async (body: any, req: Request) => {
+  const existing = await getExisting(FeeType, req);
+  const name=String(body.name ?? existing?.name ?? "").trim();
+  const category=String(body.category ?? existing?.category ?? "").trim();
+  const amount=Number(body.amount ?? existing?.amount ?? 0);
+  const installments=Number(body.installments ?? existing?.installments ?? 1);
+  const billingCycle=String(body.billingCycle ?? existing?.billingCycle ?? "term");
+  const branchId=req.user?.branchId;
+  if(!name) throw new Error("Fee type name is required");
+  if(!Number.isFinite(amount)||amount<0) throw new Error("Fee amount must be non-negative");
+  if(!Number.isInteger(installments)||installments<1) throw new Error("installments must be a positive integer");
+  if(!["term","monthly","yearly","one-time"].includes(billingCycle)) throw new Error("Invalid billingCycle");
+  const duplicate=await FeeType.findOne({where:{name,...(branchId!=null?{branchId}:{}),...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}});
+  if(duplicate) throw new Error("Fee type already exists in this branch");
+  body.name=name; body.category=category; body.amount=amount; body.installments=installments; body.billingCycle=billingCycle; body.branchId=branchId; return body;
+};
+
+const validateExpense = async (body: any, req: Request) => {
+  const existing=await getExisting(Expense,req);
+  const title=String(body.title ?? existing?.title ?? "").trim();
+  const amount=Number(body.amount ?? existing?.amount);
+  const expensedOn=body.expensedOn!==undefined?(body.expensedOn?new Date(body.expensedOn):null):(existing?.expensedOn?new Date(existing.expensedOn):null);
+  const status=String(body.status ?? existing?.status ?? "approved");
+  const branchId=req.user?.branchId;
+  if(!title) throw new Error("Expense title is required");
+  if(!Number.isFinite(amount)||amount<0) throw new Error("Expense amount must be non-negative");
+  if(expensedOn && !Number.isFinite(expensedOn.getTime())) throw new Error("Invalid expensedOn");
+  if(!["draft","approved","rejected","paid","cancelled"].includes(status)) throw new Error("Invalid expense status");
+  const createdBy=body.createdBy ?? existing?.createdBy;
+  const approvedBy=body.approvedBy ?? existing?.approvedBy;
+  if(createdBy){const u=await User.findByPk(createdBy); if(!u || (branchId!=null&&Number(u.branchId)!==Number(branchId))) throw new Error("createdBy user does not belong to your branch");}
+  if(approvedBy){const u=await User.findByPk(approvedBy); if(!u || (branchId!=null&&Number(u.branchId)!==Number(branchId))) throw new Error("approvedBy user does not belong to your branch");}
+  body.title=title; body.amount=amount; body.expensedOn=expensedOn; body.status=status; body.branchId=branchId; return body;
+};
+
 const validateClassSubject = async (body: any, req: Request) => {
   const existing = await getExisting(ClassSubject, req);
   const classId = Number(body.classId ?? existing?.classId);
@@ -571,8 +606,8 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "grade-scales", model: GradeScale, searchable: ["name", "grade"], permission: "gradebook" },
   { path: "timetable", model: Timetable, searchable: ["name"], permission: "timetable", beforeCreate: validateTimetable, beforeUpdate: validateTimetable },
   { path: "periods", model: Period, searchable: ["dayOfWeek", "room"], permission: "timetable", beforeCreate: validatePeriod, beforeUpdate: validatePeriod },
-  { path: "fee-types", model: FeeType, searchable: ["name", "category"], permission: "fees" },
-  { path: "expenses", model: Expense, searchable: ["title", "category", "status"], permission: "expenses" },
+  { path: "fee-types", model: FeeType, searchable: ["name", "category"], permission: "fees", beforeCreate: validateFeeType, beforeUpdate: validateFeeType },
+  { path: "expenses", model: Expense, searchable: ["title", "category", "status"], permission: "expenses", beforeCreate: validateExpense, beforeUpdate: validateExpense },
   {
     path: "payroll", model: PayrollItem, searchable: ["month", "status"], permission: "payroll",
     beforeCreate: async (body, req) => {

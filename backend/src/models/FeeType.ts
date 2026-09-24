@@ -1,8 +1,12 @@
-import { Table, Column, Unique, DataType } from "sequelize-typescript";
+import { Table, Column, Unique, DataType, ForeignKey } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "fee_types" })
 export class FeeType extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @Unique
   @Column({ type: DataType.STRING(120), allowNull: false })
   name!: string;
