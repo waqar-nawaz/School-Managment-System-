@@ -39,7 +39,7 @@ async function branchStudentIds(branchId?: number): Promise<number[] | undefined
 }
 
 async function branchTeacherStaffUserIds(
-  Model: typeof Teacher | typeof Staff,
+  Model: any,
   branchId?: number,
 ): Promise<number[] | undefined> {
   if (!branchId) return undefined;
