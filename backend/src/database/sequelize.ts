@@ -89,6 +89,7 @@ async function ensureColumns(): Promise<void> {
     { table: "complaints", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "visitor_logs", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "attendance", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
+    { table: "leave_requests", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
   ];
   for (const { table, column, def } of wanted) {
     try {
