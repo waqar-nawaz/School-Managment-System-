@@ -59,6 +59,10 @@ function exportCsv(def: ResourceDefinition) {
         [col]: { [likeOp]: `%${p.search}%` },
       }));
     }
+    const attrs = (def.model as any).rawAttributes || {};
+    const userBranchId = req.user?.branchId;
+    if (userBranchId != null && attrs.branchId) (where as any).branchId = userBranchId;
+
     const rows = await def.model.findAll({ where, limit: 5000, raw: true });
     if (!rows.length) {
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
