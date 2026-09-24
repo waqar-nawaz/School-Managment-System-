@@ -20,6 +20,7 @@ const base = createCrudController<Student>({
   searchable: ["firstName", "lastName", "admissionNo", "email"],
   defaultSort: [["admissionNo", "ASC"]],
   includes: [{ association: "enrolments" }],
+  defaultWhere: { isActive: true },
 });
 
 async function assertStudentAccess(req: any, studentId: number): Promise<Student> {
@@ -154,13 +155,34 @@ router.post(
 
       if (currentClassId) {
         let academicYearId: number | undefined = body.academicYearId;
-        if (!academicYearId) {
+        if (academicYearId) {
+          const selectedYear = await AcademicYear.findOne({ where: { id: Number(academicYearId), branchId }, transaction });
+          if (!selectedYear) throw ApiError.badRequest("Selected academic year is not configured for your branch");
+          academicYearId = selectedYear.id;
+        } else {
           const currentYear =
             (await AcademicYear.findOne({ where: { isCurrent: true, branchId }, transaction })) ||
             (await AcademicYear.findOne({ where: { branchId }, order: [["startDate", "DESC"]], transaction }));
-          academicYearId = currentYear?.id;
+          if (currentYear) {
+            academicYearId = currentYear.id;
+          } else {
+            // Bootstrap the first academic year so student admission does not fail
+            // just because the setup wizard has not created one yet.
+            const admissionDate = new Date(body.admissionDate || new Date());
+            const year = admissionDate.getMonth() >= 6 ? admissionDate.getFullYear() : admissionDate.getFullYear() - 1;
+            const startDate = new Date(year, 6, 1);
+            const endDate = new Date(year + 1, 5, 30);
+            const createdYear = await AcademicYear.create({
+              name: year + "-" + (year + 1),
+              startDate,
+              endDate,
+              isCurrent: true,
+              isClosed: false,
+              branchId,
+            }, { transaction });
+            academicYearId = createdYear.id;
+          }
         }
-        if (!academicYearId) throw ApiError.badRequest("No academic year configured; create one first");
 
         await Enrolment.create({
           studentId: student.id, academicYearId, classId: currentClassId,
