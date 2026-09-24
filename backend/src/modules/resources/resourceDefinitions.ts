@@ -443,59 +443,43 @@ const validateExam = async (body: any, req: Request) => {
 };
 
 const validateGradeScale = async (body: any, req: Request) => {
-  const existing=await getExisting(GradeScale,req); const name=String(body.name??existing?.name??"").trim(); const grade=String(body.grade??existing?.grade??"").trim();
-  const min=Number(body.minPercentage??existing?.minPercentage); const max=Number(body.maxPercentage??existing?.maxPercentage); const branchId=req.user?.branchId;
-  if(!name||!grade) throw new Error("Grade scale name and grade are required");
-  if(!Number.isFinite(min)||!Number.isFinite(max)||min<0||max>100||min>=max) throw new Error("Grade percentages must be 0-100 and minPercentage must be below maxPercentage");
-  const duplicate=await GradeScale.findOne({where:{grade,...(branchId!=null?{branchId}:{}),...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}}); if(duplicate) throw new Error("Grade already exists in this branch");
-  const overlap=await GradeScale.findOne({where:{...(branchId!=null?{branchId}:{}),minPercentage:{[Op.lt]:max},maxPercentage:{[Op.gt]:min},...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}}); if(overlap) throw new Error("Grade percentage range overlaps another grade");
+  const existing=await getExisting(GradeScale,req); const name=String(body.name??existing?.name??"").trim(); const grade=String(body.grade??existing?.grade??"").trim().toUpperCase();
+  const min=Number(body.minPercentage??existing?.minPercentage); const max=Number(body.maxPercentage??existing?.maxPercentage); const branchId=Number(req.user?.branchId);
+  if(!Number.isInteger(branchId)||branchId<=0) throw ApiError.badRequest("User is not assigned to a branch");
+  if(!name||!grade) throw ApiError.badRequest("Grade scale name and grade are required");
+  if(name.length>100||grade.length>20) throw ApiError.badRequest("Grade scale name or grade is too long");
+  if(!Number.isFinite(min)||!Number.isFinite(max)||min<0||max>100||min>=max) throw ApiError.badRequest("Grade percentages must be 0-100 and minPercentage must be below maxPercentage");
+  const duplicate=await GradeScale.findOne({where:{grade,branchId,...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}}); if(duplicate) throw ApiError.badRequest("Grade already exists in this branch");
+  const overlap=await GradeScale.findOne({where:{branchId,minPercentage:{[Op.lt]:max},maxPercentage:{[Op.gt]:min},...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}}); if(overlap) throw ApiError.badRequest("Grade percentage range overlaps another grade");
   body.name=name; body.grade=grade; body.minPercentage=min; body.maxPercentage=max; body.branchId=branchId; return body;
 };
-
-const validateTeachingPlan = async (body: any, req: Request) => {
-  const model=body.__lessonPlan ? LessonPlan : Syllabus; const existing=await getExisting(model,req); const title=String(body.title??existing?.title??"").trim(); const classId=Number(body.classId??existing?.classId); const subjectId=body.subjectId!=null?Number(body.subjectId):Number(existing?.subjectId); const branchId=req.user?.branchId;
-  if(!title||!Number.isInteger(classId)||classId<=0) throw new Error("title and classId are required");
-  const cls=await SchoolClass.findByPk(classId); if(!cls||cls.isActive===false||(branchId!=null&&Number(cls.branchId)!==Number(branchId))) throw new Error("Class does not belong to your branch or is inactive");
-  if(subjectId){const subject=await Subject.findByPk(subjectId); if(!subject) throw new Error("Subject not found");}
-  if(body.plannedDate!==undefined && body.plannedDate && !Number.isFinite(new Date(body.plannedDate).getTime())) throw new Error("Invalid plannedDate");
-  body.title=title; body.classId=classId; if(body.subjectId!==undefined) body.subjectId=subjectId||null; body.branchId=branchId; return body;
-};
-
 const validateFeeType = async (body: any, req: Request) => {
-  const existing = await getExisting(FeeType, req);
-  const name=String(body.name ?? existing?.name ?? "").trim();
-  const category=String(body.category ?? existing?.category ?? "").trim();
-  const amount=Number(body.amount ?? existing?.amount ?? 0);
-  const installments=Number(body.installments ?? existing?.installments ?? 1);
-  const billingCycle=String(body.billingCycle ?? existing?.billingCycle ?? "term");
-  const branchId=req.user?.branchId;
-  if(!name) throw new Error("Fee type name is required");
-  if(!Number.isFinite(amount)||amount<0) throw new Error("Fee amount must be non-negative");
-  if(!Number.isInteger(installments)||installments<1) throw new Error("installments must be a positive integer");
-  if(!["term","monthly","yearly","one-time"].includes(billingCycle)) throw new Error("Invalid billingCycle");
-  const duplicate=await FeeType.findOne({where:{name,...(branchId!=null?{branchId}:{}),...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}});
-  if(duplicate) throw new Error("Fee type already exists in this branch");
+  const existing=await getExisting(FeeType,req); const name=String(body.name??existing?.name??"").trim(); const category=String(body.category??existing?.category??"").trim().toLowerCase();
+  const amount=Number(body.amount??existing?.amount??0); const installments=Number(body.installments??existing?.installments??1); const billingCycle=String(body.billingCycle??existing?.billingCycle??"term");
+  const branchId=Number(req.user?.branchId);
+  if(!Number.isInteger(branchId)||branchId<=0) throw ApiError.badRequest("User is not assigned to a branch");
+  if(!name) throw ApiError.badRequest("Fee type name is required"); if(name.length>120) throw ApiError.badRequest("Fee type name is too long");
+  if(category&&!["tuition","transport","hostel","misc"].includes(category)) throw ApiError.badRequest("Invalid fee category");
+  if(!Number.isFinite(amount)||amount<0) throw ApiError.badRequest("Fee amount must be non-negative");
+  if(!Number.isInteger(installments)||installments<1) throw ApiError.badRequest("installments must be a positive integer");
+  if(!["term","monthly","yearly","one-time"].includes(billingCycle)) throw ApiError.badRequest("Invalid billingCycle");
+  const duplicate=await FeeType.findOne({where:{name,branchId,...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}}); if(duplicate) throw ApiError.badRequest("Fee type already exists in this branch");
   body.name=name; body.category=category; body.amount=amount; body.installments=installments; body.billingCycle=billingCycle; body.branchId=branchId; return body;
 };
-
 const validateExpense = async (body: any, req: Request) => {
-  const existing=await getExisting(Expense,req);
-  const title=String(body.title ?? existing?.title ?? "").trim();
-  const amount=Number(body.amount ?? existing?.amount);
+  const existing=await getExisting(Expense,req); const title=String(body.title??existing?.title??"").trim(); const amount=Number(body.amount??existing?.amount);
   const expensedOn=body.expensedOn!==undefined?(body.expensedOn?new Date(body.expensedOn):null):(existing?.expensedOn?new Date(existing.expensedOn):null);
-  const status=String(body.status ?? existing?.status ?? "approved");
-  const branchId=req.user?.branchId;
-  if(!title) throw new Error("Expense title is required");
-  if(!Number.isFinite(amount)||amount<0) throw new Error("Expense amount must be non-negative");
-  if(expensedOn && !Number.isFinite(expensedOn.getTime())) throw new Error("Invalid expensedOn");
-  if(!["draft","approved","rejected","paid","cancelled"].includes(status)) throw new Error("Invalid expense status");
-  const createdBy=body.createdBy ?? existing?.createdBy;
-  const approvedBy=body.approvedBy ?? existing?.approvedBy;
-  if(createdBy){const u=await User.findByPk(createdBy); if(!u || (branchId!=null&&Number(u.branchId)!==Number(branchId))) throw new Error("createdBy user does not belong to your branch");}
-  if(approvedBy){const u=await User.findByPk(approvedBy); if(!u || (branchId!=null&&Number(u.branchId)!==Number(branchId))) throw new Error("approvedBy user does not belong to your branch");}
+  const status=String(body.status??existing?.status??"approved").toLowerCase(); const branchId=Number(req.user?.branchId);
+  if(!Number.isInteger(branchId)||branchId<=0) throw ApiError.badRequest("User is not assigned to a branch");
+  if(!title) throw ApiError.badRequest("Expense title is required"); if(title.length>200) throw ApiError.badRequest("Expense title is too long");
+  if(!Number.isFinite(amount)||amount<0) throw ApiError.badRequest("Expense amount must be non-negative");
+  if(expensedOn&&!Number.isFinite(expensedOn.getTime())) throw ApiError.badRequest("Invalid expensedOn");
+  if(!["draft","approved","rejected","paid","cancelled"].includes(status)) throw ApiError.badRequest("Invalid expense status");
+  const createdBy=body.createdBy??existing?.createdBy, approvedBy=body.approvedBy??existing?.approvedBy;
+  if(createdBy){const u=await User.findOne({where:{id:Number(createdBy),branchId}}); if(!u) throw ApiError.badRequest("createdBy user does not belong to your branch");}
+  if(approvedBy){const u=await User.findOne({where:{id:Number(approvedBy),branchId}}); if(!u) throw ApiError.badRequest("approvedBy user does not belong to your branch");}
   body.title=title; body.amount=amount; body.expensedOn=expensedOn; body.status=status; body.branchId=branchId; return body;
 };
-
 const validateClassSubject = async (body: any, req: Request) => {
   const existing = await getExisting(ClassSubject, req);
   const classId = Number(body.classId ?? existing?.classId);
@@ -631,19 +615,18 @@ const validatePeriod = async (body: any, req: Request) => {
   const teacherId=body.teacherId!==undefined ? (body.teacherId ? Number(body.teacherId):null):(existing?.teacherId??null);
   const day=String(body.dayOfWeek ?? existing?.dayOfWeek ?? "").toUpperCase();
   const start=body.startTime ?? existing?.startTime; const end=body.endTime ?? existing?.endTime;
-  const parse=(v:any)=>{const m=/^(\\d{1,2}):(\\d{2})$/.exec(String(v??"").trim()); if(!m)return null; const h=Number(m[1]),mi=Number(m[2]); return h>=0&&h<=23&&mi>=0&&mi<=59?h*60+mi:null;};
-  const branchId=req.user?.branchId;
-  if(!Number.isInteger(classId)||classId<=0) throw new Error("classId is required");
-  if(!["MON","TUE","WED","THU","FRI","SAT","SUN"].includes(day)) throw new Error("Invalid dayOfWeek");
-  const sm=parse(start), em=parse(end); if(sm===null||em===null||sm>=em) throw new Error("Invalid period time range");
-  const schoolClass=await SchoolClass.findByPk(classId); if(!schoolClass||!schoolClass.isActive) throw new Error("Class not found or inactive");
-  if(branchId!=null&&Number(schoolClass.branchId)!==Number(branchId)) throw new Error("Class does not belong to your branch");
-  if(sectionId){const section=await Section.findByPk(sectionId); if(!section||!section.isActive||Number(section.classId)!==classId) throw new Error("Selected section does not belong to the selected class");}
-  if(subjectId){const subject=await Subject.findByPk(subjectId); if(!subject||!subject.isActive||!(await ClassSubject.findOne({where:{classId,subjectId}}))) throw new Error("Subject is not assigned to the selected class");}
-  if(teacherId){const teacher=await Teacher.findByPk(teacherId,{include:[{model:User}]}); if(!teacher||!teacher.isActive||(branchId!=null&&Number(teacher.user?.branchId)!==Number(branchId))) throw new Error("Teacher does not belong to your branch");}
-  body.classId=classId; body.sectionId=sectionId; body.subjectId=subjectId; body.teacherId=teacherId; body.dayOfWeek=day; body.startTime=String(start); body.endTime=String(end); body.branchId=branchId; return body;
+  const parse=(v:any)=>{const m=/^(\d{1,2}):(\d{2})$/.exec(String(v??"").trim()); if(!m)return null; const h=Number(m[1]),mi=Number(m[2]); return h>=0&&h<=23&&mi>=0&&mi<=59?h*60+mi:null;};
+  const branchId=Number(req.user?.branchId);
+  if(!Number.isInteger(branchId)||branchId<=0) throw ApiError.badRequest("User is not assigned to a branch");
+  if(!Number.isInteger(classId)||classId<=0) throw ApiError.badRequest("classId is required");
+  if(!["MON","TUE","WED","THU","FRI","SAT","SUN"].includes(day)) throw ApiError.badRequest("Invalid dayOfWeek");
+  const sm=parse(start), em=parse(end); if(sm===null||em===null||sm>=em) throw ApiError.badRequest("Invalid period time range");
+  const schoolClass=await SchoolClass.findOne({where:{id:classId,branchId}}); if(!schoolClass||!schoolClass.isActive) throw ApiError.badRequest("Class not found, inactive, or outside your branch");
+  if(sectionId){const section=await Section.findOne({where:{id:sectionId,branchId}}); if(!section||!section.isActive||Number(section.classId)!==classId) throw ApiError.badRequest("Selected section does not belong to the selected class");}
+  if(subjectId){const subject=await Subject.findOne({where:{id:subjectId,branchId}}); if(!subject||!subject.isActive||!(await ClassSubject.findOne({where:{classId,subjectId,branchId}}))) throw ApiError.badRequest("Subject is not assigned to the selected class");}
+  if(teacherId){const teacher=await Teacher.findOne({where:{id:teacherId,branchId},include:[{model:User}]}); if(!teacher||!teacher.isActive||Number(teacher.user?.branchId)!==branchId) throw ApiError.badRequest("Teacher does not belong to your branch");}
+  body.classId=classId; body.sectionId=sectionId; body.subjectId=subjectId; body.teacherId=teacherId; body.dayOfWeek=day; body.startTime=String(start).trim(); body.endTime=String(end).trim(); body.branchId=branchId; return body;
 };
-
 const validateReportCard = async (body: any, req: Request) => {
   const existing = await getExisting(ReportCard, req);
   const enrolmentId = Number(body.enrolmentId ?? existing?.enrolmentId);
