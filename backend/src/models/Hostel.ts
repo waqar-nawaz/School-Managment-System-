@@ -1,9 +1,13 @@
 import { Table, Column, DataType, Index, ForeignKey } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { Student } from "./Student";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "hostels" })
 export class Hostel extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @Column({ type: DataType.STRING(120), allowNull: false })
   name!: string;
 
@@ -26,6 +30,9 @@ export class Hostel extends BaseModel {
 
 @Table({ tableName: "rooms" })
 export class Room extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @ForeignKey(() => Hostel)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   hostelId!: number;
@@ -46,6 +53,9 @@ export class Room extends BaseModel {
 
 @Table({ tableName: "beds" })
 export class Bed extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @ForeignKey(() => Room)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   roomId!: number;
@@ -59,6 +69,9 @@ export class Bed extends BaseModel {
 
 @Table({ tableName: "hostel_allocations" })
 export class HostelAllocation extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @ForeignKey(() => Student)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   studentId!: number;
