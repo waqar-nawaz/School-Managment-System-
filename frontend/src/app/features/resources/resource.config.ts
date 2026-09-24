@@ -275,18 +275,18 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
       { key: 'publishedYear', label: 'Year', type: 'number' },
       { key: 'category', label: 'Category' },
       { key: 'copies', label: 'Copies', type: 'number' },
-      { key: 'shelfLocation', label: 'Shelf location' },
+      { key: 'shelfLocation', label: 'Shelf location' }, { key: 'price', label: 'Price', type: 'number' }, { key: 'description', label: 'Description', type: 'textarea' },
     ]),
   },
   'book-copies': {
     key: 'book-copies', label: 'Book Copies', api: '/book-copies',
     columns: [nameCol('accessionNo', 'Accession No'), { key: 'bookId', label: 'Book', type: 'number' }, statusCol()],
-    fields: fields([{ key: 'accessionNo', label: 'Accession number', required: true }, refField('bookId', 'Book', '/books', 'title', undefined, true)]),
+    fields: fields([{ key: 'accessionNo', label: 'Accession number', required: true }, refField('bookId', 'Book', '/books', 'title', undefined, true), { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available','issued','reserved','damaged','lost']) }]),
   },
   'book-fines': {
     key: 'book-fines', label: 'Book Fines', api: '/book-fines',
     columns: [{ key: 'bookIssueId', label: 'Issue', type: 'number' }, { key: 'userId', label: 'User', type: 'number' }, { key: 'amount', label: 'Amount', type: 'money' }, statusCol()],
-    fields: fields([refField('bookIssueId', 'Book issue', '/book-issues', 'id', undefined, true), refField('userId', 'User', '/users', 'firstName', 'email', true), { key: 'amount', label: 'Amount', type: 'number', required: true }, { key: 'reason', label: 'Reason' }]),
+    fields: fields([refField('bookIssueId', 'Book issue', '/book-issues', 'id', undefined, true), refField('userId', 'User', '/users', 'firstName', 'email', true), { key: 'amount', label: 'Amount', type: 'number', required: true }, { key: 'reason', label: 'Reason' }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['pending','paid','waived']) }]),
   },
   routes: {
     key: 'routes', label: 'Transport Routes', api: '/routes',
