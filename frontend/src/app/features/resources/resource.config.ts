@@ -291,7 +291,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   routes: {
     key: 'routes', label: 'Transport Routes', api: '/routes',
     columns: [nameCol('name'), nameCol('startPoint', 'Start'), nameCol('endPoint', 'End'), { key: 'monthlyFee', label: 'Fee', type: 'money' }, boolCol('isActive', 'Active')],
-    fields: fields([{ key: 'name', label: 'Route name', required: true }, { key: 'startPoint', label: 'Start point' }, { key: 'endPoint', label: 'End point' }, { key: 'monthlyFee', label: 'Monthly fee', type: 'number' }, { key: 'description', label: 'Description', type: 'textarea' }]),
+    fields: fields([{ key: 'name', label: 'Route name', required: true }, { key: 'startPoint', label: 'Start point' }, { key: 'endPoint', label: 'End point' }, { key: 'monthlyFee', label: 'Monthly fee', type: 'number' }, { key: 'description', label: 'Description', type: 'textarea' }, boolCol('isActive', 'Active')]),
   },
   'route-stops': {
     key: 'route-stops', label: 'Route Stops', api: '/route-stops',
@@ -301,7 +301,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   vehicles: {
     key: 'vehicles', label: 'Vehicles', api: '/vehicles',
     columns: [nameCol('registrationNo', 'Reg No'), nameCol('model'), { key: 'capacity', label: 'Capacity', type: 'number' }, nameCol('fuelType', 'Fuel'), statusCol()],
-    fields: fields([{ key: 'registrationNo', label: 'Registration number', required: true }, { key: 'model', label: 'Model' }, { key: 'capacity', label: 'Capacity', type: 'number' }, { key: 'fuelType', label: 'Fuel type', type: 'select', options: STATUS_OPTIONS(['petrol', 'diesel', 'cng', 'electric']) }, { key: 'insuranceExpiry', label: 'Insurance expiry', type: 'dateonly' }, { key: 'fitnessExpiry', label: 'Fitness expiry', type: 'dateonly' }]),
+    fields: fields([{ key: 'registrationNo', label: 'Registration number', required: true }, { key: 'model', label: 'Model' }, { key: 'capacity', label: 'Capacity', type: 'number' }, { key: 'fuelType', label: 'Fuel type', type: 'select', options: STATUS_OPTIONS(['petrol', 'diesel', 'cng', 'electric']) }, { key: 'insuranceExpiry', label: 'Insurance expiry', type: 'dateonly' }, { key: 'fitnessExpiry', label: 'Fitness expiry', type: 'dateonly' }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['active', 'maintenance', 'inactive']) }]),
   },
   'student-transport': {
     key: 'student-transport', label: 'Student Transport', api: '/student-transport',
@@ -316,6 +316,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
       refField('driverId', 'Driver', '/users', 'firstName', 'email', true),
       refField('routeId', 'Route', '/routes', 'name'),
       { key: 'assignedOn', label: 'Assigned on', type: 'dateonly' },
+      boolCol('isActive', 'Active'),
     ]),
   },
   hostels: {
