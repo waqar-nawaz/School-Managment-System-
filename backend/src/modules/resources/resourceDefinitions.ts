@@ -276,87 +276,88 @@ const validateTerm = async (body: any, req: Request) => {
 
 const validateEnrolment = async (body: any, req: Request) => {
   const existing = await getExisting(Enrolment, req);
+  const branchId = Number(req.user?.branchId);
   const classId = Number(body.classId ?? existing?.classId);
   const sectionId = body.sectionId !== undefined ? (body.sectionId ? Number(body.sectionId) : null) : (existing?.sectionId ?? null);
   const studentId = Number(body.studentId ?? existing?.studentId);
   const academicYearId = Number(body.academicYearId ?? existing?.academicYearId);
   const status = String(body.status ?? existing?.status ?? "active");
-  const branchId = req.user?.branchId;
-  if (!Number.isInteger(studentId) || studentId <= 0 || !Number.isInteger(classId) || classId <= 0 || !Number.isInteger(academicYearId) || academicYearId <= 0) {
-    throw new Error("studentId, academicYearId and classId are required");
+
+  if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
+  if (![studentId, classId, academicYearId].every((v) => Number.isInteger(v) && v > 0)) {
+    throw ApiError.badRequest("studentId, academicYearId and classId are required");
   }
   if (existing && (Number(existing.studentId) !== studentId || Number(existing.academicYearId) !== academicYearId)) {
-    throw new Error("Student and academic year cannot be changed on an existing enrolment");
+    throw ApiError.badRequest("Student and academic year cannot be changed on an existing enrolment");
   }
   if (!["active", "promoted", "graduated", "transferred", "withdrawn", "expelled"].includes(status)) {
-    throw new Error("Invalid enrolment status");
+    throw ApiError.badRequest("Invalid enrolment status");
   }
-  const student = await Student.findByPk(studentId);
-  if (!student) throw new Error("Student not found");
-  if (branchId != null && Number(student.branchId) !== Number(branchId)) throw new Error("Student does not belong to your branch");
-  const schoolClass = await SchoolClass.findByPk(classId);
-  if (!schoolClass || !schoolClass.isActive) throw new Error("Class not found or inactive");
-  if (branchId != null && Number(schoolClass.branchId) !== Number(branchId)) throw new Error("Class does not belong to your branch");
+
+  const student = await Student.findOne({ where: { id: studentId, branchId } });
+  if (!student) throw ApiError.badRequest("Student not found or outside your branch");
+  const schoolClass = await SchoolClass.findOne({ where: { id: classId, branchId } });
+  if (!schoolClass || !schoolClass.isActive) throw ApiError.badRequest("Class not found, inactive, or outside your branch");
+
   if (sectionId) {
-    const section = await Section.findByPk(sectionId);
-    if (!section || !section.isActive) throw new Error("Section not found or inactive");
-    if (Number(section.classId) !== classId) throw new Error("Selected section does not belong to the selected class");
+    const section = await Section.findOne({ where: { id: sectionId, branchId } });
+    if (!section || !section.isActive || Number(section.classId) !== classId) {
+      throw ApiError.badRequest("Section not found, inactive, or not assigned to the selected class");
+    }
   }
-  const year = await AcademicYear.findByPk(academicYearId);
-  if (!year) throw new Error("Academic year not found");
-  if (year.isClosed && status === "active") throw new Error("A closed academic year cannot have an active enrolment");
+
+  const year = await AcademicYear.findOne({ where: { id: academicYearId, branchId } });
+  if (!year) throw ApiError.badRequest("Academic year not found or outside your branch");
+  if (year.isClosed && status === "active") throw ApiError.badRequest("A closed academic year cannot have an active enrolment");
+
   const duplicate = await Enrolment.findOne({
-    where: {
-      studentId,
-      academicYearId,
-      status: "active",
-      ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
-    },
+    where: { studentId, academicYearId, branchId, status: "active", ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
   });
-  if (duplicate) throw new Error("Student already has an active enrolment for this academic year");
-  body.studentId = studentId;
-  body.academicYearId = academicYearId;
-  body.classId = classId;
-  body.sectionId = sectionId;
-  body.status = status;
-  body.branchId = branchId;
+  if (duplicate) throw ApiError.badRequest("Student already has an active enrolment for this academic year");
+
+  body.studentId = studentId; body.academicYearId = academicYearId; body.classId = classId;
+  body.sectionId = sectionId; body.status = status; body.branchId = branchId;
   return body;
 };
 
 const validateExamResult = async (body: any, req: Request) => {
   const existing = await getExisting(ExamResult, req);
+  const branchId = Number(req.user?.branchId);
   const examId = Number(body.examId ?? existing?.examId);
   const studentId = Number(body.studentId ?? existing?.studentId);
   const subjectId = Number(body.subjectId ?? existing?.subjectId);
   const obtained = Number(body.marksObtained ?? existing?.marksObtained);
   const max = Number(body.maxMarks ?? existing?.maxMarks);
-  const branchId = req.user?.branchId;
-  if (!Number.isInteger(examId) || examId <= 0 || !Number.isInteger(studentId) || studentId <= 0 || !Number.isInteger(subjectId) || subjectId <= 0) {
-    throw new Error("examId, studentId and subjectId are required");
+
+  if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
+  if (![examId, studentId, subjectId].every((v) => Number.isInteger(v) && v > 0)) {
+    throw ApiError.badRequest("examId, studentId and subjectId are required");
   }
-  if (!Number.isFinite(max) || max <= 0) throw new Error("maxMarks must be greater than 0");
-  if (!Number.isFinite(obtained) || obtained < 0 || obtained > max) throw new Error("marksObtained must be between 0 and maxMarks");
-  const exam = await Exam.findByPk(examId);
-  if (!exam) throw new Error("Exam not found");
-  const student = await Student.findByPk(studentId);
-  if (!student) throw new Error("Student not found");
-  if (branchId != null && Number(student.branchId) !== Number(branchId)) throw new Error("Student does not belong to your branch");
+  if (!Number.isFinite(max) || max <= 0) throw ApiError.badRequest("maxMarks must be greater than 0");
+  if (!Number.isFinite(obtained) || obtained < 0 || obtained > max) throw ApiError.badRequest("marksObtained must be between 0 and maxMarks");
+
+  const exam = await Exam.findOne({ where: { id: examId, branchId } });
+  if (!exam) throw ApiError.badRequest("Exam not found or outside your branch");
+  const student = await Student.findOne({ where: { id: studentId, branchId } });
+  if (!student) throw ApiError.badRequest("Student not found or outside your branch");
+
   const enrolment = await Enrolment.findOne({
-    where: { studentId, academicYearId: exam.academicYearId, ...(branchId != null ? { branchId } : {}), status: { [Op.notIn]: ["withdrawn", "expelled"] } },
+    where: { studentId, academicYearId: exam.academicYearId, branchId, status: { [Op.notIn]: ["withdrawn", "expelled"] } },
   });
-  if (!enrolment) throw new Error("Student is not enrolled in the exam academic year");
-  const classSubject = await ClassSubject.findOne({ where: { classId: enrolment.classId, subjectId } });
-  if (!classSubject) throw new Error("Subject is not assigned to the student's class");
+  if (!enrolment) throw ApiError.badRequest("Student is not enrolled in the exam academic year");
+
+  const subject = await Subject.findOne({ where: { id: subjectId, branchId } });
+  if (!subject || !subject.isActive) throw ApiError.badRequest("Subject not found, inactive, or outside your branch");
+  const classSubject = await ClassSubject.findOne({ where: { classId: enrolment.classId, subjectId, branchId } });
+  if (!classSubject) throw ApiError.badRequest("Subject is not assigned to the student's class");
+
   const duplicate = await ExamResult.findOne({
-    where: { examId, studentId, subjectId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
+    where: { examId, studentId, subjectId, branchId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
   });
-  if (duplicate) throw new Error("Exam result already exists for this student and subject");
-  body.examId = examId;
-  body.studentId = studentId;
-  body.subjectId = subjectId;
-  body.maxMarks = max;
-  body.marksObtained = obtained;
-  body.branchId = branchId;
+  if (duplicate) throw ApiError.badRequest("Exam result already exists for this student and subject");
+
+  body.examId = examId; body.studentId = studentId; body.subjectId = subjectId;
+  body.maxMarks = max; body.marksObtained = obtained; body.branchId = branchId;
   return body;
 };
 
