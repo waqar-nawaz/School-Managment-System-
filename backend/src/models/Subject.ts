@@ -1,11 +1,16 @@
-import { Table, Column, Unique, DataType } from "sequelize-typescript";
+import { Table, Column, Unique, DataType, ForeignKey } from "sequelize-typescript";
+import { Branch } from "./Branch";
 import { BaseModel } from "./BaseModel";
 
 @Table({ tableName: "subjects" })
 export class Subject extends BaseModel {
-  @Unique
+  @Unique("uq_subject_branch_name")
   @Column({ type: DataType.STRING(120), allowNull: false })
   name!: string;
+
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
 
   @Column({ type: DataType.STRING(10) })
   code!: string;
