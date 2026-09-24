@@ -231,29 +231,45 @@ const validateAcademicYear = async (body: any, req: Request) => {
 
 const validateTerm = async (body: any, req: Request) => {
   const existing = await getExisting(Term, req);
-  const branchId = req.user?.branchId;
-  const academicYearId = body.academicYearId ?? existing?.academicYearId;
-  if (!academicYearId) throw new Error("academicYearId is required");
-  const year = await AcademicYear.findByPk(academicYearId);
-  if (!year) throw new Error("Academic year not found");
-  if (branchId != null && Number(year.branchId) !== Number(branchId)) throw new Error("Academic year does not belong to your branch");
-  const start = body.startDate !== undefined ? new Date(body.startDate) : existing?.startDate;
-  const end = body.endDate !== undefined ? new Date(body.endDate) : existing?.endDate;
-  if (start && end && (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end)) {
-    throw new Error("Term startDate must be before endDate");
-  }
-  if (start && (start < new Date(year.startDate) || start > new Date(year.endDate))) {
-    throw new Error("Term startDate must be within the academic year");
-  }
-  if (end && (end < new Date(year.startDate) || end > new Date(year.endDate))) {
-    throw new Error("Term endDate must be within the academic year");
-  }
+  const branchId = Number(req.user?.branchId);
+  const academicYearId = Number(body.academicYearId ?? existing?.academicYearId);
+
+  if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
+  if (!Number.isInteger(academicYearId) || academicYearId <= 0) throw ApiError.badRequest("academicYearId is required");
+
+  const year = await AcademicYear.findOne({ where: { id: academicYearId, branchId } });
+  if (!year) throw ApiError.badRequest("Academic year not found or outside your branch");
+
   const name = String(body.name ?? existing?.name ?? "").trim();
-  if (!name) throw new Error("Term name is required");
-  const duplicate = await Term.findOne({ where: { academicYearId: Number(academicYearId), name, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw new Error("Term already exists in this academic year");
-  body.academicYearId = Number(academicYearId);
+  if (!name) throw ApiError.badRequest("Term name is required");
+  if (name.length > 50) throw ApiError.badRequest("Term name must be 50 characters or fewer");
+
+  const start = body.startDate !== undefined ? new Date(body.startDate) : (existing?.startDate ? new Date(existing.startDate) : null);
+  const end = body.endDate !== undefined ? new Date(body.endDate) : (existing?.endDate ? new Date(existing.endDate) : null);
+  const yearStart = new Date(year.startDate);
+  const yearEnd = new Date(year.endDate);
+
+  if (start && !Number.isFinite(start.getTime())) throw ApiError.badRequest("Invalid term startDate");
+  if (end && !Number.isFinite(end.getTime())) throw ApiError.badRequest("Invalid term endDate");
+  if (start && end && start >= end) throw ApiError.badRequest("Term startDate must be before endDate");
+  if (start && (start < yearStart || start > yearEnd)) throw ApiError.badRequest("Term startDate must be within the academic year");
+  if (end && (end < yearStart || end > yearEnd)) throw ApiError.badRequest("Term endDate must be within the academic year");
+
+  const duplicate = await Term.findOne({
+    where: {
+      academicYearId,
+      branchId,
+      ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
+    },
+  });
+  if (duplicate && String(duplicate.name).trim().toLowerCase() === name.toLowerCase()) {
+    throw ApiError.badRequest("Term already exists in this academic year");
+  }
+
+  body.academicYearId = academicYearId;
   body.name = name;
+  body.startDate = start;
+  body.endDate = end;
   body.branchId = branchId;
   return body;
 };
