@@ -54,6 +54,9 @@ async function ensureColumns(): Promise<void> {
   const wanted: Array<{ table: string; column: string; def: Record<string, unknown> }> = [
     { table: "students", column: "guardianName", def: { type: DataType.STRING(120) } },
     { table: "students", column: "guardianPhone", def: { type: DataType.STRING(30) } },
+    { table: "inventory", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
+    { table: "assets", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
+    { table: "discipline_records", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
   ];
   for (const { table, column, def } of wanted) {
     try {
