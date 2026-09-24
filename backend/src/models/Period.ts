@@ -4,9 +4,13 @@ import { SchoolClass } from "./SchoolClass";
 import { Section } from "./Section";
 import { Teacher } from "./Teacher";
 import { Subject } from "./Subject";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "periods" })
 export class Period extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @ForeignKey(() => SchoolClass)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   classId!: number;
@@ -38,6 +42,9 @@ export class Period extends BaseModel {
 
 @Table({ tableName: "timetables" })
 export class Timetable extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @Column({ type: DataType.STRING(160), allowNull: false })
   name!: string;
 

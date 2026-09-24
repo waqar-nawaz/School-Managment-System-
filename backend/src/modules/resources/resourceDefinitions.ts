@@ -231,6 +231,138 @@ const validateExam = async (body: any, req: Request) => {
   return body;
 };
 
+const validateClassSubject = async (body: any, req: Request) => {
+  const existing = await getExisting(ClassSubject, req);
+  const classId = Number(body.classId ?? existing?.classId);
+  const subjectId = Number(body.subjectId ?? existing?.subjectId);
+  const branchId = req.user?.branchId;
+  if (!Number.isInteger(classId) || classId <= 0 || !Number.isInteger(subjectId) || subjectId <= 0) throw new Error("classId and subjectId are required");
+  const schoolClass = await SchoolClass.findByPk(classId);
+  if (!schoolClass || !schoolClass.isActive) throw new Error("Class not found or inactive");
+  if (branchId != null && Number(schoolClass.branchId) !== Number(branchId)) throw new Error("Class does not belong to your branch");
+  const subject = await Subject.findByPk(subjectId);
+  if (!subject || !subject.isActive) throw new Error("Subject not found or inactive");
+  const duplicate = await ClassSubject.findOne({ where: { classId, subjectId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error("Subject is already assigned to this class");
+  body.classId = classId; body.subjectId = subjectId; body.branchId = branchId;
+  return body;
+};
+
+const validateAssignment = async (body: any, req: Request) => {
+  const existing = await getExisting(Assignment, req);
+  const title = String(body.title ?? existing?.title ?? "").trim();
+  const classId = Number(body.classId ?? existing?.classId);
+  const subjectId = Number(body.subjectId ?? existing?.subjectId);
+  const maxMarks = Number(body.maxMarks ?? existing?.maxMarks);
+  const dueDate = body.dueDate !== undefined ? new Date(body.dueDate) : (existing?.dueDate ? new Date(existing.dueDate) : null);
+  const branchId = req.user?.branchId;
+  if (!title || !Number.isInteger(classId) || classId <= 0 || !Number.isInteger(subjectId) || subjectId <= 0) throw new Error("title, classId and subjectId are required");
+  if (!Number.isInteger(maxMarks) || maxMarks <= 0) throw new Error("maxMarks must be a positive integer");
+  if (dueDate && !Number.isFinite(dueDate.getTime())) throw new Error("Invalid dueDate");
+  const schoolClass = await SchoolClass.findByPk(classId);
+  if (!schoolClass || !schoolClass.isActive) throw new Error("Class not found or inactive");
+  if (branchId != null && Number(schoolClass.branchId) !== Number(branchId)) throw new Error("Class does not belong to your branch");
+  const subject = await Subject.findByPk(subjectId);
+  if (!subject || !subject.isActive) throw new Error("Subject not found or inactive");
+  if (!(await ClassSubject.findOne({ where: { classId, subjectId } }))) throw new Error("Subject is not assigned to the selected class");
+  const teacherId = body.createdBy ?? existing?.createdBy;
+  if (teacherId) {
+    const teacher = await Teacher.findByPk(teacherId, { include: [{ model: User }] });
+    if (!teacher || !teacher.isActive || (branchId != null && Number(teacher.user?.branchId) !== Number(branchId))) throw new Error("Assignment teacher does not belong to your branch");
+  }
+  body.title = title; body.classId = classId; body.subjectId = subjectId; body.maxMarks = maxMarks; body.dueDate = dueDate; body.branchId = branchId;
+  return body;
+};
+
+const validateSubmission = async (body: any, req: Request) => {
+  const existing = await getExisting(Submission, req);
+  const assignmentId = Number(body.assignmentId ?? existing?.assignmentId);
+  const studentId = Number(body.studentId ?? existing?.studentId);
+  const marks = body.marksAwarded !== undefined ? Number(body.marksAwarded) : (existing?.marksAwarded != null ? Number(existing.marksAwarded) : null);
+  const submittedAt = body.submittedAt !== undefined ? (body.submittedAt ? new Date(body.submittedAt) : null) : (existing?.submittedAt ? new Date(existing.submittedAt) : null);
+  const branchId = req.user?.branchId;
+  if (!Number.isInteger(assignmentId) || assignmentId <= 0 || !Number.isInteger(studentId) || studentId <= 0) throw new Error("assignmentId and studentId are required");
+  const assignment = await Assignment.findByPk(assignmentId);
+  if (!assignment) throw new Error("Assignment not found");
+  if (branchId != null && Number(assignment.branchId) !== Number(branchId)) throw new Error("Assignment does not belong to your branch");
+  const student = await Student.findByPk(studentId);
+  if (!student) throw new Error("Student not found");
+  if (branchId != null && Number(student.branchId) !== Number(branchId)) throw new Error("Student does not belong to your branch");
+  const enrolment = await Enrolment.findOne({ where: { studentId, classId: assignment.classId, ...(branchId != null ? { branchId } : {}), status: { [Op.notIn]: ["withdrawn", "expelled"] } } });
+  if (!enrolment) throw new Error("Student is not enrolled in the assignment class");
+  if (marks != null && (!Number.isFinite(marks) || marks < 0 || marks > Number(assignment.maxMarks))) throw new Error("marksAwarded must be between 0 and assignment maxMarks");
+  if (submittedAt && !Number.isFinite(submittedAt.getTime())) throw new Error("Invalid submittedAt");
+  const status = String(body.status ?? existing?.status ?? "submitted");
+  if (!["submitted","graded","returned","late"].includes(status)) throw new Error("Invalid submission status");
+  const duplicate = await Submission.findOne({ where: { assignmentId, studentId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error("Submission already exists for this assignment and student");
+  body.assignmentId = assignmentId; body.studentId = studentId; body.marksAwarded = marks; body.submittedAt = submittedAt; body.status = status; body.branchId = branchId;
+  return body;
+};
+
+const validateGradebook = async (body: any, req: Request) => {
+  const existing = await getExisting(GradebookEntry, req);
+  const studentId = Number(body.studentId ?? existing?.studentId);
+  const termId = Number(body.termId ?? existing?.termId);
+  const subjectId = Number(body.subjectId ?? existing?.subjectId);
+  const branchId = req.user?.branchId;
+  if (!Number.isInteger(studentId) || studentId <= 0 || !Number.isInteger(termId) || termId <= 0 || !Number.isInteger(subjectId) || subjectId <= 0) throw new Error("studentId, termId and subjectId are required");
+  const student = await Student.findByPk(studentId);
+  if (!student) throw new Error("Student not found");
+  if (branchId != null && Number(student.branchId) !== Number(branchId)) throw new Error("Student does not belong to your branch");
+  const term = await Term.findByPk(termId);
+  if (!term) throw new Error("Term not found");
+  const enrolment = await Enrolment.findOne({ where: { studentId, academicYearId: term.academicYearId, ...(branchId != null ? { branchId } : {}), status: { [Op.notIn]: ["withdrawn","expelled"] } } });
+  if (!enrolment) throw new Error("Student is not enrolled in the term academic year");
+  if (!(await ClassSubject.findOne({ where: { classId: enrolment.classId, subjectId } }))) throw new Error("Subject is not assigned to the student's class");
+  for (const key of ["continuousAvg","examScore","total"]) {
+    if (body[key] !== undefined && body[key] !== null && (!Number.isFinite(Number(body[key])) || Number(body[key]) < 0 || Number(body[key]) > 100)) throw new Error(key + " must be between 0 and 100");
+  }
+  const duplicate = await GradebookEntry.findOne({ where: { studentId, termId, subjectId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error("Gradebook entry already exists for this student, term and subject");
+  body.studentId=studentId; body.termId=termId; body.subjectId=subjectId; body.branchId=branchId;
+  return body;
+};
+
+const validateTimetable = async (body: any, req: Request) => {
+  const existing = await getExisting(Timetable, req);
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  const classId = Number(body.classId ?? existing?.classId);
+  const sectionId = body.sectionId !== undefined ? (body.sectionId ? Number(body.sectionId) : null) : (existing?.sectionId ?? null);
+  const validFrom = body.validFrom !== undefined ? (body.validFrom ? new Date(body.validFrom) : null) : (existing?.validFrom ? new Date(existing.validFrom) : null);
+  const validTo = body.validTo !== undefined ? (body.validTo ? new Date(body.validTo) : null) : (existing?.validTo ? new Date(existing.validTo) : null);
+  const branchId=req.user?.branchId;
+  if(!name || !Number.isInteger(classId) || classId<=0) throw new Error("name and classId are required");
+  if(validFrom && !Number.isFinite(validFrom.getTime()) || validTo && !Number.isFinite(validTo.getTime())) throw new Error("Invalid timetable dates");
+  if(validFrom && validTo && validFrom>validTo) throw new Error("validFrom must be before validTo");
+  const schoolClass=await SchoolClass.findByPk(classId);
+  if(!schoolClass || !schoolClass.isActive) throw new Error("Class not found or inactive");
+  if(branchId!=null && Number(schoolClass.branchId)!==Number(branchId)) throw new Error("Class does not belong to your branch");
+  if(sectionId){ const section=await Section.findByPk(sectionId); if(!section || !section.isActive || Number(section.classId)!==classId) throw new Error("Selected section does not belong to the selected class"); }
+  body.name=name; body.classId=classId; body.sectionId=sectionId; body.validFrom=validFrom; body.validTo=validTo; body.branchId=branchId; return body;
+};
+
+const validatePeriod = async (body: any, req: Request) => {
+  const existing = await getExisting(Period, req);
+  const classId=Number(body.classId ?? existing?.classId);
+  const sectionId=body.sectionId!==undefined ? (body.sectionId ? Number(body.sectionId):null):(existing?.sectionId??null);
+  const subjectId=body.subjectId!==undefined ? (body.subjectId ? Number(body.subjectId):null):(existing?.subjectId??null);
+  const teacherId=body.teacherId!==undefined ? (body.teacherId ? Number(body.teacherId):null):(existing?.teacherId??null);
+  const day=String(body.dayOfWeek ?? existing?.dayOfWeek ?? "").toUpperCase();
+  const start=body.startTime ?? existing?.startTime; const end=body.endTime ?? existing?.endTime;
+  const parse=(v:any)=>{const m=/^(\\d{1,2}):(\\d{2})$/.exec(String(v??"").trim()); if(!m)return null; const h=Number(m[1]),mi=Number(m[2]); return h>=0&&h<=23&&mi>=0&&mi<=59?h*60+mi:null;};
+  const branchId=req.user?.branchId;
+  if(!Number.isInteger(classId)||classId<=0) throw new Error("classId is required");
+  if(!["MON","TUE","WED","THU","FRI","SAT","SUN"].includes(day)) throw new Error("Invalid dayOfWeek");
+  const sm=parse(start), em=parse(end); if(sm===null||em===null||sm>=em) throw new Error("Invalid period time range");
+  const schoolClass=await SchoolClass.findByPk(classId); if(!schoolClass||!schoolClass.isActive) throw new Error("Class not found or inactive");
+  if(branchId!=null&&Number(schoolClass.branchId)!==Number(branchId)) throw new Error("Class does not belong to your branch");
+  if(sectionId){const section=await Section.findByPk(sectionId); if(!section||!section.isActive||Number(section.classId)!==classId) throw new Error("Selected section does not belong to the selected class");}
+  if(subjectId){const subject=await Subject.findByPk(subjectId); if(!subject||!subject.isActive||!(await ClassSubject.findOne({where:{classId,subjectId}}))) throw new Error("Subject is not assigned to the selected class");}
+  if(teacherId){const teacher=await Teacher.findByPk(teacherId,{include:[{model:User}]}); if(!teacher||!teacher.isActive||(branchId!=null&&Number(teacher.user?.branchId)!==Number(branchId))) throw new Error("Teacher does not belong to your branch");}
+  body.classId=classId; body.sectionId=sectionId; body.subjectId=subjectId; body.teacherId=teacherId; body.dayOfWeek=day; body.startTime=String(start); body.endTime=String(end); body.branchId=branchId; return body;
+};
+
 const validateReportCard = async (body: any, req: Request) => {
   const existing = await getExisting(ReportCard, req);
   const enrolmentId = Number(body.enrolmentId ?? existing?.enrolmentId);
@@ -407,7 +539,7 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "classes", model: SchoolClass, searchable: ["name", "level"], permission: "classes" },
   { path: "sections", model: Section, searchable: ["name"], permission: "sections" },
   { path: "subjects", model: Subject, searchable: ["name", "code"], permission: "subjects" },
-  { path: "class-subjects", model: ClassSubject, searchable: [], permission: "subjects" },
+  { path: "class-subjects", model: ClassSubject, searchable: [], permission: "subjects", beforeCreate: validateClassSubject, beforeUpdate: validateClassSubject },
   {
     path: "enrolments", model: Enrolment, searchable: ["rollNo", "status"], permission: "students",
     beforeCreate: validateEnrolment,
@@ -433,12 +565,12 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeCreate: validateReportCard,
     beforeUpdate: validateReportCard,
   },
-  { path: "assignments", model: Assignment, searchable: ["title", "description"], permission: "assignments" },
-  { path: "submissions", model: Submission, searchable: ["status"], permission: "assignments" },
-  { path: "gradebook", model: GradebookEntry, searchable: ["grade"], permission: "gradebook" },
+  { path: "assignments", model: Assignment, searchable: ["title", "description"], permission: "assignments", beforeCreate: validateAssignment, beforeUpdate: validateAssignment },
+  { path: "submissions", model: Submission, searchable: ["status"], permission: "assignments", beforeCreate: validateSubmission, beforeUpdate: validateSubmission },
+  { path: "gradebook", model: GradebookEntry, searchable: ["grade"], permission: "gradebook", beforeCreate: validateGradebook, beforeUpdate: validateGradebook },
   { path: "grade-scales", model: GradeScale, searchable: ["name", "grade"], permission: "gradebook" },
-  { path: "timetable", model: Timetable, searchable: ["name"], permission: "timetable" },
-  { path: "periods", model: Period, searchable: ["dayOfWeek", "room"], permission: "timetable" },
+  { path: "timetable", model: Timetable, searchable: ["name"], permission: "timetable", beforeCreate: validateTimetable, beforeUpdate: validateTimetable },
+  { path: "periods", model: Period, searchable: ["dayOfWeek", "room"], permission: "timetable", beforeCreate: validatePeriod, beforeUpdate: validatePeriod },
   { path: "fee-types", model: FeeType, searchable: ["name", "category"], permission: "fees" },
   { path: "expenses", model: Expense, searchable: ["title", "category", "status"], permission: "expenses" },
   {

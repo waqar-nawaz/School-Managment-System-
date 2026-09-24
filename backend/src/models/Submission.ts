@@ -1,10 +1,15 @@
 import { Table, Column, DataType, ForeignKey, Unique, Index } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { Assignment } from "./Assignment";
-import { Student } from "./Student";
+import { Student } from "./Student";import { Branch } from "./Branch";
+
 
 @Table({ tableName: "submissions", indexes: [{ unique: true, fields: ["assignmentId", "studentId"] }] })
 export class Submission extends BaseModel {
+
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
   @ForeignKey(() => Assignment)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   assignmentId!: number;
