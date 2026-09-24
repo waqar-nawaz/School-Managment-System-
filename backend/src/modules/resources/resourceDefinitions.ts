@@ -33,8 +33,42 @@ const getExisting = async (model: any, req: Request) => {
   return id ? model.findByPk(id) : null;
 };
 
+const validateSubject = async (body: any, req: Request) => {
+  const existing = await getExisting(Subject, req);
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  const code = String(body.code ?? existing?.code ?? "").trim();
+  const maxMarks = Number(body.maxMarks ?? existing?.maxMarks ?? 100);
+  const passMarks = Number(body.passMarks ?? existing?.passMarks ?? 35);
+  const branchId = req.user?.branchId;
+  if (!name) throw new Error("Subject name is required");
+  if (!Number.isInteger(maxMarks) || maxMarks <= 0) throw new Error("maxMarks must be a positive integer");
+  if (!Number.isInteger(passMarks) || passMarks < 0 || passMarks > maxMarks) throw new Error("passMarks must be between 0 and maxMarks");
+  const duplicate = await Subject.findOne({ where: { name, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error("Subject already exists in this branch");
+  body.name = name; body.code = code || null; body.maxMarks = maxMarks; body.passMarks = passMarks; body.branchId = branchId;
+  return body;
+};
+
+const validateSection = async (body: any, req: Request) => {
+  const existing = await getExisting(Section, req);
+  const classId = Number(body.classId ?? existing?.classId);
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  const capacity = Number(body.capacity ?? existing?.capacity ?? 0);
+  const branchId = req.user?.branchId;
+  if (!Number.isInteger(classId) || classId <= 0 || !name) throw new Error("classId and section name are required");
+  const schoolClass = await SchoolClass.findByPk(classId);
+  if (!schoolClass || !schoolClass.isActive) throw new Error("Class not found or inactive");
+  if (branchId != null && Number(schoolClass.branchId) !== Number(branchId)) throw new Error("Class does not belong to your branch");
+  if (!Number.isInteger(capacity) || capacity < 0) throw new Error("Section capacity must be non-negative");
+  const duplicate = await Section.findOne({ where: { classId, name, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error("Section already exists in this class");
+  body.classId = classId; body.name = name; body.capacity = capacity; body.branchId = branchId;
+  return body;
+};
+
 const validateAcademicYear = async (body: any, req: Request) => {
   const existing = await getExisting(AcademicYear, req);
+  const branchId = req.user?.branchId;
   const name = String(body.name ?? existing?.name ?? "").trim();
   const start = body.startDate !== undefined ? new Date(body.startDate) : (existing?.startDate ? new Date(existing.startDate) : null);
   const end = body.endDate !== undefined ? new Date(body.endDate) : (existing?.endDate ? new Date(existing.endDate) : null);
@@ -47,7 +81,7 @@ const validateAcademicYear = async (body: any, req: Request) => {
   if (isClosed && isCurrent) throw new Error("A closed academic year cannot be current");
   if (isCurrent) {
     const current = await AcademicYear.findOne({
-      where: { isCurrent: true, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
+      where: { isCurrent: true, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
     });
     if (current) throw new Error("Another academic year is already marked as current");
   }
@@ -56,15 +90,18 @@ const validateAcademicYear = async (body: any, req: Request) => {
   body.endDate = end;
   body.isCurrent = isCurrent;
   body.isClosed = isClosed;
+  body.branchId = branchId;
   return body;
 };
 
 const validateTerm = async (body: any, req: Request) => {
   const existing = await getExisting(Term, req);
+  const branchId = req.user?.branchId;
   const academicYearId = body.academicYearId ?? existing?.academicYearId;
   if (!academicYearId) throw new Error("academicYearId is required");
   const year = await AcademicYear.findByPk(academicYearId);
   if (!year) throw new Error("Academic year not found");
+  if (branchId != null && Number(year.branchId) !== Number(branchId)) throw new Error("Academic year does not belong to your branch");
   const start = body.startDate !== undefined ? new Date(body.startDate) : existing?.startDate;
   const end = body.endDate !== undefined ? new Date(body.endDate) : existing?.endDate;
   if (start && end && (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end)) {
@@ -76,6 +113,13 @@ const validateTerm = async (body: any, req: Request) => {
   if (end && (end < new Date(year.startDate) || end > new Date(year.endDate))) {
     throw new Error("Term endDate must be within the academic year");
   }
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  if (!name) throw new Error("Term name is required");
+  const duplicate = await Term.findOne({ where: { academicYearId: Number(academicYearId), name, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error("Term already exists in this academic year");
+  body.academicYearId = Number(academicYearId);
+  body.name = name;
+  body.branchId = branchId;
   return body;
 };
 
@@ -732,8 +776,8 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeUpdate: validateTerm,
   },
   { path: "classes", model: SchoolClass, searchable: ["name", "level"], permission: "classes" },
-  { path: "sections", model: Section, searchable: ["name"], permission: "sections" },
-  { path: "subjects", model: Subject, searchable: ["name", "code"], permission: "subjects" },
+  { path: "sections", model: Section, searchable: ["name"], permission: "sections", beforeCreate: validateSection, beforeUpdate: validateSection },
+  { path: "subjects", model: Subject, searchable: ["name", "code"], permission: "subjects", beforeCreate: validateSubject, beforeUpdate: validateSubject },
   { path: "class-subjects", model: ClassSubject, searchable: [], permission: "subjects", beforeCreate: validateClassSubject, beforeUpdate: validateClassSubject },
   {
     path: "enrolments", model: Enrolment, searchable: ["rollNo", "status"], permission: "students",
