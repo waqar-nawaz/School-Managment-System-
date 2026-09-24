@@ -83,20 +83,42 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
     sectionId?: number;
     entries: Array<{ studentId: number; status: string; lateMinutes?: number; reason?: string }>;
   };
-  if (!Array.isArray(entries)) throw ApiError.badRequest("entries array required");
-  const invalid = entries.find((e) => !e || e.studentId === undefined || e.studentId === null);
-  if (invalid) throw ApiError.badRequest("Each entry needs a studentId");
-
-  const cleaned = entries.map((e) => ({
-    studentId: e.studentId,
-    date,
-    status: ATTENDANCE_STATUS.includes(e.status as any) ? e.status : "present",
-    lateMinutes: Number(e.lateMinutes || 0),
-    reason: e.reason || "",
-    takenBy: req.user!.id,
-    classId: classId ?? null,
-    sectionId: sectionId ?? null,
-  }));
+  if (!Array.isArray(entries) || !entries.length) throw ApiError.badRequest("entries array required");
+  if (!Number.isInteger(Number(classId))) throw ApiError.badRequest("classId required");
+  if (sectionId !== undefined && !Number.isInteger(Number(sectionId))) throw ApiError.badRequest("Invalid sectionId");
+  const enrolments = await Enrolment.findAll({
+    where: {
+      classId: Number(classId),
+      ...(sectionId !== undefined ? { sectionId: Number(sectionId) } : {}),
+      status: "active",
+    },
+    attributes: ["studentId"],
+  });
+  const allowedStudentIds = new Set(enrolments.map(e => Number(e.studentId)));
+  const cleaned = entries.map((e) => {
+    const studentId = Number(e.studentId);
+    if (!allowedStudentIds.has(studentId)) {
+      throw ApiError.badRequest(`Student ${studentId} is not enrolled in the selected class/section`);
+    }
+    const status = String(e.status);
+    if (!ATTENDANCE_STATUS.includes(status as any)) {
+      throw ApiError.badRequest(`Invalid attendance status for student ${studentId}`);
+    }
+    const lateMinutes = Number(e.lateMinutes || 0);
+    if (!Number.isFinite(lateMinutes) || lateMinutes < 0) {
+      throw ApiError.badRequest(`Invalid lateMinutes for student ${studentId}`);
+    }
+    return {
+      studentId,
+      date,
+      status,
+      lateMinutes,
+      reason: e.reason || "",
+      takenBy: req.user!.id,
+      classId: Number(classId),
+      sectionId: sectionId !== undefined ? Number(sectionId) : null,
+    };
+  });
 
   const t = await Attendance.sequelize!.transaction();
   try {
