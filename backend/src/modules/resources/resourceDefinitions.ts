@@ -889,9 +889,6 @@ export const RESOURCES: ResourceDefinition[] = [
       const current = await LeaveRequest.findByPk(id);
       if (!current) throw new Error("Leave request not found");
       if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw new Error("Leave request does not belong to your branch");
-      if (Number(current.userId) !== Number(req.user?.id) && !["admin", "super_admin"].includes(String(req.user?.role))) {
-        throw new Error("You can only update your own leave request");
-      }
       const startDate = body.startDate !== undefined ? new Date(body.startDate) : new Date(current.startDate);
       const endDate = body.endDate !== undefined ? new Date(body.endDate) : new Date(current.endDate);
       const days = Number(body.days ?? current.days);
@@ -901,9 +898,6 @@ export const RESOURCES: ResourceDefinition[] = [
       if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) throw new Error("Invalid leave date range");
       if (!Number.isFinite(days) || days <= 0) throw new Error("days must be greater than 0");
       if (!["pending", "approved", "rejected", "cancelled"].includes(status)) throw new Error("Invalid leave status");
-      if (status !== "pending" && !["admin", "super_admin"].includes(String(req.user?.role))) {
-        throw new Error("Only administrators can approve, reject, or cancel leave requests");
-      }
       const overlap = await LeaveRequest.findOne({
         where: {
           userId: current.userId,
