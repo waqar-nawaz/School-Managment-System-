@@ -15,6 +15,12 @@ import { Media } from "../../models";
 const router = Router();
 router.use(authenticate);
 
+const currentBranchId = (req: any): number => {
+  const id = Number(req.user?.branchId);
+  if (!Number.isInteger(id) || id <= 0) throw ApiError.forbidden("User is not assigned to a branch");
+  return id;
+};
+
 router.post(
   "/upload",
   authorize("media:create"),
@@ -29,8 +35,9 @@ router.post(
         path: `/uploads/${f.filename}`,
         mimeType: f.mimetype,
         size: f.size,
-        category: String(req.body.category || "general"),
+        category: String(req.body.category || "general").trim().slice(0, 40),
         uploadedBy: req.user!.id,
+        branchId: currentBranchId(req),
       }))
     );
 
@@ -41,7 +48,7 @@ router.post(
 router.get("/", authorize("media:read"), asyncHandler(async (req, res) => {
   const category = req.query.category ? String(req.query.category) : undefined;
   const p = parsePagination(req);
-  const where: Record<string, unknown> = { ...(category ? { category } : {}) };
+  const where: Record<string, unknown> = { branchId: currentBranchId(req), ...(category ? { category } : {}) };
   if (p.search) {
     where[Op.or as unknown as string] = [
       { filename: { [likeOp]: `%${p.search}%` } },
@@ -59,13 +66,13 @@ router.get("/", authorize("media:read"), asyncHandler(async (req, res) => {
 }));
 
 router.get("/:id", authorize("media:read"), asyncHandler(async (req, res) => {
-  const row = await Media.findByPk(req.params.id);
+  const row = await Media.findOne({ where: { id: req.params.id, branchId: currentBranchId(req) } });
   if (!row) throw ApiError.notFound("File not found");
   ApiResponse.success(res, 200, "Media metadata", row);
 }));
 
 router.delete("/:id", authorize("media:delete"), asyncHandler(async (req, res) => {
-  const row = await Media.findByPk(req.params.id);
+  const row = await Media.findOne({ where: { id: req.params.id, branchId: currentBranchId(req) } });
   if (!row) throw ApiError.notFound("File not found");
   try {
     const abs = path.join(UPLOAD_ROOT, path.basename(row.path));
