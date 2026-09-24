@@ -2,6 +2,7 @@ import { Table, Column, Unique, DataType, Index, ForeignKey } from "sequelize-ty
 import { BaseModel } from "./BaseModel";
 import { Student } from "./Student";
 import { User } from "./User";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "certificates" })
 export class Certificate extends BaseModel {
@@ -66,6 +67,10 @@ export class HealthRecord extends BaseModel {
 
 @Table({ tableName: "discipline_records" })
 export class DisciplineRecord extends BaseModel {
+  @ForeignKey(() => Branch)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
+
   @ForeignKey(() => Student)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   studentId!: number;
