@@ -890,6 +890,32 @@ const validateCertificate = async (body: any, req: Request) => {
   return body;
 };
 
+const validateTeachingPlan = async (body: any, req: Request) => {
+  const existing = await getExisting(body?.__lessonPlan ? LessonPlan : Syllabus, req);
+  const branchId = Number(req.user?.branchId);
+  if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
+  const title = String(body.title ?? existing?.title ?? "").trim();
+  const classId = Number(body.classId ?? existing?.classId);
+  const subjectId = body.subjectId !== undefined ? (body.subjectId ? Number(body.subjectId) : null) : (existing?.subjectId ?? null);
+  const date = body.date !== undefined ? (body.date ? new Date(body.date) : null) : (existing?.date ? new Date(existing.date) : null);
+  if (!title) throw ApiError.badRequest("Title is required");
+  if (title.length > 200) throw ApiError.badRequest("Title must be 200 characters or fewer");
+  if (!Number.isInteger(classId) || classId <= 0) throw ApiError.badRequest("classId is required");
+  const schoolClass = await SchoolClass.findOne({ where: { id: classId, branchId } });
+  if (!schoolClass || !schoolClass.isActive) throw ApiError.badRequest("Class not found, inactive, or outside your branch");
+  if (subjectId !== null) {
+    if (!Number.isInteger(subjectId) || subjectId <= 0) throw ApiError.badRequest("Invalid subjectId");
+    const subject = await Subject.findOne({ where: { id: subjectId, branchId } });
+    if (!subject || !subject.isActive) throw ApiError.badRequest("Subject not found, inactive, or outside your branch");
+    const assigned = await ClassSubject.findOne({ where: { classId, subjectId, branchId } });
+    if (!assigned) throw ApiError.badRequest("Subject is not assigned to the selected class");
+  }
+  if (date && !Number.isFinite(date.getTime())) throw ApiError.badRequest("Invalid date");
+  delete body.__lessonPlan;
+  body.title = title; body.classId = classId; body.subjectId = subjectId; body.date = date; body.branchId = branchId;
+  return body;
+};
+
 const validateHealthRecord = async (body: any, req: Request) => {
   const existing = await getExisting(HealthRecord, req);
   const studentId = Number(body.studentId ?? existing?.studentId);
