@@ -68,6 +68,7 @@ export async function login(input: LoginInput, ip?: string, userAgent?: string):
     ip,
     userAgent,
     role: user.role,
+    branchId: user.branchId,
     newData: { success: true },
   });
 
