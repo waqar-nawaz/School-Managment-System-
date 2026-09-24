@@ -154,6 +154,57 @@ const validateExamSchedule = async (body: any, req: Request) => {
   return body;
 };
 
+const validateRoute = async (body: any, req: Request) => {
+  const existing = await getExisting(Route, req);
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  if (!name) throw new Error("Route name is required");
+  const monthlyFee = Number(body.monthlyFee ?? existing?.monthlyFee ?? 0);
+  if (!Number.isFinite(monthlyFee) || monthlyFee < 0) throw new Error("monthlyFee must be a non-negative number");
+  body.name = name; body.monthlyFee = monthlyFee; body.branchId = req.user?.branchId;
+  return body;
+};
+
+const validateRouteStop = async (body: any, req: Request) => {
+  const existing = await getExisting(RouteStop, req);
+  const routeId = Number(body.routeId ?? existing?.routeId);
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  const orderIndex = Number(body.orderIndex ?? existing?.orderIndex);
+  if (!Number.isInteger(routeId) || routeId <= 0 || !name) throw new Error("routeId and name are required");
+  if (!Number.isInteger(orderIndex) || orderIndex < 0) throw new Error("orderIndex must be a non-negative integer");
+  const route = await Route.findByPk(routeId);
+  if (!route || !route.isActive) throw new Error("Selected route is not active");
+  if (req.user?.branchId != null && Number(route.branchId) !== Number(req.user.branchId)) throw new Error("Selected route does not belong to your branch");
+  if (body.stopFee !== undefined || existing?.stopFee !== undefined) {
+    const fee = Number(body.stopFee ?? existing?.stopFee ?? 0);
+    if (!Number.isFinite(fee) || fee < 0) throw new Error("stopFee must be a non-negative number");
+    body.stopFee = fee;
+  }
+  body.routeId = routeId; body.name = name; body.orderIndex = orderIndex; body.branchId = req.user?.branchId;
+  return body;
+};
+
+const validateVehicle = async (body: any, req: Request) => {
+  const existing = await getExisting(Vehicle, req);
+  const registrationNo = String(body.registrationNo ?? existing?.registrationNo ?? "").trim();
+  if (!registrationNo) throw new Error("registrationNo is required");
+  const capacity = Number(body.capacity ?? existing?.capacity);
+  if (!Number.isInteger(capacity) || capacity <= 0) throw new Error("capacity must be a positive integer");
+  const status = String(body.status ?? existing?.status ?? "active");
+  if (!["active","maintenance","inactive"].includes(status)) throw new Error("Invalid vehicle status");
+  const branchId = req.user?.branchId;
+  const duplicate = await Vehicle.findOne({ where: { registrationNo, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw new Error("Vehicle registration number already exists");
+  for (const field of ["insuranceExpiry","fitnessExpiry"]) {
+    if (body[field] !== undefined || existing?.[field]) {
+      const date = body[field] !== undefined ? new Date(body[field]) : new Date(existing[field]);
+      if (!Number.isFinite(date.getTime())) throw new Error("Invalid vehicle expiry date");
+      body[field] = date;
+    }
+  }
+  body.registrationNo = registrationNo; body.capacity = capacity; body.status = status; body.branchId = branchId;
+  return body;
+};
+
 const validateInventory = async (body: any, req: Request) => {
   const existing = await getExisting(InventoryItem, req);
   const name = String(body.name ?? existing?.name ?? "").trim();
@@ -396,9 +447,9 @@ export const RESOURCES: ResourceDefinition[] = [
   { path: "books", model: Book, searchable: ["title", "author", "isbn", "category"], permission: "library" },
   { path: "book-copies", model: BookCopy, searchable: ["accessionNo", "status"], permission: "library" },
   { path: "book-fines", model: BookFine, searchable: ["receiptNo", "status"], permission: "book-fines" },
-  { path: "routes", model: Route, searchable: ["name", "startPoint", "endPoint"], permission: "routes" },
-  { path: "route-stops", model: RouteStop, searchable: ["name"], permission: "route-stops" },
-  { path: "vehicles", model: Vehicle, searchable: ["registrationNo", "model"], permission: "vehicles" },
+  { path: "routes", model: Route, searchable: ["name", "startPoint", "endPoint"], permission: "routes", beforeCreate: validateRoute, beforeUpdate: validateRoute },
+  { path: "route-stops", model: RouteStop, searchable: ["name"], permission: "route-stops", beforeCreate: validateRouteStop, beforeUpdate: validateRouteStop },
+  { path: "vehicles", model: Vehicle, searchable: ["registrationNo", "model"], permission: "vehicles", beforeCreate: validateVehicle, beforeUpdate: validateVehicle },
   {
     path: "driver-assignments", model: DriverAssignment, searchable: [], permission: "driver-assignments",
     beforeCreate: async (body, req) => {
