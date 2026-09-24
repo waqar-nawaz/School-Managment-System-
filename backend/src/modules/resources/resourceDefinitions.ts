@@ -773,7 +773,7 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeCreate: async (body, req) => {
       const month = String(body.month ?? "").trim();
       const branchId = req.user?.branchId;
-      if (!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("month must be in YYYY-MM format");
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("month must be in YYYY-MM format");
       const payeeType = body.payeeType === "staff" ? "staff" : body.payeeType === "teacher" ? "teacher" : null;
       if (!payeeType) throw new Error("payeeType must be teacher or staff");
       const teacherId = body.teacherId ? Number(body.teacherId) : null;
@@ -815,7 +815,7 @@ export const RESOURCES: ResourceDefinition[] = [
       if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw new Error("Payroll item does not belong to your branch");
       const branchId = req.user?.branchId;
       const month = String(body.month ?? current.month ?? "").trim();
-      if (!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("month must be in YYYY-MM format");
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("month must be in YYYY-MM format");
       const payeeType = body.payeeType ?? current.payeeType;
       if (payeeType !== "teacher" && payeeType !== "staff") throw new Error("payeeType must be teacher or staff");
       const teacherId = body.teacherId !== undefined ? (body.teacherId ? Number(body.teacherId) : null) : (current.teacherId ?? null);
