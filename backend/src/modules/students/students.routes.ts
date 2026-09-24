@@ -5,7 +5,7 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { Student, Parent, StudentGuardian, Enrolment, AcademicYear, User, Attendance, Invoice } from "../../models";
+import { Student, Parent, StudentGuardian, Enrolment, AcademicYear, User, Attendance, Invoice, SchoolClass, Section } from "../../models";
 import { createCrudController } from "../../utils/crudFactory";
 import { createUser } from "../users/users.service";
 import { writeAuditLog } from "../../services/audit.service";
@@ -178,20 +178,47 @@ router.post(
 router.put("/:id", authorize("students:update"), asyncHandler(async (req, res) => {
   const student = await assertStudentAccess(req, Number(req.params.id));
   const b = req.body as Record<string, unknown>;
-  const patch: Record<string, unknown> = { ...b };
+  // Only allow student profile fields here. Sensitive ownership fields such as
+  // branchId, userId, admissionStatus and admissionNo must not be client-controlled.
+  const allowed = [
+    "firstName", "lastName", "dateOfBirth", "gender", "bloodGroup", "nationality",
+    "emergencyContact", "guardianName", "guardianPhone", "address", "email",
+    "admissionDate", "currentClassId", "currentSectionId", "medicalInfo", "isActive",
+  ];
+  const patch: Record<string, unknown> = {};
+  for (const key of allowed) if (b[key] !== undefined) patch[key] = b[key];
+
   // Accept both form keys (dob/classId/sectionId) and model keys.
   if (b.dob !== undefined && b.dateOfBirth === undefined) patch.dateOfBirth = b.dob;
   if (b.classId !== undefined && b.currentClassId === undefined) patch.currentClassId = b.classId;
   if (b.sectionId !== undefined && b.currentSectionId === undefined) patch.currentSectionId = b.sectionId;
-  delete patch.dob;
-  delete patch.classId;
-  delete patch.sectionId;
+
+  const newClassId = patch.currentClassId !== undefined
+    ? Number(patch.currentClassId)
+    : Number(student.currentClassId ?? 0);
+  const newSectionId = patch.currentSectionId !== undefined
+    ? (patch.currentSectionId === null || patch.currentSectionId === "" ? null : Number(patch.currentSectionId))
+    : (student.currentSectionId ?? null);
+
+  if (newClassId) {
+    const schoolClass = await SchoolClass.findByPk(newClassId);
+    if (!schoolClass) throw ApiError.badRequest("Class not found");
+    if (req.user?.branchId != null && Number(schoolClass.branchId) !== Number(req.user.branchId)) {
+      throw ApiError.badRequest("Selected class does not belong to your branch");
+    }
+    if (newSectionId != null) {
+      const section = await Section.findByPk(newSectionId);
+      if (!section) throw ApiError.badRequest("Section not found");
+      if (Number(section.classId) !== newClassId) {
+        throw ApiError.badRequest("Selected section does not belong to the selected class");
+      }
+    }
+  }
+
   await student.update(patch);
 
   // Attendance is driven by active enrolments, so keep the current-year
   // enrolment in sync when the class/section is changed here.
-  const newClassId = (patch.currentClassId as number | undefined) ?? student.currentClassId;
-  const newSectionId = (patch.currentSectionId as number | undefined) ?? student.currentSectionId;
   if (newClassId) {
     const academicYear =
       (await AcademicYear.findOne({ where: { isCurrent: true } })) ||
