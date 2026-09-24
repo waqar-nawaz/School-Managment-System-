@@ -685,26 +685,26 @@ const validateRouteStop = async (body: any, req: Request) => {
 };
 const validateVehicle = async (body: any, req: Request) => {
   const existing = await getExisting(Vehicle, req);
+  const branchId = Number(req.user?.branchId);
+  if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
   const registrationNo = String(body.registrationNo ?? existing?.registrationNo ?? "").trim();
-  if (!registrationNo) throw new Error("registrationNo is required");
+  if (!registrationNo) throw ApiError.badRequest("registrationNo is required");
   const capacity = Number(body.capacity ?? existing?.capacity);
-  if (!Number.isInteger(capacity) || capacity <= 0) throw new Error("capacity must be a positive integer");
+  if (!Number.isInteger(capacity) || capacity <= 0) throw ApiError.badRequest("capacity must be positive");
   const status = String(body.status ?? existing?.status ?? "active");
-  if (!["active","maintenance","inactive"].includes(status)) throw new Error("Invalid vehicle status");
-  const branchId = req.user?.branchId;
-  const duplicate = await Vehicle.findOne({ where: { registrationNo, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw new Error("Vehicle registration number already exists");
-  for (const field of ["insuranceExpiry","fitnessExpiry"]) {
+  if (!["active","maintenance","inactive"].includes(status)) throw ApiError.badRequest("Invalid vehicle status");
+  const duplicate = await Vehicle.findOne({ where: { registrationNo, branchId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  if (duplicate) throw ApiError.badRequest("Vehicle registration number already exists in this branch");
+  for (const field of ["insuranceExpiry", "fitnessExpiry"]) {
     if (body[field] !== undefined || existing?.[field]) {
-      const date = body[field] !== undefined ? new Date(body[field]) : new Date(existing[field]);
-      if (!Number.isFinite(date.getTime())) throw new Error("Invalid vehicle expiry date");
+      const date = new Date(body[field] !== undefined ? body[field] : existing[field]);
+      if (!Number.isFinite(date.getTime())) throw ApiError.badRequest("Invalid vehicle expiry date");
       body[field] = date;
     }
   }
   body.registrationNo = registrationNo; body.capacity = capacity; body.status = status; body.branchId = branchId;
   return body;
 };
-
 const validateInventory = async (body: any, req: Request) => {
   const existing = await getExisting(InventoryItem, req);
   const name = String(body.name ?? existing?.name ?? "").trim();
