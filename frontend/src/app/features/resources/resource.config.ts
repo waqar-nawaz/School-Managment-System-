@@ -212,7 +212,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
       refField('classId', 'Class', '/classes', 'name', undefined, true),
       refField('subjectId', 'Subject', '/subjects', 'name'),
       { key: 'dueDate', label: 'Due date', type: 'dateonly' },
-      { key: 'maxMarks', label: 'Max marks', type: 'number' },
+      { key: 'maxMarks', label: 'Max marks', type: 'number', required: true },
     ]),
   },
   submissions: {
