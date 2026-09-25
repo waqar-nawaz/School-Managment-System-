@@ -491,6 +491,8 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   openCreate(): void {
     this.editingId = null;
     this.formValues = {};
+    // A newly admitted student must start in the Active list.
+    if (this.resourceKey === 'students') this.formValues['isActive'] = true;
     this.fieldErrors = {};
     this.refOptions = {};
     this.refSearch = {};
