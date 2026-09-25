@@ -208,13 +208,11 @@ router.post(
             const startDate = new Date(year, 6, 1);
             const endDate = new Date(year + 1, 5, 30);
             const yearName = year + "-" + (year + 1);
-            const existingYearByName = await AcademicYear.findOne({ where: { name: yearName }, transaction });
+            const existingYearByName = await AcademicYear.findOne({
+              where: { name: yearName, branchId },
+              transaction,
+            });
             if (existingYearByName) {
-              // A legacy database may have a global name index. Reuse the existing year
-              // only when it belongs to this branch; otherwise fail with a useful message.
-              if (Number(existingYearByName.branchId) !== branchId) {
-                throw ApiError.badRequest("Academic year " + yearName + " is already configured for another branch. Please run the database schema repair.");
-              }
               academicYearId = existingYearByName.id;
             } else {
               const createdYear = await AcademicYear.create({
