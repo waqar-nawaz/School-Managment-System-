@@ -140,11 +140,13 @@ router.post(
                 include: [{ model: User, where: { branchId: req.user?.branchId }, required: true }],
                 transaction,
               })
-            : await Parent.findOne({
-                where: { phone: g.phone },
-                include: [{ model: User, where: { branchId: req.user?.branchId }, required: true }],
-                transaction,
-              });
+            : (g.phone
+              ? await Parent.findOne({
+                  where: { phone: g.phone },
+                  include: [{ model: User, where: { branchId: req.user?.branchId }, required: true }],
+                  transaction,
+                })
+              : null);
 
           if (!parent) {
             const gName = String(g.fullName || g.name || "Guardian").trim() || "Guardian";
