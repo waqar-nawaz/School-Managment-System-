@@ -126,6 +126,8 @@ router.post(
         emergencyContact: body.emergencyContact, guardianName: body.guardianName,
         guardianPhone: body.guardianPhone, address: body.address, email: body.email,
         admissionDate: body.admissionDate || new Date(), admissionStatus: "admitted",
+        // New admissions are always active. Deactivation is a separate lifecycle action.
+        isActive: true,
         currentClassId, currentSectionId, medicalInfo: body.medicalInfo,
         userId: user.id, branchId,
       }, { transaction });
@@ -203,15 +205,26 @@ router.post(
             const year = admissionDate.getMonth() >= 6 ? admissionDate.getFullYear() : admissionDate.getFullYear() - 1;
             const startDate = new Date(year, 6, 1);
             const endDate = new Date(year + 1, 5, 30);
-            const createdYear = await AcademicYear.create({
-              name: year + "-" + (year + 1),
+            const yearName = year + "-" + (year + 1);
+            const existingYearByName = await AcademicYear.findOne({ where: { name: yearName }, transaction });
+            if (existingYearByName) {
+              // A legacy database may have a global name index. Reuse the existing year
+              // only when it belongs to this branch; otherwise fail with a useful message.
+              if (Number(existingYearByName.branchId) !== branchId) {
+                throw ApiError.badRequest("Academic year " + yearName + " is already configured for another branch. Please run the database schema repair.");
+              }
+              academicYearId = existingYearByName.id;
+            } else {
+              const createdYear = await AcademicYear.create({
+              name: yearName,
               startDate,
               endDate,
               isCurrent: true,
               isClosed: false,
               branchId,
-            }, { transaction });
-            academicYearId = createdYear.id;
+              }, { transaction });
+              academicYearId = createdYear.id;
+            }
           }
         }
 
