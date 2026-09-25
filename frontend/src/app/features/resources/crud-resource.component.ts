@@ -476,7 +476,21 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   private loadRefOptions(field: FieldConfig, q = ''): void {
     if (!field.ref) return;
     const { api, labelKey, secondaryKey } = field.ref;
-    this.api.get<Record<string, unknown>[]>(api, { page: 1, limit: 20, q }).subscribe({
+    const params: Record<string, unknown> = { page: 1, limit: 100, q };
+
+    // Student sections are dependent on the selected class. The generic
+    // reference loader used to fetch the first sections across every class,
+    // which caused values such as A, B, C, A, B to appear in the dropdown.
+    if (this.resourceKey === 'students' && field.key === 'currentSectionId') {
+      const classId = this.formValues['currentClassId'];
+      if (classId === null || classId === undefined || classId === '') {
+        this.refOptions[field.key] = [];
+        return;
+      }
+      params['classId'] = classId;
+    }
+
+    this.api.get<Record<string, unknown>[]>(api, params).subscribe({
       next: (res) => {
         const rows = (res?.data as Record<string, unknown>[]) ?? [];
         const opts = rows.map((r) => ({
@@ -527,6 +541,15 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.refSelectedLabel[key] = opt.label;
     this.refSearch[key] = '';
     this.refOpenKey = null;
+
+    // Changing a student's class invalidates the previously selected section.
+    // Reload the section list using the newly selected class.
+    if (this.resourceKey === 'students' && key === 'currentClassId') {
+      this.formValues['currentSectionId'] = null;
+      this.refSelectedLabel['currentSectionId'] = '';
+      this.refSearch['currentSectionId'] = '';
+      this.refOptions['currentSectionId'] = [];
+    }
   }
 
   refLabel(key: string): string {
