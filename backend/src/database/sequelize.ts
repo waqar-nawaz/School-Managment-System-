@@ -141,10 +141,55 @@ async function ensureColumns(): Promise<void> {
   }
 }
 
+/**
+ * Older databases could have single-column unique indexes on name from the
+ * pre-branch-isolation schema. The models now define name uniqueness per
+ * branch. Repair only those stale single-column indexes; never drop a
+ * composite unique index.
+ */
+async function ensureBranchScopedNameIndexes(): Promise<void> {
+  const qi = sequelize.getQueryInterface();
+  const targets = [
+    { table: "classes", name: "uq_class_branch_name", fields: ["name", "branchId"] },
+    { table: "sections", name: "uq_section_class_name", fields: ["name", "classId"] },
+    { table: "academic_years", name: "uq_academic_year_branch_name", fields: ["name", "branchId"] },
+  ];
+
+  for (const target of targets) {
+    try {
+      const indexes = await qi.showIndex(target.table);
+      for (const index of indexes as any[]) {
+        const fields = (index.fields || []).map((f: any) => f.attribute || f.name).filter(Boolean);
+        if (index.unique && fields.length === 1 && fields[0] === "name") {
+          await qi.removeIndex(target.table, index.name);
+          logger.info(`Removed stale single-column unique index ${target.table}.${index.name}`);
+        }
+      }
+
+      const indexesAfter = await qi.showIndex(target.table);
+      const compositeExists = (indexesAfter as any[]).some((index) => {
+        const fields = (index.fields || []).map((f: any) => f.attribute || f.name).filter(Boolean);
+        return index.unique && fields.join(",") === target.fields.join(",");
+      });
+      if (!compositeExists) {
+        await qi.addIndex(target.table, {
+          name: target.name,
+          unique: true,
+          fields: target.fields,
+        });
+        logger.info(`Added branch-scoped unique index ${target.table}.${target.name}`);
+      }
+    } catch (error) {
+      logger.warn(`Could not repair unique indexes for ${target.table}: ${(error as Error).message}`);
+    }
+  }
+}
+
 export async function connectDatabase(): Promise<void> {
   await sequelize.authenticate();
   await sequelize.sync({ alter: false });
   await ensureColumns();
+  await ensureBranchScopedNameIndexes();
 }
 
 export default sequelize;
