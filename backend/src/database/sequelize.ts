@@ -157,11 +157,40 @@ async function ensureBranchScopedNameIndexes(): Promise<void> {
 
   for (const target of targets) {
     try {
+      // PostgreSQL may represent an old @Unique constraint as a unique
+      // constraint-backed index, which QueryInterface.removeIndex cannot
+      // reliably remove. Handle those legacy constraints explicitly.
+      if (env.db.dialect === "postgres") {
+        await sequelize.query(`
+          DO $$
+          DECLARE
+            r RECORD;
+          BEGIN
+            FOR r IN
+              SELECT c.conname
+              FROM pg_constraint c
+              JOIN pg_class t ON t.oid = c.conrelid
+              JOIN pg_namespace n ON n.oid = t.relnamespace
+              WHERE n.nspname = current_schema()
+                AND t.relname = '${target.table}'
+                AND c.contype = 'u'
+                AND (
+                  SELECT string_agg(a.attname, ',' ORDER BY u.ordinality)
+                  FROM unnest(c.conkey) WITH ORDINALITY u(attnum, ordinality)
+                  JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = u.attnum
+                ) = 'name'
+            LOOP
+              EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I', '${target.table}', r.conname);
+            END LOOP;
+          END $$;
+        `);
+      }
+
       const indexes = await qi.showIndex(target.table);
       for (const index of indexes as any[]) {
         const fields = (index.fields || []).map((f: any) => f.attribute || f.name).filter(Boolean);
         if (index.unique && fields.length === 1 && fields[0] === "name") {
-          await qi.removeIndex(target.table, index.name);
+          try { await qi.removeIndex(target.table, index.name); } catch { /* already removed as a constraint */ }
           logger.info(`Removed stale single-column unique index ${target.table}.${index.name}`);
         }
       }
@@ -172,11 +201,7 @@ async function ensureBranchScopedNameIndexes(): Promise<void> {
         return index.unique && fields.join(",") === target.fields.join(",");
       });
       if (!compositeExists) {
-        await qi.addIndex(target.table, {
-          name: target.name,
-          unique: true,
-          fields: target.fields,
-        });
+        await qi.addIndex(target.table, { name: target.name, unique: true, fields: target.fields });
         logger.info(`Added branch-scoped unique index ${target.table}.${target.name}`);
       }
     } catch (error) {
