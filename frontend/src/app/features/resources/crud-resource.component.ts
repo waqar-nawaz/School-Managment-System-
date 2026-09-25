@@ -487,18 +487,26 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         this.refOptions[field.key] = [];
         return;
       }
-      params['classId'] = classId;
+      params['filter[classId]'] = classId;
     }
 
     this.api.get<Record<string, unknown>[]>(api, params).subscribe({
       next: (res) => {
         const rows = (res?.data as Record<string, unknown>[]) ?? [];
-        const opts = rows.map((r) => ({
-          value: r['id'],
-          label:
-            [r[labelKey], secondaryKey ? r[secondaryKey] : null].filter(Boolean).join(' — ') ||
-            `#${r['id']}`,
-        }));
+        const seen = new Set<string>();
+        const opts = rows
+          .map((r) => ({
+            value: r['id'],
+            label:
+              [r[labelKey], secondaryKey ? r[secondaryKey] : null].filter(Boolean).join(' — ') ||
+              `#${r['id']}`,
+          }))
+          .filter((opt) => {
+            const key = String(opt.value);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
         this.refOptions[field.key] = opts;
         const current = this.formValues[field.key];
         const match = opts.find((o) => String(o.value) === String(current));
