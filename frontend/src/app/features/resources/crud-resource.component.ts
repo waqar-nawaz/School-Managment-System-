@@ -80,6 +80,12 @@ const NO_EXPORT = new Set([
 
       <div class="card">
         <div class="card-toolbar">
+          @if (resourceKey === 'students') {
+            <div style="display:flex;gap:6px;align-items:center;margin-right:12px">
+              <button type="button" class="btn btn-sm" [class.btn-primary]="studentStatus === 'active'" [class.btn-ghost]="studentStatus !== 'active'" (click)="setStudentStatus('active')">Active</button>
+              <button type="button" class="btn btn-sm" [class.btn-primary]="studentStatus === 'inactive'" [class.btn-ghost]="studentStatus !== 'inactive'" (click)="setStudentStatus('inactive')">Inactive</button>
+            </div>
+          }
           <div class="search-box">
             <input
               type="text"
@@ -143,7 +149,18 @@ const NO_EXPORT = new Set([
                                 <app-icon name="edit" [size]="15" /> Edit
                               </button>
                             }
-                            @if (rowDeletable) {
+                            @if (resourceKey === 'students') {
+                              @if (row['isActive'] && canDelete) {
+                                <button type="button" class="row-menu-item danger" (click)="askStatusChange(row, 'deactivate'); openMenuId = null">
+                                  <app-icon name="x" [size]="15" /> Deactivate
+                                </button>
+                              }
+                              @if (!row['isActive'] && canEdit) {
+                                <button type="button" class="row-menu-item" (click)="askStatusChange(row, 'activate'); openMenuId = null">
+                                  <app-icon name="check" [size]="15" /> Activate
+                                </button>
+                              }
+                            } @else if (rowDeletable) {
                               <button type="button" class="row-menu-item danger" (click)="askDelete(row); openMenuId = null">
                                 <app-icon name="trash" [size]="15" /> Delete
                               </button>
@@ -271,6 +288,14 @@ const NO_EXPORT = new Set([
         (confirm)="doDelete()"
         (close)="confirm = null" />
     }
+
+    @if (statusConfirm && config && resourceKey === 'students') {
+      <app-confirm-dialog
+        [title]="statusConfirm.action === 'activate' ? 'Activate student' : 'Deactivate student'"
+        [message]="(statusConfirm.action === 'activate' ? 'Activate ' : 'Deactivate ') + (statusConfirm.row.firstName || 'student') + ' ' + (statusConfirm.row.lastName || '') + '?'"
+        (confirm)="doStatusChange()"
+        (close)="statusConfirm = null" />
+    }
   `,
 })
 export class CrudResourceComponent implements OnInit, OnDestroy {
@@ -319,6 +344,8 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   canEdit = false;
   canDelete = false;
   canExport = false;
+  studentStatus: 'active' | 'inactive' = 'active';
+  statusConfirm: { row: Row; action: 'activate' | 'deactivate' } | null = null;
 
   private search$ = new Subject<string>();
   private destroy$ = new Subject<void>();
@@ -380,7 +407,37 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   }
 
   get hasActions(): boolean {
+    if (this.resourceKey === 'students') return this.rowEditable || this.canDelete;
     return this.rowEditable || this.rowDeletable;
+  }
+
+  setStudentStatus(status: 'active' | 'inactive'): void {
+    if (this.resourceKey !== 'students' || this.studentStatus === status) return;
+    this.studentStatus = status;
+    this.page = 1;
+    this.openMenuId = null;
+    this.load();
+  }
+
+  askStatusChange(row: Row, action: 'activate' | 'deactivate'): void {
+    this.statusConfirm = { row, action };
+  }
+
+  doStatusChange(): void {
+    const pending = this.statusConfirm;
+    if (!pending || pending.row.id === undefined) return;
+    const id = pending.row.id;
+    const request = pending.action === 'activate'
+      ? this.api.patch(`/students/${id}/reactivate`, {})
+      : this.api.delete(`/students/${id}`);
+    request.subscribe({
+      next: () => {
+        this.statusConfirm = null;
+        this.toasts.success(pending.action === 'activate' ? 'Student activated' : 'Student deactivated');
+        this.load();
+      },
+      error: () => { this.statusConfirm = null; },
+    });
   }
 
   get canUpload(): boolean {
@@ -417,8 +474,11 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
 
   load(): void {
     if (!this.config) return;
+    const api = this.resourceKey === 'students' && this.studentStatus === 'inactive'
+      ? '/students/inactive'
+      : this.config.api;
     this.api
-      .get<Row[]>(this.config.api, { page: this.page, limit: this.pageSize, q: this.search })
+      .get<Row[]>(api, { page: this.page, limit: this.pageSize, q: this.search })
       .subscribe({
         next: (res) => {
           this.rows = (res?.data as Row[]) ?? [];
