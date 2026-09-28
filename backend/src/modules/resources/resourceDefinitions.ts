@@ -840,7 +840,7 @@ const validateRoom = async (body: any, req: Request) => {
   if (!Number.isInteger(hostelId) || hostelId <= 0 || !roomNo) throw new Error("hostelId and roomNo are required");
   if (!Number.isInteger(capacity) || capacity < 1) throw new Error("Room capacity must be positive");
   if (existing) {
-    const currentBedCount = await Bed.count({ where: { roomId } });
+    const currentBedCount = await Bed.count({ where: { roomId: existing.id } });
     if (capacity < currentBedCount) throw new Error("Room capacity cannot be less than its existing beds");
   }
   const hostel = await Hostel.findByPk(hostelId);
