@@ -714,6 +714,15 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.saving = true;
     const body: Record<string, unknown> = {};
     for (const f of this.config.fields) {
+      // Hostel allocation room/hostel are UI cascade values. The backend
+      // derives both from the selected bed, so do not send stale parent ids
+      // that can conflict with the bed selected by the user.
+      if (
+        this.resourceKey === 'hostel-allocations' &&
+        (f.key === 'hostelId' || f.key === 'roomId')
+      ) {
+        continue;
+      }
       let v = this.formValues[f.key];
       if (v === '' || v === null || v === undefined) v = this.formDefault(f);
       if (v !== undefined) body[f.key] = v;
