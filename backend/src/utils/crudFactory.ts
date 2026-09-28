@@ -100,9 +100,15 @@ export function createCrudController<M extends Model = Model>(
     },
 
     create: async (req, res) => {
-      const body = opts.beforeCreate
-        ? await opts.beforeCreate(req.body, req)
-        : req.body;
+      let body: any;
+      try {
+        body = opts.beforeCreate
+          ? await opts.beforeCreate(req.body, req)
+          : req.body;
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        throw ApiError.badRequest(err instanceof Error ? err.message : "Invalid request");
+      }
       const attrs = (model as any).rawAttributes || {};
       const userBranchId = (req as any).user?.branchId;
       if (userBranchId != null && attrs.branchId) body.branchId = userBranchId;
@@ -119,9 +125,15 @@ export function createCrudController<M extends Model = Model>(
       if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
       const row = await model.findOne({ where: lookup }) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
-      const body = opts.beforeUpdate
-        ? await opts.beforeUpdate(req.body, req)
-        : req.body;
+      let body: any;
+      try {
+        body = opts.beforeUpdate
+          ? await opts.beforeUpdate(req.body, req)
+          : req.body;
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        throw ApiError.badRequest(err instanceof Error ? err.message : "Invalid request");
+      }
       if (userBranchId != null && attrs.branchId) body.branchId = userBranchId;
       await (row as any).update(body);
       ApiResponse.success(res, 200, `${model.name} updated`, present(row));
@@ -136,7 +148,14 @@ export function createCrudController<M extends Model = Model>(
       if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
       const row = await model.findOne({ where: lookup }) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
-      if (opts.beforeRemove) await opts.beforeRemove(req);
+      if (opts.beforeRemove) {
+        try {
+          await opts.beforeRemove(req);
+        } catch (err) {
+          if (err instanceof ApiError) throw err;
+          throw ApiError.badRequest(err instanceof Error ? err.message : "Invalid request");
+        }
+      }
       await (row as any).destroy();
       ApiResponse.success(res, 200, `${model.name} deleted`, null);
     },
