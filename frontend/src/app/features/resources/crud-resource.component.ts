@@ -552,6 +552,26 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
       params['filter[classId]'] = classId;
     }
 
+    // Hostel allocation is a strict cascade: Hostel -> Room -> Bed.
+    // This prevents selecting a room/bed from another hostel by accident.
+    if (this.resourceKey === 'hostel-allocations' && field.key === 'roomId') {
+      const hostelId = this.formValues['hostelId'];
+      if (hostelId === null || hostelId === undefined || hostelId === '') {
+        this.refOptions[field.key] = [];
+        return;
+      }
+      params['filter[hostelId]'] = hostelId;
+    }
+    if (this.resourceKey === 'hostel-allocations' && field.key === 'bedId') {
+      const roomId = this.formValues['roomId'];
+      if (roomId === null || roomId === undefined || roomId === '') {
+        this.refOptions[field.key] = [];
+        return;
+      }
+      params['filter[roomId]'] = roomId;
+      params['filter[status]'] = 'available';
+    }
+
     this.api.get<Record<string, unknown>[]>(api, params).subscribe({
       next: (res) => {
         const rows = (res?.data as Record<string, unknown>[]) ?? [];
@@ -619,6 +639,24 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
       this.refSelectedLabel['currentSectionId'] = '';
       this.refSearch['currentSectionId'] = '';
       this.refOptions['currentSectionId'] = [];
+    }
+
+    if (this.resourceKey === 'hostel-allocations' && key === 'hostelId') {
+      this.formValues['roomId'] = null;
+      this.formValues['bedId'] = null;
+      this.refSelectedLabel['roomId'] = '';
+      this.refSelectedLabel['bedId'] = '';
+      this.refSearch['roomId'] = '';
+      this.refSearch['bedId'] = '';
+      this.refOptions['roomId'] = [];
+      this.refOptions['bedId'] = [];
+    }
+
+    if (this.resourceKey === 'hostel-allocations' && key === 'roomId') {
+      this.formValues['bedId'] = null;
+      this.refSelectedLabel['bedId'] = '';
+      this.refSearch['bedId'] = '';
+      this.refOptions['bedId'] = [];
     }
   }
 
