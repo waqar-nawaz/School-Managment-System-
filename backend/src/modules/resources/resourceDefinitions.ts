@@ -12,7 +12,7 @@ import {
   AuditLog, VisitorLog, User, BookIssue, MessageRecipient,
 } from "../../models";
 
-export interface ResourceDefinition {
+  afterCreate?: (row: any, req: Request) => void | Promise<void>;
   path: string;
   model: any;
   searchable: string[];
