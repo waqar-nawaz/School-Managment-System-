@@ -823,12 +823,11 @@ const validateHostel = async (body: any, req: Request) => {
   const existing = await getExisting(Hostel, req);
   const name = String(body.name ?? existing?.name ?? "").trim();
   const gender = String(body.gender ?? existing?.gender ?? "");
-  const capacity = Number(body.capacity ?? existing?.capacity ?? 0);
   const branchId = req.user?.branchId;
   if (!name) throw new Error("Hostel name is required");
   if (!["boys", "girls", "coed"].includes(gender)) throw new Error("Invalid hostel gender");
-  if (!Number.isInteger(capacity) || capacity < 1) throw new Error("Hostel capacity must be a positive integer");
-  body.name = name; body.gender = gender; body.capacity = capacity; body.branchId = branchId;
+  // Capacity is derived from actual beds; keep the legacy column for compatibility.
+  body.name = name; body.gender = gender; body.capacity = existing?.capacity ?? 0; body.branchId = branchId;
   return body;
 };
 
@@ -858,8 +857,18 @@ const validateBed = async (body: any, req: Request) => {
   if (!Number.isInteger(roomId) || roomId <= 0 || !bedNo) throw new Error("roomId and bedNo are required");
   const room = await Room.findByPk(roomId);
   if (!room || (branchId != null && Number(room.branchId) !== Number(branchId))) throw new Error("Room does not belong to your branch");
+  const hostel = await Hostel.findByPk(room.hostelId);
+  if (!hostel || hostel.isActive === false || (branchId != null && Number(hostel.branchId) !== Number(branchId))) {
+    throw new Error("Room's hostel is inactive or outside your branch");
+  }
   const duplicate = await Bed.findOne({ where: { roomId, bedNo, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
   if (duplicate) throw new Error("Bed number already exists in this room");
+  if (!existing) {
+    const bedCount = await Bed.count({ where: { roomId } });
+    if (bedCount >= Number(room.capacity)) {
+      throw new Error(`Room ${room.roomNo} has reached its capacity of ${room.capacity} beds`);
+    }
+  }
   body.roomId = roomId; body.bedNo = bedNo; body.branchId = branchId;
   return body;
 };
@@ -867,6 +876,8 @@ const validateBed = async (body: any, req: Request) => {
 const validateHostelAllocation = async (body: any, req: Request) => {
   const existing = await getExisting(HostelAllocation, req);
   const studentId = Number(body.studentId ?? existing?.studentId);
+  const requestedHostelId = body.hostelId !== undefined ? Number(body.hostelId) : undefined;
+  const requestedRoomId = body.roomId !== undefined ? Number(body.roomId) : undefined;
   const bedId = Number(body.bedId ?? existing?.bedId);
   const branchId = req.user?.branchId;
   const status = String(body.status ?? existing?.status ?? "active");
@@ -890,6 +901,8 @@ const validateHostelAllocation = async (body: any, req: Request) => {
   const room = await Room.findByPk(bed.roomId);
   if (!room || (branchId != null && Number(room.branchId) !== Number(branchId))) throw new Error("Room does not belong to your branch");
   const hostel = await Hostel.findByPk(room.hostelId);
+  if (requestedRoomId !== undefined && requestedRoomId !== room.id) throw new Error("Selected room does not match the selected bed");
+  if (requestedHostelId !== undefined && requestedHostelId !== hostel?.id) throw new Error("Selected hostel does not match the selected room");
   if (!hostel || hostel.isActive === false || (branchId != null && Number(hostel.branchId) !== Number(branchId))) throw new Error("Hostel does not belong to your branch or is inactive");
 
   const activeBed = await HostelAllocation.findOne({ where: { bedId, status: "active", ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
