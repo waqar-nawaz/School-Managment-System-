@@ -63,6 +63,11 @@ function exportCsv(def: ResourceDefinition) {
     const userBranchId = req.user?.branchId;
     if (userBranchId != null && attrs.branchId) (where as any).branchId = userBranchId;
 
+    // Always exclude sensitive columns from CSV exports.
+    const SENSITIVE = new Set([
+      "passwordHash", "passwordChangedAt", "secret", "tokenHash",
+      "lastLoginIp", "deletedAt", "userAgent",
+    ]);
     const rows = await def.model.findAll({ where, limit: 5000, raw: true });
     if (!rows.length) {
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -73,7 +78,8 @@ function exportCsv(def: ResourceDefinition) {
       res.send("");
       return;
     }
-    const headers = Object.keys(rows[0] as Record<string, unknown>);
+    const allHeaders = Object.keys(rows[0] as Record<string, unknown>);
+    const headers = allHeaders.filter((h) => !SENSITIVE.has(h));
     const escape = (v: unknown) => {
       const s = v == null ? "" : String(v).replace(/"/g, '""');
       return /[",\n]/.test(s) ? `"${s}"` : s;
@@ -88,6 +94,11 @@ function exportCsv(def: ResourceDefinition) {
       "Content-Disposition",
       `attachment; filename="${def.path}-${Date.now()}.csv"`
     );
+    // Report truncation so clients know the export is incomplete.
+    if (rows.length === 5000) {
+      res.setHeader("X-Export-Truncated", "true");
+      res.setHeader("X-Export-Max-Rows", "5000");
+    }
     res.send(csv);
 
     await writeAuditLog({
@@ -97,7 +108,7 @@ function exportCsv(def: ResourceDefinition) {
       branchId: req.user?.branchId ?? null,
       role: req.user?.role,
       ip: req.ip,
-      newData: { format: "csv" },
+      newData: { format: "csv", rowCount: rows.length, truncated: rows.length === 5000 },
     });
   });
 }

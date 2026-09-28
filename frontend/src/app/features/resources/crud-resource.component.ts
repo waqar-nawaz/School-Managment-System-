@@ -778,7 +778,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${this.resourceKey}-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `${this.resourceKey}-${new Date().toLocaleDateString('en-CA')}.csv`;
         document.body.appendChild(a);
         a.click();
         a.remove();

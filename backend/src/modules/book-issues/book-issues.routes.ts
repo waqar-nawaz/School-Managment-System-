@@ -21,6 +21,16 @@ const base = createCrudController<BookIssue>({
 });
 
 router.get("/", authorize("library:read"), (req, res, next) => base.list(req, res).catch(next));
+// IMPORTANT: /overdue/list MUST come before /:id, otherwise Express matches "overdue" as an id param
+// and the route becomes unreachable (returns 400 "Invalid id").
+router.get("/overdue/list", authorize("library:read"), asyncHandler(async (req, res) => {
+  const issues = await BookIssue.findAll({
+    where: { status: "issued", dueDate: { [Op.lt]: new Date() }, ...(branchOf(req) != null ? { branchId: branchOf(req) } : {}) },
+    include: [{ association: "borrower", attributes: ["id", "firstName", "lastName", "email"] }],
+    order: [["dueDate", "ASC"]],
+  });
+  ApiResponse.success(res, 200, "Overdue books", issues);
+}));
 router.get("/:id", authorize("library:read"), (req, res, next) => base.getOne(req, res).catch(next));
 router.delete("/:id", authorize("library:delete"), (req, res, next) => base.remove(req, res).catch(next));
 
@@ -78,7 +88,6 @@ router.post("/:id/return", authorize("book-issues:update"), asyncHandler(async (
     const current = await BookIssue.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!current) throw ApiError.notFound("Issue not found");
     assertBranch(current, req, "Book issue");
-    assertBranch(current, req, "Book issue");
     if (current.status !== "issued") throw ApiError.badRequest("Only issued books can be returned");
     const copy = await BookCopy.findByPk(current.bookCopyId, { transaction, lock: transaction.LOCK.UPDATE });
     if (!copy || copy.status !== "issued") throw ApiError.badRequest("Book copy is not currently issued");
@@ -115,15 +124,6 @@ router.post("/:id/mark-lost", authorize("book-issues:update"), asyncHandler(asyn
     return current;
   });
   ApiResponse.success(res, 200, "Book marked lost", issue);
-}));
-
-router.get("/overdue/list", authorize("library:read"), asyncHandler(async (req, res) => {
-  const issues = await BookIssue.findAll({
-    where: { status: "issued", dueDate: { [Op.lt]: new Date() }, ...(branchOf(req) != null ? { branchId: branchOf(req) } : {}) },
-    include: [{ association: "borrower", attributes: ["id", "firstName", "lastName", "email"] }],
-    order: [["dueDate", "ASC"]],
-  });
-  ApiResponse.success(res, 200, "Overdue books", issues);
 }));
 
 export default router;

@@ -70,10 +70,22 @@ export class SettingsComponent implements OnInit {
   }
 
   load(): void {
-    this.api.get<Record<string, string>>('/settings', { scope: this.scope }).subscribe({
+    // Backend returns { key: { value, isPublic } | string } per entry.
+    // Preserve the isPublic flag so saving doesn't flip everything to private.
+    this.api.get<Record<string, unknown>>('/settings', { scope: this.scope }).subscribe({
       next: (res) => {
         const map = res?.data ?? {};
-        this.rows = Object.entries(map).map(([key, value]) => ({ key, value, isPublic: false }));
+        this.rows = Object.entries(map).map(([key, raw]) => {
+          if (raw && typeof raw === 'object') {
+            const v = raw as { value?: unknown; isPublic?: unknown };
+            return {
+              key,
+              value: v.value != null ? String(v.value) : '',
+              isPublic: Boolean(v.isPublic),
+            };
+          }
+          return { key, value: raw != null ? String(raw) : '', isPublic: false };
+        });
       },
       error: () => {},
     });

@@ -15,7 +15,15 @@ async function bootstrap(): Promise<void> {
   // connection is available (set DB_* env vars and redeploy).
   try {
     await connectDatabase();
-    await runSeeders();
+    // RUN_SEEDERS env var controls whether seeders run on boot.
+    // Default: true (seeders are idempotent via findOrCreate/upsert).
+    // Set RUN_SEEDERS=false to skip seeders (e.g. for CI or read-only replicas).
+    const runSeedersFlag = process.env.RUN_SEEDERS !== "false";
+    if (runSeedersFlag) {
+      await runSeeders();
+    } else {
+      logger.info("RUN_SEEDERS=false — skipping seeders");
+    }
     app.locals.dbReady = true;
     logger.info("Database connected and schema is ready");
   } catch (err) {

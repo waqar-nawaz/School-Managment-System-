@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { Op } from "sequelize";
 import { User, RefreshToken, Settings } from "../../models";
 import { comparePassword, hashPassword } from "../../utils/password.util";
 import { ApiError } from "../../utils/ApiError";
@@ -81,21 +82,53 @@ export async function login(input: LoginInput, ip?: string, userAgent?: string):
 
 export async function refresh(refreshToken: string, ip?: string): Promise<AuthResult> {
   const hash = sha256(refreshToken);
-  const stored = await RefreshToken.findOne({ where: { tokenHash: hash } });
-  if (!stored || stored.revoked || stored.expiresAt < new Date()) {
+  // Atomic conditional update: only succeeds if the token is still valid and not revoked.
+  // This eliminates the race condition where two concurrent refresh requests both pass the
+  // "revoked" check and both issue new tokens.
+  const [updated] = await RefreshToken.update(
+    { revoked: true, revokedAt: new Date() },
+    {
+      where: {
+        tokenHash: hash,
+        revoked: false,
+        expiresAt: { [Op.gt]: new Date() },
+      },
+    }
+  );
+  if (updated !== 1) {
+    // Possible token reuse detected — invalidate all of the user's tokens for safety.
+    const leaked = await RefreshToken.findOne({ where: { tokenHash: hash } });
+    if (leaked) {
+      await RefreshToken.update(
+        { revoked: true, revokedAt: new Date() },
+        { where: { userId: leaked.userId, revoked: false } }
+      );
+    }
     throw ApiError.unauthorized("Invalid refresh token");
   }
+
+  const stored = await RefreshToken.findOne({ where: { tokenHash: hash } });
+  if (!stored) throw ApiError.unauthorized("Invalid refresh token");
 
   const user = await User.findByPk(stored.userId);
   if (!user || !user.isActive) throw ApiError.unauthorized("User no longer active");
 
   const newToken = signRefreshToken(String(user.id));
-  await stored.update({ revoked: true, revokedAt: new Date() });
   await RefreshToken.create({
     userId: user.id,
     tokenHash: sha256(newToken),
     ip: ip?.slice(0, 45),
     expiresAt: new Date(Date.now() + parseDurationMs(env.jwt.refreshExpiresIn)),
+  });
+
+  await writeAuditLog({
+    action: "login",
+    entity: "user",
+    entityId: user.id,
+    ip,
+    role: user.role,
+    branchId: user.branchId,
+    newData: { event: "refresh" },
   });
 
   return {
@@ -111,6 +144,17 @@ export async function logout(refreshToken: string): Promise<void> {
     { revoked: true, revokedAt: new Date() },
     { where: { tokenHash: hash, revoked: false } }
   );
+  // Best-effort audit (refresh token may belong to a now-logged-out user).
+  const stored = await RefreshToken.findOne({ where: { tokenHash: hash } });
+  if (stored) {
+    await writeAuditLog({
+      action: "logout",
+      entity: "user",
+      entityId: stored.userId,
+      role: undefined,
+      newData: {},
+    });
+  }
 }
 
 export async function changePassword(userId: number, current: string, next: string): Promise<void> {
@@ -136,11 +180,13 @@ export async function forgotPassword(
   const user = await User.findOne({ where: { email } });
   if (!user) return { resetUrl: "", mailed: false };
 
+  // Invalidate any prior reset tokens for this user before issuing a new one.
+  await Settings.destroy({ where: { scope: `reset:${user.id}` } });
+
   const token = crypto.randomBytes(32).toString("hex");
   const hashed = crypto.createHash("sha256").update(token).digest("hex");
-  // Store reset token in settings scoped to the user (rotation-safe, short lived).
   const expiresAt = Date.now() + 30 * 60 * 1000;
-  await Settings.upsert({
+  await Settings.create({
     scope: `reset:${user.id}`,
     key: hashed,
     value: String(expiresAt),
@@ -173,6 +219,21 @@ export async function resetPassword(token: string, newPassword: string): Promise
 
   await user.update({ passwordHash: await hashPassword(newPassword), passwordChangedAt: new Date() });
   await row.destroy();
+
+  // Revoke all existing refresh tokens so attacker can't keep using stolen sessions.
+  await RefreshToken.update(
+    { revoked: true, revokedAt: new Date() },
+    { where: { userId, revoked: false } }
+  );
+
+  await writeAuditLog({
+    action: "update",
+    entity: "user",
+    entityId: user.id,
+    role: user.role,
+    branchId: user.branchId,
+    newData: { event: "password_reset" },
+  });
 }
 
 export async function verifyEmail(token: string): Promise<void> {

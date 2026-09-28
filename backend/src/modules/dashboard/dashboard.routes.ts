@@ -15,8 +15,10 @@ router.use(authenticate);
 router.get(
   "/",
   authorize("dashboard:read"),
-  asyncHandler(async (_req, res) => {
-    const today = new Date().toISOString().slice(0, 10);
+  asyncHandler(async (req, res) => {
+    // Local date — avoids UTC-vs-local timezone bug.
+    const today = new Date().toLocaleDateString("en-CA");
+    const branchFilter = req.user?.branchId != null ? { branchId: req.user.branchId } : {};
 
     const [
       students,
@@ -30,16 +32,16 @@ router.get(
       admissionApplications,
       activeEnrolments,
     ] = await Promise.all([
-      Student.count({ where: { isActive: true } }),
-      Teacher.count({ where: { isActive: true } }),
-      Staff.count({ where: { isActive: true } }),
-      SchoolClass.count({ where: { isActive: true } }),
-      Invoice.count({ where: { status: ["pending", "partial", "overdue"] } }),
-      Attendance.count({ where: { date: today, status: "present" } }),
-      Event.count({ where: { startAt: { [Op.gte]: new Date() } } }),
-      LeaveRequest.count({ where: { status: "pending" } }),
-      AdmissionApplication.count({ where: { status: ["enquiry", "applied"] } }),
-      Enrolment.count({ where: { status: "active" } }),
+      Student.count({ where: { ...branchFilter, isActive: true } }),
+      Teacher.count({ where: { ...branchFilter, isActive: true } }),
+      Staff.count({ where: { ...branchFilter, isActive: true } }),
+      SchoolClass.count({ where: { ...branchFilter, isActive: true } }),
+      Invoice.count({ where: { ...branchFilter, status: ["pending", "partial", "overdue"] } }),
+      Attendance.count({ where: { ...branchFilter, date: today, status: "present" } }),
+      Event.count({ where: { ...branchFilter, startAt: { [Op.gte]: new Date() } } }),
+      LeaveRequest.count({ where: { ...branchFilter, status: "pending" } }),
+      AdmissionApplication.count({ where: { ...branchFilter, status: ["enquiry", "applied"] } }),
+      Enrolment.count({ where: { ...branchFilter, status: "active" } }),
     ]);
 
     ApiResponse.success(res, 200, "Dashboard stats", {
@@ -62,7 +64,8 @@ router.get(
   authorize("dashboard:read"),
   asyncHandler(async (req, res) => {
     const date = String(req.params.date);
-    const rows = await Attendance.findAll({ where: { date }, attributes: ["status"], raw: true });
+    const branchFilter = req.user?.branchId != null ? { branchId: req.user.branchId } : {};
+    const rows = await Attendance.findAll({ where: { ...branchFilter, date }, attributes: ["status"], raw: true });
     const summary: Record<string, number> = {};
     for (const r of rows) summary[r.status] = (summary[r.status] || 0) + 1;
     ApiResponse.success(res, 200, "Attendance summary", summary);

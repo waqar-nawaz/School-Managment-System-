@@ -1,4 +1,5 @@
 import { AuditLog } from "../models";
+import { logger } from "../config/logger";
 
 export type AuditAction = "create" | "update" | "delete" | "login" | "logout" | "export" | "download";
 
@@ -29,7 +30,9 @@ export async function writeAuditLog(payload: AuditPayload): Promise<void> {
       oldData: payload.oldData ?? {},
       newData: payload.newData ?? {},
     });
-  } catch {
-    // Audit must never break the main request flow.
+  } catch (err) {
+    // Audit must never break the main request flow, but we MUST log the failure
+    // so compliance/forensic gaps are visible to operators.
+    logger.error("Audit log write failed", { payload, err });
   }
 }

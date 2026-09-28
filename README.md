@@ -25,7 +25,7 @@ A full-stack, containerized enterprise school management system.
 - JWT access tokens + hashed rotating refresh tokens; Redis-backed blacklist (optional)
 - Role-based access control: middleware `authenticate` + `authorize('resource:action')`
 - Audit logging on sensitive writes; scheduled jobs (overdue fees, overdue books, fee reminders, refresh-token purge)
-- Health: `GET /api/health`; docs: `GET /api/docs` (Swagger UI)
+- Health: `GET /health`; docs: `GET /api-docs` (Swagger UI)
 
 ## Quick start (Docker)
 
@@ -99,7 +99,7 @@ make up      # docker compose up --build -d
 make down    # stop and remove containers
 make logs    # follow logs
 make seed    # run backend seeders
-make backup  # mysqldump into database/backups/
+make backup  # mysqldump into ./backups/ (gzip)
 ```
 
 ## Roles & permissions

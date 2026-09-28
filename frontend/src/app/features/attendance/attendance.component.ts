@@ -114,7 +114,8 @@ export class AttendanceComponent implements OnInit {
   sections: SectionOption[] = [];
   classId: number | null = null;
   sectionId: number | null = null;
-  date = new Date().toISOString().slice(0, 10);
+  // Local date — avoids UTC-vs-local timezone bug (e.g. UTC+5 saves yesterday between 00:00–05:00 PKT).
+  date = new Date().toLocaleDateString('en-CA');
   entries: RegisterEntry[] = [];
   loaded = false;
   saving = false;

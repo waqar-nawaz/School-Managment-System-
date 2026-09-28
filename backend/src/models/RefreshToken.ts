@@ -1,4 +1,4 @@
-import { Table, Column, DataType, Index, ForeignKey, BelongsTo } from "sequelize-typescript";
+import { Table, Column, DataType, Index, Unique, ForeignKey, BelongsTo } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { User } from "./User";
 
@@ -10,6 +10,7 @@ export class RefreshToken extends BaseModel {
   userId!: number;
 
   @Index
+  @Unique
   @Column({ type: DataType.STRING(64), allowNull: false })
   tokenHash!: string;
 

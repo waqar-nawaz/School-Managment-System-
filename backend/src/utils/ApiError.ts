@@ -32,4 +32,8 @@ export class ApiError extends Error {
   static validation(errors: unknown[]) {
     return new ApiError(422, "Validation failed", errors);
   }
+
+  static internal(message = "Internal server error") {
+    return new ApiError(500, message);
+  }
 }

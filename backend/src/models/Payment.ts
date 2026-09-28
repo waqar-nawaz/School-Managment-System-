@@ -3,6 +3,7 @@ import { BaseModel } from "./BaseModel";
 import { Student } from "./Student";
 import { Invoice } from "./Invoice";
 import { User } from "./User";
+import { Branch } from "./Branch";
 
 @Table({ tableName: "payments" })
 export class Payment extends BaseModel {
@@ -17,6 +18,12 @@ export class Payment extends BaseModel {
   @ForeignKey(() => Student)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   studentId!: number;
+
+  // Multi-tenant scope.
+  @ForeignKey(() => Branch)
+  @Index
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  branchId!: number;
 
   @Column({ type: DataType.DECIMAL(12, 2), allowNull: false })
   amount!: number;
