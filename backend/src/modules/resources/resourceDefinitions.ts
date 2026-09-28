@@ -839,6 +839,10 @@ const validateRoom = async (body: any, req: Request) => {
   const branchId = req.user?.branchId;
   if (!Number.isInteger(hostelId) || hostelId <= 0 || !roomNo) throw new Error("hostelId and roomNo are required");
   if (!Number.isInteger(capacity) || capacity < 1) throw new Error("Room capacity must be positive");
+  if (existing) {
+    const currentBedCount = await Bed.count({ where: { roomId } });
+    if (capacity < currentBedCount) throw new Error("Room capacity cannot be less than its existing beds");
+  }
   const hostel = await Hostel.findByPk(hostelId);
   if (!hostel || hostel.isActive === false || (branchId != null && Number(hostel.branchId) !== Number(branchId))) {
     throw new Error("Hostel does not belong to your branch or is inactive");
@@ -912,6 +916,12 @@ const validateHostelAllocation = async (body: any, req: Request) => {
     ? await HostelAllocation.findOne({ where: { studentId, status: "active", ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } })
     : null;
   if (activeStudent) throw new Error("Student already has an active hostel allocation");
+
+  if (existing && Number(existing.bedId) !== bedId) {
+    const previousBed = await Bed.findByPk(existing.bedId);
+    if (previousBed && previousBed.status === "occupied") await previousBed.update({ status: "available" });
+  }
+  await bed.update({ status: status === "active" ? "occupied" : "available" });
 
   body.studentId = studentId; body.bedId = bedId; body.roomId = room.id; body.hostelId = hostel.id;
   body.status = status; body.monthlyFee = monthlyFee; body.checkIn = checkIn; body.checkOut = checkOut; body.branchId = branchId;
