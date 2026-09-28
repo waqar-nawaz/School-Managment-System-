@@ -21,6 +21,7 @@ export interface ResourceDefinition {
   readonly?: boolean; // no write operations exposed
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
+  beforeRemove?: (req: Request) => void | Promise<void>;
   includes?: any[];
   decorate?: (row: any) => Record<string, unknown>;
 }
@@ -877,6 +878,14 @@ const validateBed = async (body: any, req: Request) => {
   return body;
 };
 
+const refreshRoomStatus = async (roomId: number) => {
+  const room = await Room.findByPk(roomId);
+  if (!room) return;
+  const availableBeds = await Bed.count({ where: { roomId, status: "available" } });
+  const status = availableBeds === 0 ? "full" : "available";
+  if (room.status !== status) await room.update({ status });
+};
+
 const validateHostelAllocation = async (body: any, req: Request) => {
   const existing = await getExisting(HostelAllocation, req);
   const studentId = Number(body.studentId ?? existing?.studentId);
@@ -917,11 +926,16 @@ const validateHostelAllocation = async (body: any, req: Request) => {
     : null;
   if (activeStudent) throw new Error("Student already has an active hostel allocation");
 
+  const previousRoomId = existing && Number(existing.bedId) !== bedId
+    ? Number((await Bed.findByPk(existing.bedId))?.roomId ?? 0)
+    : 0;
   if (existing && Number(existing.bedId) !== bedId) {
     const previousBed = await Bed.findByPk(existing.bedId);
     if (previousBed && previousBed.status === "occupied") await previousBed.update({ status: "available" });
   }
   await bed.update({ status: status === "active" ? "occupied" : "available" });
+  await refreshRoomStatus(room.id);
+  if (previousRoomId > 0 && previousRoomId !== room.id) await refreshRoomStatus(previousRoomId);
 
   body.studentId = studentId; body.bedId = bedId; body.roomId = room.id; body.hostelId = hostel.id;
   body.status = status; body.monthlyFee = monthlyFee; body.checkIn = checkIn; body.checkOut = checkOut; body.branchId = branchId;
@@ -1507,15 +1521,24 @@ export const RESOURCES: ResourceDefinition[] = [
     path: "hostels", model: Hostel, searchable: ["name", "wardenName"], permission: "hostels",
     includes: [{ association: "rooms", attributes: ["id", "roomNo", "capacity"], include: [{ association: "beds", attributes: ["id", "status"] }] }],
     beforeCreate: validateHostel, beforeUpdate: validateHostel,
+    beforeRemove: async (req) => {
+      const hostel = await Hostel.findByPk(Number(req.params.id));
+      if (!hostel || (req.user?.branchId != null && Number(hostel.branchId) !== Number(req.user.branchId))) {
+        throw new Error("Hostel not found or outside your branch");
+      }
+      const roomCount = await Room.count({ where: { hostelId: hostel.id } });
+      if (roomCount > 0) throw new Error("Cannot delete a hostel that still has rooms");
+    },
     decorate: (row) => {
       const p = plain(row);
       const rooms = Array.isArray(p.rooms) ? p.rooms : [];
       const totalBeds = rooms.reduce((n: number, room: any) => n + (Array.isArray(room.beds) ? room.beds.length : 0), 0);
       const occupiedBeds = rooms.reduce((n: number, room: any) => n + (Array.isArray(room.beds) ? room.beds.filter((b: any) => b.status === "occupied").length : 0), 0);
+      const availableBeds = rooms.reduce((n: number, room: any) => n + (Array.isArray(room.beds) ? room.beds.filter((b: any) => b.status === "available").length : 0), 0);
       p.roomCount = rooms.length;
       p.totalBeds = totalBeds;
       p.occupiedBeds = occupiedBeds;
-      p.availableBeds = Math.max(totalBeds - occupiedBeds, 0);
+      p.availableBeds = availableBeds;
       p.capacity = totalBeds;
       return p;
     },
@@ -1524,13 +1547,22 @@ export const RESOURCES: ResourceDefinition[] = [
     path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "rooms",
     includes: [{ association: "hostel", attributes: ["id", "name"] }, { association: "beds", attributes: ["id", "status"] }],
     beforeCreate: validateRoom, beforeUpdate: validateRoom,
+    beforeRemove: async (req) => {
+      const room = await Room.findByPk(Number(req.params.id));
+      if (!room || (req.user?.branchId != null && Number(room.branchId) !== Number(req.user.branchId))) {
+        throw new Error("Room not found or outside your branch");
+      }
+      const bedCount = await Bed.count({ where: { roomId: room.id } });
+      if (bedCount > 0) throw new Error("Cannot delete a room that still has beds");
+    },
     decorate: (row) => {
       const p = plain(row);
       p.hostelName = p.hostel?.name ?? "";
       const beds = Array.isArray(p.beds) ? p.beds : [];
       p.bedCount = beds.length;
       p.availableBeds = beds.filter((b: any) => b.status === "available").length;
-      p.status = p.bedCount >= Number(p.capacity) ? "full" : "available";
+      p.occupiedBeds = beds.filter((b: any) => b.status === "occupied").length;
+      p.status = p.availableBeds === 0 ? "full" : "available";
       p.roomLabel = `Room ${p.roomNo} — ${p.hostelName}`;
       return p;
     },
@@ -1542,7 +1574,24 @@ export const RESOURCES: ResourceDefinition[] = [
       attributes: ["id", "roomNo"],
       include: [{ association: "hostel", attributes: ["id", "name"] }],
     }],
-    beforeCreate: validateBed, beforeUpdate: validateBed,
+    beforeCreate: async (body, req) => {
+      const result = await validateBed(body, req);
+      await refreshRoomStatus(Number(result.roomId));
+      return result;
+    },
+    beforeUpdate: async (body, req) => {
+      const result = await validateBed(body, req);
+      await refreshRoomStatus(Number(result.roomId));
+      return result;
+    },
+    beforeRemove: async (req) => {
+      const bed = await Bed.findByPk(Number(req.params.id));
+      if (!bed || (req.user?.branchId != null && Number(bed.branchId) !== Number(req.user.branchId))) {
+        throw new Error("Bed not found or outside your branch");
+      }
+      if (bed.status === "occupied") throw new Error("Cannot delete an occupied bed");
+      await refreshRoomStatus(Number(bed.roomId));
+    },
     decorate: (row) => {
       const p = plain(row);
       p.roomNo = p.room?.roomNo ?? "";
@@ -1570,6 +1619,17 @@ export const RESOURCES: ResourceDefinition[] = [
     },
     beforeCreate: validateHostelAllocation,
     beforeUpdate: validateHostelAllocation,
+    beforeRemove: async (req) => {
+      const allocation = await HostelAllocation.findByPk(Number(req.params.id));
+      if (!allocation || (req.user?.branchId != null && Number(allocation.branchId) !== Number(req.user.branchId))) {
+        throw new Error("Hostel allocation not found or outside your branch");
+      }
+      const bed = await Bed.findByPk(allocation.bedId);
+      if (bed) {
+        await bed.update({ status: "available" });
+        await refreshRoomStatus(Number(bed.roomId));
+      }
+    },
   },
   { path: "events", model: Event, searchable: ["title", "category", "venue"], permission: "events" },
   { path: "notices", model: Notice, searchable: ["title", "type"], permission: "notices" },
