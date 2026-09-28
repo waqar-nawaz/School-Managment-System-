@@ -161,6 +161,10 @@ export class AttendanceComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    if (this.isStudent) {
+      this.loadMyAttendance();
+      return;
+    }
     this.api.get<ClassOption[]>('/classes', { page: 1, limit: 100 }).subscribe({
       next: (res) => (this.classes = (res?.data as ClassOption[]) ?? []),
       error: () => {},
