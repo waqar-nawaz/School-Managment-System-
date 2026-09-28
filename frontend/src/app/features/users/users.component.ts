@@ -35,7 +35,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
             </button>
           }
         </div>
-        <select class="form-control" style="max-width:160px" [(ngModel)]="roleFilter" (ngModelChange)="load()">
+        <select class="form-control" style="max-width:160px" [(ngModel)]="roleFilter" (ngModelChange)="onFilterChange()">
           <option value="">All roles</option>
           @for (r of ROLES; track r) { <option [value]="r">{{ r }}</option> }
         </select>
@@ -348,6 +348,13 @@ export class UsersComponent implements OnInit {
       this.page = 1;
       this.load();
     }, 300);
+  }
+
+  // Filter change must reset to page 1 — otherwise the user can stay on a page
+  // that's now past totalPages with an empty list shown.
+  onFilterChange(): void {
+    this.page = 1;
+    this.load();
   }
 
   prevPage(): void {

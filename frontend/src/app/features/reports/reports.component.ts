@@ -96,7 +96,8 @@ export class ReportsComponent implements OnInit {
   constructor(private readonly api: ApiService) {}
 
   ngOnInit(): void {
-    this.loadAll();
+    // Only load the active tab — saves 3 wasted requests per visit.
+    this.loadActive();
   }
 
   switchTo(key: string): void {
@@ -119,7 +120,7 @@ export class ReportsComponent implements OnInit {
   }
 
   loadExam(): void {
-    if (!this.examId) return;
+    if (!this.examId || this.examId <= 0) return;
     this.api.get<any>('/reports/exam-performance', { examId: this.examId }).subscribe((r) => (this.perf = r?.data));
   }
 

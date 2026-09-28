@@ -74,7 +74,9 @@ export class ForgotPasswordComponent {
       },
       error: (err) => {
         this.busy = false;
-        this.sent = true;
+        // Don't show the green "if account exists" banner on error — only on success.
+        // Previously both the success banner and the error toast were shown simultaneously.
+        this.sent = false;
         this.toasts.error(err?.error?.message || 'Request failed');
       },
     });

@@ -37,6 +37,7 @@ const validateApplication = async (body: any, req: any, current?: AdmissionAppli
   if (!applicationNo) throw ApiError.badRequest("applicationNo is required");
   if (!ADMISSION_STATUS.includes(status as any)) throw ApiError.badRequest("Invalid status");
   if (!Number.isFinite(dateApplied.getTime())) throw ApiError.badRequest("Invalid dateApplied");
+  if (dateApplied > new Date()) throw ApiError.badRequest("dateApplied cannot be in the future");
   if (dateOfBirth && (!Number.isFinite(dateOfBirth.getTime()) || dateOfBirth > new Date())) throw ApiError.badRequest("Invalid dateOfBirth");
   if (gender && !["male", "female", "other"].includes(gender)) throw ApiError.badRequest("Invalid gender");
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw ApiError.badRequest("Invalid email");
@@ -121,9 +122,11 @@ router.post("/", authorize("admissions:create"), asyncHandler(async (req, res) =
 }));
 
 // State machine for admission status transitions.
-// Prevents invalid moves like rejected -> admitted or admitted -> enquiry.
+// Allows enquiry → admitted ONLY when a student record has been created (via registerStudent flow).
+// `registerStudent` in the frontend creates the student first, then PATCHes status to 'admitted'.
+// Previously this transition was forbidden, orphaning the student record.
 const ADMISSION_TRANSITIONS: Record<string, string[]> = {
-  enquiry: ["applied", "rejected", "waitlisted"],
+  enquiry: ["applied", "admitted", "rejected", "waitlisted"],
   applied: ["shortlisted", "admitted", "rejected", "waitlisted"],
   shortlisted: ["admitted", "rejected", "waitlisted"],
   waitlisted: ["admitted", "rejected"],
@@ -137,6 +140,7 @@ router.patch("/:id/status", authorize("admissions:update"), asyncHandler(async (
   if (!ADMISSION_STATUS.includes(status as any)) throw ApiError.badRequest("Invalid status");
   const app = await AdmissionApplication.findOne({ where: { id: Number(req.params.id), ...branchWhere(req) } });
   if (!app) throw ApiError.notFound("Application not found");
+  const oldStatus = app.status;  // capture BEFORE update so audit log shows the actual old value
   const allowed = ADMISSION_TRANSITIONS[app.status] ?? [];
   if (!allowed.includes(status)) {
     throw ApiError.badRequest(`Cannot transition application from '${app.status}' to '${status}'`);
@@ -154,7 +158,7 @@ router.patch("/:id/status", authorize("admissions:update"), asyncHandler(async (
     role: req.user!.role,
     branchId: req.user!.branchId,
     ip: req.ip,
-    oldData: { status: app.status },
+    oldData: { status: oldStatus },
     newData: { status },
   });
   ApiResponse.success(res, 200, `Application marked ${status}`, app);

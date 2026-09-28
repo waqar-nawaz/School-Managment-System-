@@ -5,9 +5,10 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { Attendance, Enrolment, Student, SchoolClass, Section, StudentGuardian } from "../../models";
+import { Attendance, Enrolment, Student, SchoolClass, Section, StudentGuardian, Parent } from "../../models";
 import { ATTENDANCE_STATUS } from "../../utils/constants";
 import { monthRange } from "../../utils/dateRange";
+import { writeAuditLog } from "../../services/audit.service";
 
 const router = Router();
 router.use(authenticate);
@@ -155,12 +156,29 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
 
   const t = await Attendance.sequelize!.transaction();
   try {
-    for (const row of cleaned) await Attendance.upsert(row, { transaction: t });
+    // Use bulkCreate with updateOnDuplicate instead of N+1 sequential upserts.
+    // The unique index (studentId, date) makes upsert semantics safe.
+    if (cleaned.length) {
+      await Attendance.bulkCreate(cleaned, {
+        transaction: t,
+        updateOnDuplicate: ["status", "lateMinutes", "reason", "takenBy", "classId", "sectionId", "branchId", "updatedAt"],
+      });
+    }
     await t.commit();
   } catch (e) {
     await t.rollback();
     throw e;
   }
+
+  await writeAuditLog({
+    action: "update",
+    entity: "attendance",
+    userId: req.user!.id,
+    role: req.user!.role,
+    branchId: req.user?.branchId,
+    ip: req.ip,
+    newData: { date, classId: Number(classId), sectionId, count: cleaned.length },
+  });
 
   ApiResponse.success(res, 200, `Attendance saved for ${cleaned.length} students`, null);
 }));
@@ -196,9 +214,12 @@ router.get("/student/:studentId", authorize("attendance:read"), asyncHandler(asy
   if (req.user?.branchId != null && Number(student.branchId) !== Number(req.user.branchId)) {
     throw ApiError.forbidden("Student does not belong to your branch");
   }
-  // Parent role: must be linked to this student via StudentGuardian. Prevents IDOR.
+  // Parent role: must be linked to this student via Parent → StudentGuardian. Prevents IDOR.
+  // Previous bug used `guardianId` column which doesn't exist — parents always got 403.
   if (req.user?.role === "parent") {
-    const link = await StudentGuardian.findOne({ where: { guardianId: req.user!.id, studentId } });
+    const parent = await Parent.findOne({ where: { userId: req.user!.id } });
+    if (!parent) throw ApiError.forbidden("Parent profile not found");
+    const link = await StudentGuardian.findOne({ where: { parentId: parent.id, studentId } });
     if (!link) throw ApiError.forbidden("You can only view attendance for your own children");
   }
   const month = String(req.query.month || localDateString().slice(0, 7));

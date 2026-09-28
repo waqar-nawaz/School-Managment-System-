@@ -3,11 +3,12 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [FormsModule, IconComponent],
+  imports: [FormsModule, IconComponent, ConfirmDialogComponent],
   template: `
     <div class="page-header">
       <div>
@@ -15,7 +16,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
         <p class="page-subtitle">Key–value configuration</p>
       </div>
       <div class="page-actions">
-        <button class="btn btn-primary" (click)="addSetting()"><app-icon name="plus" [size]="15" /> Add setting</button>
+        <button class="btn btn-primary" (click)="showAddForm = true"><app-icon name="plus" [size]="15" /> Add setting</button>
       </div>
     </div>
 
@@ -28,7 +29,9 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           <option value="finance">finance</option>
           <option value="transport">transport</option>
         </select>
-        <button class="btn btn-ghost" (click)="saveAll()"><app-icon name="check" [size]="15" /> Save all</button>
+        <button class="btn btn-ghost" (click)="saveAll()" [disabled]="saving">
+          <app-icon name="check" [size]="15" /> {{ saving ? 'Saving…' : 'Save all' }}
+        </button>
       </div>
       <div class="table-responsive">
         <table class="table">
@@ -50,15 +53,51 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
       @if (rows.length) {
         <div class="pagination-bar">
           <span>{{ rows.length }} setting(s)</span>
-          <button class="btn btn-primary btn-sm" (click)="saveAll()"><app-icon name="check" [size]="14" /> Save all</button>
+          <button class="btn btn-primary btn-sm" (click)="saveAll()" [disabled]="saving">
+            <app-icon name="check" [size]="14" /> {{ saving ? 'Saving…' : 'Save all' }}
+          </button>
         </div>
       }
     </div>
+
+    @if (showAddForm) {
+      <div class="modal-backdrop">
+        <div class="modal">
+          <div class="modal-head">
+            <div class="modal-title">Add setting</div>
+            <button type="button" class="modal-close" (click)="showAddForm = false" aria-label="Close">
+              <app-icon name="x" [size]="16" />
+            </button>
+          </div>
+          <div class="form-group">
+            <label>Key *</label>
+            <input class="form-control" [(ngModel)]="newKey" placeholder="e.g. school_name" autofocus />
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" (click)="showAddForm = false">Cancel</button>
+            <button type="button" class="btn btn-primary" (click)="confirmAdd()" [disabled]="!newKey.trim()">Add</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (confirmTarget) {
+      <app-confirm-dialog
+        title="Delete setting"
+        message="Are you sure you want to delete this setting?"
+        (confirm)="confirmRemove()"
+        (close)="confirmTarget = null"
+      />
+    }
   `,
 })
 export class SettingsComponent implements OnInit {
   scope = 'system';
   rows: Array<{ key: string; value: string; isPublic: boolean }> = [];
+  saving = false;
+  showAddForm = false;
+  newKey = '';
+  confirmTarget: { key: string } | null = null;
 
   constructor(
     private readonly api: ApiService,
@@ -92,12 +131,32 @@ export class SettingsComponent implements OnInit {
   }
 
   addSetting(): void {
-    const key = prompt('New setting key');
+    // Replaced by modal: caller sets showAddForm = true and then confirms via confirmAdd().
+    this.showAddForm = true;
+    this.newKey = '';
+  }
+
+  confirmAdd(): void {
+    const key = (this.newKey || '').trim();
     if (!key) return;
-    this.rows.push({ key: key.trim(), value: '', isPublic: false });
+    if (this.rows.some((r) => r.key === key)) {
+      this.toasts.error('Key already exists in this scope');
+      return;
+    }
+    this.rows.push({ key, value: '', isPublic: false });
+    this.showAddForm = false;
+    this.newKey = '';
   }
 
   remove(row: { key: string }): void {
+    // Confirm before delete — previously this was an immediate destructive call.
+    this.confirmTarget = row;
+  }
+
+  confirmRemove(): void {
+    const row = this.confirmTarget;
+    this.confirmTarget = null;
+    if (!row) return;
     this.api.delete('/settings', { scope: this.scope, key: row.key }).subscribe({
       next: () => {
         this.rows = this.rows.filter((r) => r.key !== row.key);
@@ -110,12 +169,16 @@ export class SettingsComponent implements OnInit {
   saveAll(): void {
     const payload = this.rows.map((r) => ({ scope: this.scope, key: r.key, value: r.value, isPublic: r.isPublic }));
     if (!payload.length) return;
+    this.saving = true;
     this.api.post('/settings/bulk', payload).subscribe({
       next: () => {
+        this.saving = false;
         this.toasts.success('Settings saved');
         this.load();
       },
-      error: () => {},
+      error: () => {
+        this.saving = false;
+      },
     });
   }
 }

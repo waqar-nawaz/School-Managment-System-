@@ -1,4 +1,4 @@
-import { Table, Column, Unique, DataType, Index, ForeignKey } from "sequelize-typescript";
+import { Table, Column, Unique, DataType, Index, ForeignKey, BelongsTo } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { Student } from "./Student";
 import { User } from "./User";
@@ -16,6 +16,9 @@ export class Certificate extends BaseModel {
   @ForeignKey(() => Student)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   studentId!: number;
+
+  @BelongsTo(() => Student, { as: "student", foreignKey: "studentId" })
+  student!: Student;
 
   @Column({ type: DataType.STRING(40), allowNull: false })
   type!: string; // transfer | character | bonafide | provisional | mark_sheet

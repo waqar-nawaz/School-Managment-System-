@@ -43,7 +43,10 @@ export function createCrudController<M extends Model = Model>(
   const present = (row: any) => (opts.decorate ? opts.decorate(row) : row);
 
   const buildWhere = (req: Request): WhereOptions => {
-    const where: Record<string, unknown> = { ...(opts.defaultWhere as Record<string, unknown> | undefined) };
+    // Merge defaultWhere using Op.and so client filters cannot override it.
+    // Previously `defaultWhere: { isActive: true }` was bypassable via `?filter[isActive]=false`.
+    const where: Record<string, unknown> = {};
+    if (opts.defaultWhere) (where as any)[Op.and] = [opts.defaultWhere];
     const f = req.query as Record<string, unknown>;
 
     // Allow-list filtering: clients may only filter on declared columns.

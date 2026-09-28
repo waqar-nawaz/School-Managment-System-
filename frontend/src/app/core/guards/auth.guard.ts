@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { CanActivate, Router, UrlTree } from '@angular/router';
+import { CanActivate, Router, UrlTree, ActivatedRouteSnapshot, RouterStateSnapshot } from '@angular/router';
 import { Observable, map } from 'rxjs';
 import { AuthService } from '../services/auth.service';
 
@@ -10,15 +10,16 @@ export class AuthGuard implements CanActivate {
     private readonly router: Router
   ) {}
 
-  canActivate(): Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean | UrlTree {
+  canActivate(_route: ActivatedRouteSnapshot, state: RouterStateSnapshot): Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean | UrlTree {
     if (!this.auth.isLoggedIn()) {
-      return this.router.createUrlTree(['/auth/login']);
+      // Preserve the requested URL so login can redirect back to it after sign-in.
+      return this.router.createUrlTree(['/auth/login'], { queryParams: { returnUrl: state.url } });
     }
     if (this.auth.user) {
       return true;
     }
     return this.auth.loadProfile().pipe(
-      map((u) => (u ? true : this.router.createUrlTree(['/auth/login'])))
+      map((u) => (u ? true : this.router.createUrlTree(['/auth/login'], { queryParams: { returnUrl: state.url } })))
     );
   }
 }

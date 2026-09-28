@@ -1,6 +1,6 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { IconComponent } from '../../../shared/components/icon/icon.component';
@@ -43,6 +43,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
             name="password"
             [(ngModel)]="model.password"
             required
+            minlength="6"
             #password="ngModel"
             autocomplete="current-password"
             placeholder="••••••••" />
@@ -55,7 +56,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           </button>
         </div>
         @if (f.submitted && password.invalid) {
-          <div class="field-error">Password is required</div>
+          <div class="field-error">Password must be at least 6 characters</div>
         }
       </div>
       <div class="auth-row">
@@ -71,16 +72,23 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     </form>
   `,
 })
-export class LoginComponent {
-  model = { identifier: '', password: '', rememberMe: true };
+export class LoginComponent implements OnInit {
+  model = { identifier: '', password: '', rememberMe: false };
   busy = false;
   showPassword = false;
+  private returnUrl: string | null = null;
 
   constructor(
     private readonly auth: AuthService,
     private readonly router: Router,
+    private readonly route: ActivatedRoute,
     private readonly toasts: ToastService
   ) {}
+
+  ngOnInit(): void {
+    // Capture the original requested URL so we can return there after sign-in.
+    this.returnUrl = this.route.snapshot.queryParamMap.get('returnUrl');
+  }
 
   submit(form: NgForm): void {
     if (form.invalid) {
@@ -92,11 +100,17 @@ export class LoginComponent {
       next: () => {
         this.busy = false;
         this.toasts.success('Welcome back');
-        this.router.navigate(['/dashboard']);
+        // Return to the originally-requested URL if it exists, else the dashboard.
+        const target = this.returnUrl && this.returnUrl !== '/auth/login' ? [this.returnUrl] : ['/dashboard'];
+        this.router.navigate(target);
       },
       error: (err) => {
         this.busy = false;
-        this.toasts.error(err?.error?.message || 'Login failed');
+        // Backend 400 validation errors are already toasted by the interceptor — skip the duplicate toast.
+        const status = err?.status;
+        if (status !== 400) {
+          this.toasts.error(err?.error?.message || 'Login failed');
+        }
       },
     });
   }

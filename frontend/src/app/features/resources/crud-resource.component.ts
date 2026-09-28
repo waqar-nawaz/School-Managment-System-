@@ -712,9 +712,17 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         this.toasts.success(this.editingId ? 'Record updated' : 'Record created');
         this.load();
       },
-      error: () => {
+      error: (err) => {
         this.saving = false;
         this.saveBusy = false;
+        // Map backend field-level errors ({ errors: [{ path, message }] }) to inline red messages
+        // so the user sees exactly which field failed — instead of only a generic toast.
+        const errs = err?.error?.errors;
+        if (Array.isArray(errs)) {
+          for (const e of errs) {
+            if (e?.path) this.fieldErrors[e.path] = e.message ?? 'Invalid value';
+          }
+        }
       },
     });
   }
