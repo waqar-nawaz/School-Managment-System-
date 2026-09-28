@@ -23,8 +23,6 @@ export interface ResourceDefinition {
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeRemove?: (req: Request) => void | Promise<void>;
-  /** Runs AFTER model.create() — use to create dependent rows (e.g. MessageRecipient rows for messages). */
-  afterCreate?: (row: any, req: Request) => void | Promise<void>;
   includes?: any[];
   decorate?: (row: any) => Record<string, unknown>;
 }
