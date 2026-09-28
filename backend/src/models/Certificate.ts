@@ -17,6 +17,9 @@ export class Certificate extends BaseModel {
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   studentId!: number;
 
+  // Association is registered centrally in models/index.ts.
+  student!: Student;
+
 
   @Column({ type: DataType.STRING(40), allowNull: false })
   type!: string; // transfer | character | bonafide | provisional | mark_sheet
