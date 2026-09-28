@@ -19,6 +19,7 @@ export interface ResourceDefinition {
   permission: string; // module name used for :read/:create/:update/:delete
   defaultSort?: [string, "ASC" | "DESC"];
   readonly?: boolean; // no write operations exposed
+  afterCreate?: (row: any, req: Request) => void | Promise<void>;
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeRemove?: (req: Request) => void | Promise<void>;
