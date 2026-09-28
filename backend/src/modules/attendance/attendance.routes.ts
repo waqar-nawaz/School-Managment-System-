@@ -5,15 +5,23 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { Attendance, Enrolment, Student, SchoolClass, Section } from "../../models";
+import { Attendance, Enrolment, Student, SchoolClass, Section, StudentGuardian } from "../../models";
 import { ATTENDANCE_STATUS } from "../../utils/constants";
 import { monthRange } from "../../utils/dateRange";
 
 const router = Router();
 router.use(authenticate);
 
+// Local-date YYYY-MM-DD helper — avoids UTC-vs-local timezone bug (e.g. Asia/Karachi UTC+5).
+function localDateString(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function dateFromQuery(req: { query: Record<string, unknown>; body?: Record<string, unknown> }): string {
-  const d = String(req.body?.date || req.query.date || new Date().toISOString().slice(0, 10));
+  const d = String(req.body?.date || req.query.date || localDateString());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw ApiError.badRequest("date must be YYYY-MM-DD");
   return d;
 }
@@ -188,7 +196,12 @@ router.get("/student/:studentId", authorize("attendance:read"), asyncHandler(asy
   if (req.user?.branchId != null && Number(student.branchId) !== Number(req.user.branchId)) {
     throw ApiError.forbidden("Student does not belong to your branch");
   }
-  const month = String(req.query.month || new Date().toISOString().slice(0, 7));
+  // Parent role: must be linked to this student via StudentGuardian. Prevents IDOR.
+  if (req.user?.role === "parent") {
+    const link = await StudentGuardian.findOne({ where: { guardianId: req.user!.id, studentId } });
+    if (!link) throw ApiError.forbidden("You can only view attendance for your own children");
+  }
+  const month = String(req.query.month || localDateString().slice(0, 7));
   const { start, end } = monthRange(month);
   const rows = await Attendance.findAll({
     where: { ...branchFilter(req), studentId, date: { [Op.gte]: start, [Op.lt]: end } },

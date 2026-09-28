@@ -232,7 +232,8 @@ export class AdmissionsComponent implements OnInit {
       dob: app.dateOfBirth || undefined,
       guardianPhone: app.phone || undefined,
       admissionNo: app.applicationNo || undefined,
-      admissionDate: new Date().toISOString().slice(0, 10),
+      // Local date — avoids UTC-vs-local timezone bug on admission date.
+      admissionDate: new Date().toLocaleDateString('en-CA'),
     };
     this.api.post('/students', body).subscribe({
       next: () => {

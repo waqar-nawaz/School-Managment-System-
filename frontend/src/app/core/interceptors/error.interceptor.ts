@@ -1,7 +1,7 @@
 import { HttpErrorResponse, HttpEvent, HttpHandler, HttpInterceptor, HttpRequest } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { Observable, of, throwError } from 'rxjs';
-import { catchError, concatMap, first, switchMap } from 'rxjs/operators';
+import { Observable, Subject, throwError } from 'rxjs';
+import { catchError, switchMap, first } from 'rxjs/operators';
 import { AuthService } from '../services/auth.service';
 import { StorageService } from '../services/storage.service';
 import { Router } from '@angular/router';
@@ -9,7 +9,9 @@ import { ToastService } from '../services/toast.service';
 
 @Injectable()
 export class ErrorInterceptor implements HttpInterceptor {
-  private refreshing = false;
+  // Shared refresh subject: all concurrent 401s subscribe to the same refresh result
+  // so the user is logged out only when refresh actually fails (not when refresh is in-flight).
+  private refresh$?: Subject<boolean>;
 
   constructor(
     private readonly auth: AuthService,
@@ -33,6 +35,11 @@ export class ErrorInterceptor implements HttpInterceptor {
               return throwError(() => err);
             })
           );
+        }
+
+        // Suppress toast for /auth/refresh failures (already handled by the logout path).
+        if (req.url.includes('/auth/refresh')) {
+          return throwError(() => err);
         }
 
         const message = this.extractMessage(err);
@@ -62,14 +69,25 @@ export class ErrorInterceptor implements HttpInterceptor {
   }
 
   private tryRefresh(): Observable<boolean> {
-    if (this.refreshing) return of(false);
-    this.refreshing = true;
-    return this.auth.refresh().pipe(
-      first(),
-      concatMap((ok) => {
-        this.refreshing = false;
-        return of(ok);
-      })
-    );
+    // If a refresh is already in flight, share its result instead of returning false.
+    if (this.refresh$) return this.refresh$.asObservable().pipe(first());
+
+    const subject = new Subject<boolean>();
+    this.refresh$ = subject;
+
+    this.auth.refresh().subscribe({
+      next: (ok) => {
+        this.refresh$ = undefined;
+        subject.next(ok);
+        subject.complete();
+      },
+      error: () => {
+        this.refresh$ = undefined;
+        subject.next(false);
+        subject.complete();
+      },
+    });
+
+    return subject.asObservable().pipe(first());
   }
 }

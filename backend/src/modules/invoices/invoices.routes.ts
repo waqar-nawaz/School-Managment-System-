@@ -5,9 +5,10 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { Invoice, FeeType, Student, Enrolment, Term, Payment, Receipt } from "../../models";
+import { Invoice, FeeType, Student, Enrolment, Term, Payment, Receipt, StudentGuardian } from "../../models";
 import { createCrudController } from "../../utils/crudFactory";
 import { writeAuditLog } from "../../services/audit.service";
+import { v4 as uuidv4 } from "uuid";
 
 const router = Router();
 router.use(authenticate);
@@ -17,12 +18,15 @@ const base = createCrudController<Invoice>({
   searchable: ["invoiceNo", "status"],
   defaultSort: [["issueDate", "DESC"]],
   includes: [{ association: "payments" }, { association: "student" }],
+  allowedFilters: ["status", "studentId", "termId", "branchId", "issueDate", "dueDate"],
 });
 
 router.get("/", authorize("invoices:read"), (req, res, next) => base.list(req, res).catch(next));
 router.get("/:id", authorize("invoices:read"), (req, res, next) => base.getOne(req, res).catch(next));
 router.put("/:id", authorize("invoices:update"), (req, res, next) => base.update(req, res).catch(next));
-router.delete("/:id", authorize("invoices:delete"), (req, res, next) => base.remove(req, res).catch(next));
+// Note: DELETE on financial records is intentionally disabled.
+// Use PATCH /:id/status with status='cancelled' to void an invoice.
+// router.delete("/:id", authorize("invoices:delete"), (req, res, next) => base.remove(req, res).catch(next));
 
 /** Generate an invoice for a student from fee types (standard or custom line items). */
 router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, res) => {
@@ -38,32 +42,54 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
       dueInDays?: number;
     };
 
+  // Validate discount/tax are non-negative.
+  const numDiscount = Number(discount);
+  const numTax = Number(tax);
+  if (!Number.isFinite(numDiscount) || numDiscount < 0) throw ApiError.badRequest("discount must be non-negative");
+  if (!Number.isFinite(numTax) || numTax < 0) throw ApiError.badRequest("tax must be non-negative");
+
   const student = await Student.findByPk(studentId);
   if (!student) throw ApiError.notFound("Student not found");
+  // Cross-tenant guard: caller may only invoice students in their own branch.
+  const callerBranch = req.user!.branchId;
+  if (callerBranch != null && Number(student.branchId) !== Number(callerBranch)) {
+    throw ApiError.forbidden("Student does not belong to your branch");
+  }
 
   const lineItems: Array<{ name: string; amount: number }> = [];
   if (Array.isArray(feeTypeIds) && feeTypeIds.length) {
-    const fees = await FeeType.findAll({ where: { id: { [Op.in]: feeTypeIds }, isActive: true } });
+    // Scope fee types to caller's branch to prevent attaching other branches' fees.
+    const feeWhere: any = { id: { [Op.in]: feeTypeIds }, isActive: true };
+    if (callerBranch != null) feeWhere.branchId = callerBranch;
+    const fees = await FeeType.findAll({ where: feeWhere });
     for (const f of fees) lineItems.push({ name: f.name, amount: Number(f.amount) });
   }
-  if (Array.isArray(customItems)) lineItems.push(...customItems);
+  if (Array.isArray(customItems)) {
+    for (const ci of customItems) {
+      const amt = Number(ci.amount);
+      if (!Number.isFinite(amt) || amt < 0) throw ApiError.badRequest("custom item amount must be non-negative");
+      lineItems.push({ name: String(ci.name), amount: amt });
+    }
+  }
   if (!lineItems.length) throw ApiError.badRequest("Provide feeTypeIds or customItems");
 
   const gross = lineItems.reduce((a, b) => a + Number(b.amount), 0);
-  const totalDue = Math.round((gross - Number(discount) + Number(tax)) * 100) / 100;
+  if (numDiscount > gross) throw ApiError.badRequest("discount cannot exceed gross amount");
+  const totalDue = Math.round((gross - numDiscount + numTax) * 100) / 100;
 
   let enrolmentId: number | undefined;
   const enrolment = await Enrolment.findOne({ where: { studentId, status: "active" }, order: [["createdAt", "DESC"]] });
   if (enrolment) enrolmentId = enrolment.id;
 
   const invoice = await Invoice.create({
-    invoiceNo: `INV-${Date.now()}`,
+    invoiceNo: `INV-${uuidv4().slice(0, 8).toUpperCase()}`,
     studentId,
     enrolmentId,
     termId: termId ?? null,
+    branchId: student.branchId ?? callerBranch ?? undefined,
     amount: gross,
-    discount: Number(discount),
-    tax: Number(tax),
+    discount: numDiscount,
+    tax: numTax,
     totalDue,
     dueDate: new Date(Date.now() + Number(dueInDays) * 86400000),
     issueDate: new Date(),
@@ -75,41 +101,78 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
   ApiResponse.success(res, 201, "Invoice generated", invoice);
 }));
 
-/** Mark an invoice status (overdue, cancelled, paid). */
+/** Mark an invoice status (overdue, cancelled, paid). Enforces a state machine. */
+const INVOICE_TRANSITIONS: Record<string, string[]> = {
+  pending: ["partial", "overdue", "cancelled"],
+  partial: ["paid", "overdue", "cancelled"],
+  paid: ["cancelled"],            // paid -> only voidable; cannot move back to pending/partial/overdue
+  overdue: ["paid", "partial", "cancelled"],
+  cancelled: [],                  // terminal — cannot be reopened
+};
 router.patch("/:id/status", authorize("invoices:update"), asyncHandler(async (req, res) => {
   const invoice = await Invoice.findByPk(req.params.id);
   if (!invoice) throw ApiError.notFound("Invoice not found");
+  // Cross-tenant guard.
+  const callerBranch = req.user!.branchId;
+  if (callerBranch != null && Number(invoice.branchId) !== Number(callerBranch)) {
+    throw ApiError.forbidden("Invoice does not belong to your branch");
+  }
   const nextStatus = String(req.body.status || "");
-  const allowed = ["pending", "partial", "paid", "overdue", "cancelled"];
-  if (!allowed.includes(nextStatus)) throw ApiError.badRequest("Invalid invoice status");
+  const allowed = INVOICE_TRANSITIONS[invoice.status] ?? [];
+  if (!allowed.includes(nextStatus)) {
+    throw ApiError.badRequest(`Cannot transition invoice from '${invoice.status}' to '${nextStatus}'`);
+  }
   if (nextStatus === "paid" && Number(invoice.amountPaid) < Number(invoice.totalDue)) {
     throw ApiError.badRequest("Invoice cannot be marked paid before the full amount is received");
   }
-  if (invoice.status === "cancelled" && nextStatus !== "cancelled") {
-    throw ApiError.badRequest("Cancelled invoices cannot be reopened manually");
-  }
   await invoice.update({ status: nextStatus });
+  await writeAuditLog({
+    action: "update",
+    entity: "invoice",
+    entityId: invoice.id,
+    userId: req.user!.id,
+    role: req.user!.role,
+    branchId: invoice.branchId,
+    oldData: { status: invoice.status },
+    newData: { status: nextStatus },
+  });
   ApiResponse.success(res, 200, "Invoice updated", invoice);
 }));
 
 /** Record a payment against an invoice → updates balance, creates receipt. */
 router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, res) => {
-  const invoice = await Invoice.findByPk(req.params.id);
-  if (!invoice) throw ApiError.notFound("Invoice not found");
+  const callerBranch = req.user!.branchId;
+  const callerRole = req.user!.role;
 
-  const amount = Number(req.body.amount);
-  if (!(amount > 0)) throw ApiError.badRequest("amount must be positive");
-
-  if (invoice.status === "cancelled") throw ApiError.badRequest("Cancelled invoices cannot receive payments");
-  const remaining = Math.max(0, Number(invoice.totalDue) - Number(invoice.amountPaid));
-  if (amount > remaining) throw ApiError.badRequest(`Payment exceeds remaining balance of ${remaining}`);
-
+  // Re-fetch the invoice INSIDE the transaction with a row lock to close the
+  // race condition where two concurrent payments both read the same amountPaid.
   const t = await Invoice.sequelize!.transaction();
   try {
+    const invoice = await Invoice.findByPk(req.params.id, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!invoice) throw ApiError.notFound("Invoice not found");
+    if (callerBranch != null && Number(invoice.branchId) !== Number(callerBranch)) {
+      throw ApiError.forbidden("Invoice does not belong to your branch");
+    }
+    // Parent role: must be linked to the invoice's student via StudentGuardian.
+    if (callerRole === "parent") {
+      const link = await StudentGuardian.findOne({
+        where: { guardianId: req.user!.id, studentId: invoice.studentId },
+        transaction: t,
+      });
+      if (!link) throw ApiError.forbidden("You can only pay invoices for your own children");
+    }
+
+    const amount = Number(req.body.amount);
+    if (!(amount > 0)) throw ApiError.badRequest("amount must be positive");
+    if (invoice.status === "cancelled") throw ApiError.badRequest("Cancelled invoices cannot receive payments");
+    const remaining = Math.max(0, Number(invoice.totalDue) - Number(invoice.amountPaid));
+    if (amount > remaining) throw ApiError.badRequest(`Payment exceeds remaining balance of ${remaining}`);
+
     const payment = await Payment.create({
-      receiptNo: `PAY-${Date.now()}`,
+      receiptNo: `PAY-${uuidv4().slice(0, 8).toUpperCase()}`,
       invoiceId: invoice.id,
       studentId: invoice.studentId,
+      branchId: invoice.branchId,
       amount,
       method: req.body.method || "cash",
       reference: req.body.reference,
@@ -124,14 +187,26 @@ router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, r
     await invoice.update({ amountPaid: paid, status }, { transaction: t });
 
     const receipt = await Receipt.create({
-      receiptNo: `RCT-${Date.now()}`,
+      receiptNo: `RCT-${uuidv4().slice(0, 8).toUpperCase()}`,
       paymentId: payment.id,
       invoiceId: invoice.id,
+      branchId: invoice.branchId,
       amount,
       headline: `Payment received for ${invoice.invoiceNo}`,
-      body: `Received ${amount} ${req.body.currency || "USD"} towards ${invoice.invoiceNo}. Balance due: ${Math.max(0, Number(invoice.totalDue) - paid)}.`,
-      currency: req.body.currency || "USD",
+      body: `Received ${amount} ${req.body.currency || "PKR"} towards ${invoice.invoiceNo}. Balance due: ${Math.max(0, Number(invoice.totalDue) - paid)}.`,
+      currency: req.body.currency || "PKR",
     }, { transaction: t });
+
+    await writeAuditLog({
+      action: "create",
+      entity: "payment",
+      entityId: payment.id,
+      userId: req.user!.id,
+      role: req.user!.role,
+      branchId: invoice.branchId,
+      ip: req.ip,
+      newData: { invoiceId: invoice.id, amount, method: payment.method },
+    });
 
     await t.commit();
     ApiResponse.success(res, 201, "Payment recorded", { payment, receipt, balanceDue: Math.max(0, Number(invoice.totalDue) - paid) });

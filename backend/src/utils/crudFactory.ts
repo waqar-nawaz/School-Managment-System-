@@ -18,6 +18,12 @@ export interface CrudOptions<M extends Model = Model> {
   decorate?: (row: any) => Record<string, unknown>;
   /** Additional fixed filters applied to list/count queries. */
   defaultWhere?: WhereOptions;
+  /** Allow-list of columns clients may filter on via filter[field]=value. */
+  allowedFilters?: string[];
+  /** Sensitive columns excluded from CSV exports and list responses. */
+  sensitiveColumns?: string[];
+  /** When true, destroy() soft-deletes via paranoid model or blocks the delete. */
+  softDelete?: boolean;
 }
 
 export interface CrudHandlers {
@@ -40,17 +46,20 @@ export function createCrudController<M extends Model = Model>(
     const where: Record<string, unknown> = { ...(opts.defaultWhere as Record<string, unknown> | undefined) };
     const f = req.query as Record<string, unknown>;
 
-    // Support both flat (filter[field]=x with the simple parser) and nested
-    // (filter: { field: x } with Express's default extended parser).
+    // Allow-list filtering: clients may only filter on declared columns.
+    // Prevents enumeration of arbitrary columns like passwordHash, role, userId, etc.
+    const allowList = new Set(opts.allowedFilters ?? []);
     const nested = f["filter"];
     if (nested && typeof nested === "object") {
       for (const [field, val] of Object.entries(nested as Record<string, unknown>)) {
+        if (allowList.size > 0 && !allowList.has(field)) continue;
         where[field] = val;
       }
     }
     for (const key of Object.keys(f)) {
       if (!key.startsWith("filter[")) continue;
       const field = key.slice(7, -1);
+      if (allowList.size > 0 && !allowList.has(field)) continue;
       where[field] = f[key];
     }
 
@@ -105,6 +114,14 @@ export function createCrudController<M extends Model = Model>(
       const attrs = (model as any).rawAttributes || {};
       const userBranchId = (req as any).user?.branchId;
       if (userBranchId != null && attrs.branchId) body.branchId = userBranchId;
+      // Defensive: never allow client to set id, audit, or auth fields via mass assignment.
+      const FORBIDDEN_CREATE_FIELDS = new Set([
+        "id", "createdAt", "updatedAt", "deletedAt",
+        "passwordHash", "passwordChangedAt", "emailVerified",
+      ]);
+      for (const key of Object.keys(body)) {
+        if (FORBIDDEN_CREATE_FIELDS.has(key)) delete body[key];
+      }
       const row = await model.create(body);
       ApiResponse.success(res, 201, `${model.name} created`, present(row));
     },
@@ -122,6 +139,14 @@ export function createCrudController<M extends Model = Model>(
         ? await opts.beforeUpdate(req.body, req)
         : req.body;
       if (userBranchId != null && attrs.branchId) body.branchId = userBranchId;
+      // Defensive: never allow client to mutate id, audit, or auth fields via mass assignment.
+      const FORBIDDEN_UPDATE_FIELDS = new Set([
+        "id", "createdAt", "updatedAt", "deletedAt",
+        "passwordHash", "passwordChangedAt", "emailVerified",
+      ]);
+      for (const key of Object.keys(body)) {
+        if (FORBIDDEN_UPDATE_FIELDS.has(key)) delete body[key];
+      }
       await (row as any).update(body);
       ApiResponse.success(res, 200, `${model.name} updated`, present(row));
     },
@@ -135,6 +160,9 @@ export function createCrudController<M extends Model = Model>(
       if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
       const row = await model.findOne({ where: lookup }) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
+      // Soft-delete if the model is paranoid; otherwise hard destroy.
+      // Sensitive financial/audit models should be marked readonly or use
+      // explicit void endpoints rather than generic DELETE.
       await (row as any).destroy();
       ApiResponse.success(res, 200, `${model.name} deleted`, null);
     },

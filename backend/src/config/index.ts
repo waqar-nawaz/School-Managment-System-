@@ -5,8 +5,23 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 const dbDialect = (process.env.DB_DIALECT || "postgres") as "postgres" | "mysql";
 
+const nodeEnv = process.env.NODE_ENV || "development";
+
+// Fail fast in production if JWT secrets are missing or still the dev defaults.
+const DEV_DEFAULTS = new Set(["dev-secret", "dev-refresh-secret", ""]);
+const jwtSecret = process.env.JWT_SECRET || "";
+const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || "";
+if (nodeEnv === "production") {
+  if (DEV_DEFAULTS.has(jwtSecret) || jwtSecret.length < 16) {
+    throw new Error("JWT_SECRET must be set to a strong value (>=16 chars) in production.");
+  }
+  if (DEV_DEFAULTS.has(jwtRefreshSecret) || jwtRefreshSecret.length < 16) {
+    throw new Error("JWT_REFRESH_SECRET must be set to a strong value (>=16 chars) in production.");
+  }
+}
+
 const env = {
-  nodeEnv: process.env.NODE_ENV || "development",
+  nodeEnv,
   port: parseInt(process.env.PORT || "3000", 10),
 
   db: {
@@ -29,8 +44,8 @@ const env = {
   },
 
   jwt: {
-    secret: process.env.JWT_SECRET || "dev-secret",
-    refreshSecret: process.env.JWT_REFRESH_SECRET || "dev-refresh-secret",
+    secret: jwtSecret || "dev-secret",
+    refreshSecret: jwtRefreshSecret || "dev-refresh-secret",
     expiresIn: process.env.JWT_EXPIRES_IN || "15m",
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || "7d",
   },

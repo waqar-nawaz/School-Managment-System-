@@ -101,12 +101,16 @@ router.get(
     const to = dateParam(req.query.to, new Date());
     const branchId = branchIdOf(req);
 
-    const invoiceWhere: any = { issueDate: { [Op.between]: [from, to] } };
+    // Exclude cancelled invoices — they should not contribute to invoiced total.
+    const invoiceWhere: any = {
+      issueDate: { [Op.between]: [from, to] },
+      status: { [Op.ne]: "cancelled" },
+    };
     const paymentWhere: any = { paidOn: { [Op.between]: [from, to] }, status: "successful" };
     if (branchId) {
-      const studentIds = await branchStudentIds(branchId) || [];
-      invoiceWhere.studentId = { [Op.in]: studentIds };
-      paymentWhere.studentId = { [Op.in]: studentIds };
+      // Now that Invoice has branchId, filter directly rather than via student IDs.
+      invoiceWhere.branchId = branchId;
+      paymentWhere.branchId = branchId;
     }
 
     const invoiced = await Invoice.sum("totalDue", { where: invoiceWhere }) || 0;
@@ -114,8 +118,7 @@ router.get(
 
     let spentWhere: any = { expensedOn: { [Op.between]: [from, to] }, status: "approved" };
     if (branchId) {
-      const userIds = await User.findAll({ where: { branchId }, attributes: ["id"], raw: true });
-      spentWhere.createdBy = { [Op.in]: userIds.map((u: any) => Number(u.id)) };
+      spentWhere.branchId = branchId;
     }
     const spent = await Expense.sum("amount", { where: spentWhere }) || 0;
 
@@ -196,15 +199,30 @@ router.post(
   "/audit",
   authorize("reports:read"),
   asyncHandler(async (req, res) => {
-    const { entity, entityId, action } = req.body as { entity?: string; entityId?: string | number; action?: string };
+    // Restrict to a fixed allow-list so users can't inject arbitrary audit entries.
+    // Audit logs must not be pollutable by arbitrary clients.
+    const ALLOWED_ACTIONS = new Set(["export", "download", "view"]);
+    const ALLOWED_ENTITIES = new Set([
+      "students", "teachers", "staff", "invoices", "payments", "attendance",
+      "report", "certificate", "refund",
+    ]);
+    const action = String(req.body.action ?? "view").toLowerCase();
+    const entity = String(req.body.entity ?? "report").toLowerCase();
+    if (!ALLOWED_ACTIONS.has(action)) {
+      throw ApiError.badRequest(`Invalid audit action. Allowed: ${[...ALLOWED_ACTIONS].join(", ")}`);
+    }
+    if (!ALLOWED_ENTITIES.has(entity)) {
+      throw ApiError.badRequest(`Invalid audit entity. Allowed: ${[...ALLOWED_ENTITIES].join(", ")}`);
+    }
     await writeAuditLog({
-      action: (action as any) ?? "export",
-      entity: entity ?? "report",
-      entityId,
+      action: action as any,
+      entity,
+      entityId: req.body.entityId,
       userId: req.user!.id,
       role: req.user!.role,
+      branchId: req.user!.branchId,
       ip: req.ip,
-      newData: req.body,
+      newData: { source: "reports_endpoint" },
     });
     ApiResponse.success(res, 200, "Report access recorded", null);
   })

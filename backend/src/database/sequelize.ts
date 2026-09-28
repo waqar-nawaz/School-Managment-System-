@@ -110,6 +110,11 @@ async function ensureColumns(): Promise<void> {
     { table: "messages", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "message_recipients", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "notifications", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
+    // Multi-tenant scope for finance tables (previously missing — caused cross-branch data leaks).
+    { table: "invoices", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
+    { table: "payments", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
+    { table: "receipts", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
+    { table: "refunds", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
   ];
   for (const { table, column, def } of wanted) {
     try {

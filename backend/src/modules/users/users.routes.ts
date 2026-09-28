@@ -58,13 +58,14 @@ router.get("/", authorize("users:read"), asyncHandler(async (req, res) => {
 const findScopedUser = async (req: any) => {
   const where: any = { id: Number(req.params.id) };
   if (req.user?.role !== "super_admin") where.branchId = req.user?.branchId;
-  return User.findOne({ where });
+  // Never leak passwordHash — exclude it on every read.
+  return User.findOne({ where, attributes: { exclude: ["passwordHash"] } });
 };
 
 router.get("/:id", authorize("users:read"), asyncHandler(async (req, res) => {
   const user = await findScopedUser(req);
   if (!user) throw ApiError.notFound("User not found");
-  ApiResponse.success(res, 200, "User fetched", user);
+  ApiResponse.success(res, 200, "User fetched", sanitize(user));
 }));
 
 router.post("/", authorize("users:create"), validate(createUserSchema), asyncHandler(async (req, res) => {
@@ -111,6 +112,15 @@ router.patch("/:id/status", authorize("users:update"), validate(updateUserStatus
     throw ApiError.forbidden("Cannot modify the superadmin account");
   }
   await user.update({ isActive: req.body.isActive });
+  await writeAuditLog({
+    action: "update",
+    entity: "user",
+    entityId: user.id,
+    userId: req.user!.id,
+    role: req.user!.role,
+    branchId: user.branchId,
+    newData: { event: req.body.isActive ? "activated" : "deactivated" },
+  });
   ApiResponse.success(res, 200, `User ${req.body.isActive ? "activated" : "deactivated"}`, sanitize(user));
 }));
 
@@ -118,6 +128,11 @@ router.post("/:id/reset-password", authorize("users:update"), validate(adminRese
   const user = await findScopedUser(req);
   if (!user) throw ApiError.notFound("User not found");
   await adminResetPassword(user.id, req.body.newPassword, req.user!.id);
+  // Invalidate all existing refresh tokens so the user must sign in again with the new password.
+  await RefreshToken.update(
+    { revoked: true, revokedAt: new Date() },
+    { where: { userId: user.id, revoked: false } }
+  );
   ApiResponse.success(res, 200, "Password reset", null);
 }));
 

@@ -8,6 +8,7 @@ import { ApiError } from "../../utils/ApiError";
 import { AdmissionApplication, User } from "../../models";
 import { createCrudController } from "../../utils/crudFactory";
 import { ADMISSION_STATUS } from "../../utils/constants";
+import { writeAuditLog } from "../../services/audit.service";
 
 const router = Router();
 router.use(authenticate);
@@ -92,27 +93,70 @@ router.get("/stats/pipeline", authorize("admissions:read"), asyncHandler(async (
 
 router.get("/:id", authorize("admissions:read"), (req, res, next) => base.getOne(req, res).catch(next));
 router.put("/:id", authorize("admissions:update"), (req, res, next) => base.update(req, res).catch(next));
-router.delete("/:id", authorize("admissions:delete"), (req, res, next) => base.remove(req, res).catch(next));
+router.delete("/:id", authorize("admissions:delete"), asyncHandler(async (req, res) => {
+  // Admissions records are compliance-relevant — block hard delete once an application has been submitted.
+  // The endpoint is kept for back-compat but always throws a 400.
+  throw ApiError.badRequest("Admissions records cannot be hard-deleted. Mark as 'rejected' or 'withdrawn' instead.");
+}));
 
 router.post("/", authorize("admissions:create"), asyncHandler(async (req, res) => {
   const body = { ...req.body };
-  const applicationNo = String(body.applicationNo || `APP-${Date.now()}-${Math.floor(Math.random() * 1000)}`).trim();
+  // UUID-based applicationNo avoids collisions on concurrent creates.
+  const rand = Math.floor(Math.random() * 0xffff).toString(36).toUpperCase();
+  const applicationNo = String(body.applicationNo || `APP-${Date.now()}-${rand}`).trim();
   delete body.applicationNo;
   const payload = await validateApplication({ ...body, applicationNo }, req);
   const app = await AdmissionApplication.create({ ...payload, applicationNo });
+  await writeAuditLog({
+    action: "create",
+    entity: "admission_application",
+    entityId: app.id,
+    userId: req.user!.id,
+    role: req.user!.role,
+    branchId: req.user!.branchId,
+    ip: req.ip,
+    newData: { applicationNo, studentName: payload.studentName },
+  });
   ApiResponse.success(res, 201, "Application received", app);
 }));
+
+// State machine for admission status transitions.
+// Prevents invalid moves like rejected -> admitted or admitted -> enquiry.
+const ADMISSION_TRANSITIONS: Record<string, string[]> = {
+  enquiry: ["applied", "rejected", "waitlisted"],
+  applied: ["shortlisted", "admitted", "rejected", "waitlisted"],
+  shortlisted: ["admitted", "rejected", "waitlisted"],
+  waitlisted: ["admitted", "rejected"],
+  admitted: ["withdrawn"],   // admitted is (almost) terminal — only allow explicit withdrawal
+  rejected: [],              // terminal
+  withdrawn: [],             // terminal
+};
 
 router.patch("/:id/status", authorize("admissions:update"), asyncHandler(async (req, res) => {
   const status = String(req.body.status ?? "").trim().toLowerCase();
   if (!ADMISSION_STATUS.includes(status as any)) throw ApiError.badRequest("Invalid status");
   const app = await AdmissionApplication.findOne({ where: { id: Number(req.params.id), ...branchWhere(req) } });
   if (!app) throw ApiError.notFound("Application not found");
+  const allowed = ADMISSION_TRANSITIONS[app.status] ?? [];
+  if (!allowed.includes(status)) {
+    throw ApiError.badRequest(`Cannot transition application from '${app.status}' to '${status}'`);
+  }
   const reviewer = await User.findByPk(req.user!.id);
   if (!reviewer || !reviewer.isActive || (req.user?.branchId != null && Number(reviewer.branchId) !== Number(req.user.branchId))) {
     throw ApiError.forbidden("Reviewer is not active or does not belong to your branch");
   }
   await app.update({ status, reviewedBy: reviewer.id });
+  await writeAuditLog({
+    action: "update",
+    entity: "admission_application",
+    entityId: app.id,
+    userId: req.user!.id,
+    role: req.user!.role,
+    branchId: req.user!.branchId,
+    ip: req.ip,
+    oldData: { status: app.status },
+    newData: { status },
+  });
   ApiResponse.success(res, 200, `Application marked ${status}`, app);
 }));
 

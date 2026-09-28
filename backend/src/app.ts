@@ -26,8 +26,22 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(env.nodeEnv === "development" ? "dev" : "combined", { stream: { write: (m) => logger.info(m.trim()) } }));
 
-app.use(express.static(path.join(process.cwd(), "uploads"), { maxAge: "1d" }));
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+// Serve uploaded files with strict security headers to prevent stored XSS.
+// - X-Content-Type-Options: nosniff  -> browsers won't sniff content-type
+// - Content-Disposition: attachment  -> force download, no inline rendering
+// - Cache-Control: private, max-age=1d  -> don't cache in shared proxies
+const uploadsDir = path.join(process.cwd(), "uploads");
+app.use(
+  "/uploads",
+  express.static(uploadsDir, {
+    maxAge: "1d",
+    setHeaders: (res) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Disposition", "attachment");
+      res.setHeader("Cache-Control", "private, max-age=86400");
+    },
+  })
+);
 
 app.get("/health", (_req, res) =>
   res.json({
