@@ -350,6 +350,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   private search$ = new Subject<string>();
   private destroy$ = new Subject<void>();
   private saveBusy = false;
+  private refLoadVersion = 0;
 
   constructor(
     public readonly api: ApiService,
@@ -537,6 +538,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
 
   private loadRefOptions(field: FieldConfig, q = ''): void {
     if (!field.ref) return;
+    const loadVersion = ++this.refLoadVersion;
     const { api, labelKey, secondaryKey } = field.ref;
     const params: Record<string, unknown> = { page: 1, limit: 100, q };
 
@@ -569,20 +571,20 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         return;
       }
       params['filter[roomId]'] = roomId;
-      const hostelId = this.formValues['hostelId'];
-      if (hostelId === null || hostelId === undefined || hostelId === '') {
-        this.refOptions[field.key] = [];
-        return;
-      }
-      // Beds are filtered by roomId. Hostel is derived from that room on
-      // the backend; Bed itself does not have a hostelId column, so do not
-      // send an invalid hostelId filter here.
-      params['filter[status]'] = 'available';
+      // On create only available beds are selectable. While editing an
+      // allocation, also load the current bed so an existing allocation can
+      // be edited without its occupied bed disappearing from the dropdown.
+      if (!this.editingId) params['filter[status]'] = 'available';
     }
 
     this.api.get<Record<string, unknown>[]>(api, params).subscribe({
       next: (res) => {
-        const rows = (res?.data as Record<string, unknown>[]) ?? [];
+        if (loadVersion !== this.refLoadVersion) return;
+        let rows = (res?.data as Record<string, unknown>[]) ?? [];
+        if (this.resourceKey === 'hostel-allocations' && field.key === 'bedId' && this.editingId) {
+          const currentBedId = String(this.formValues['bedId'] ?? '');
+          rows = rows.filter((r) => String(r['status'] ?? '') === 'available' || String(r['id']) === currentBedId);
+        }
         const seen = new Set<string>();
         const opts = rows
           .map((r) => ({
@@ -650,6 +652,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     }
 
     if (this.resourceKey === 'hostel-allocations' && key === 'hostelId') {
+      ++this.refLoadVersion;
       this.formValues['roomId'] = null;
       this.formValues['bedId'] = null;
       this.refSelectedLabel['roomId'] = '';
@@ -661,6 +664,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     }
 
     if (this.resourceKey === 'hostel-allocations' && key === 'roomId') {
+      ++this.refLoadVersion;
       this.formValues['bedId'] = null;
       this.refSelectedLabel['bedId'] = '';
       this.refSearch['bedId'] = '';
