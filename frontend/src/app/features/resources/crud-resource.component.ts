@@ -581,10 +581,23 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
       next: (res) => {
         if (loadVersion !== this.refLoadVersion) return;
         let rows = (res?.data as Record<string, unknown>[]) ?? [];
-        if (this.resourceKey === 'hostel-allocations' && field.key === 'bedId' && this.editingId) {
-          const currentBedId = String(this.formValues['bedId'] ?? '');
-          rows = rows.filter((r) => String(r['status'] ?? '') === 'available' || String(r['id']) === currentBedId);
+
+        // Defense in depth: the API filter is authoritative for the query, but
+        // the allocation UI must never show a room/bed from a stale response.
+        // Filter the returned objects again using their actual parent ids.
+        if (this.resourceKey === 'hostel-allocations' && field.key === 'roomId') {
+          const hostelId = String(this.formValues['hostelId'] ?? '');
+          rows = rows.filter((r) => String(r['hostelId'] ?? '') === hostelId);
         }
+        if (this.resourceKey === 'hostel-allocations' && field.key === 'bedId') {
+          const roomId = String(this.formValues['roomId'] ?? '');
+          rows = rows.filter((r) => String(r['roomId'] ?? '') === roomId);
+          if (this.editingId) {
+            const currentBedId = String(this.formValues['bedId'] ?? '');
+            rows = rows.filter((r) => String(r['status'] ?? '') === 'available' || String(r['id']) === currentBedId);
+          }
+        }
+
         const seen = new Set<string>();
         const opts = rows
           .map((r) => ({
