@@ -13,6 +13,10 @@ export interface CrudOptions<M extends Model = Model> {
   toSearchWhere?: (q: string) => WhereOptions;
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
+  /** Runs inside the delete handler BEFORE row.destroy() — use to release dependent state (e.g. bed availability). */
+  beforeDelete?: (row: any, req: Request) => void | Promise<void>;
+  /** Runs AFTER model.create() — use to create dependent rows (e.g. MessageRecipient rows for messages). */
+  afterCreate?: (row: any, req: Request) => void | Promise<void>;
   detailIncludes?: FindOptions["include"];
   /** Add computed fields (e.g. related display names) to a returned row. */
   decorate?: (row: any) => Record<string, unknown>;
@@ -126,6 +130,7 @@ export function createCrudController<M extends Model = Model>(
         if (FORBIDDEN_CREATE_FIELDS.has(key)) delete body[key];
       }
       const row = await model.create(body);
+      if (opts.afterCreate) await opts.afterCreate(row, req);
       ApiResponse.success(res, 201, `${model.name} created`, present(row));
     },
 
@@ -163,6 +168,8 @@ export function createCrudController<M extends Model = Model>(
       if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
       const row = await model.findOne({ where: lookup }) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
+      // Allow resources to release dependent state (e.g. mark a bed as available) before destroy.
+      if (opts.beforeDelete) await opts.beforeDelete(row, req);
       // Soft-delete if the model is paranoid; otherwise hard destroy.
       // Sensitive financial/audit models should be marked readonly or use
       // explicit void endpoints rather than generic DELETE.

@@ -164,4 +164,122 @@ router.patch("/:id/status", authorize("admissions:update"), asyncHandler(async (
   ApiResponse.success(res, 200, `Application marked ${status}`, app);
 }));
 
+/**
+ * Atomic register-student endpoint.
+ * Creates a Student from the admission application (reusing the /students POST logic)
+ * and transitions the application to 'admitted' in a single request — no more
+ * two-step flow where student creation succeeds but the status update fails.
+ *
+ * Body: { currentClassId?: number, currentSectionId?: number, academicYearId?: number, rollNo?: string }
+ */
+router.post(
+  "/:id/register",
+  authorize("admissions:update", "students:create"),
+  asyncHandler(async (req, res) => {
+    const app = await AdmissionApplication.findOne({
+      where: { id: Number(req.params.id), ...branchWhere(req) },
+    });
+    if (!app) throw ApiError.notFound("Application not found");
+    if (app.status === "admitted") throw ApiError.badRequest("Application already admitted");
+    if (app.status === "rejected" || app.status === "withdrawn") {
+      throw ApiError.badRequest(`Cannot register an application that is ${app.status}`);
+    }
+
+    // Build student payload from the application — match the shape /students expects.
+    const [firstName, ...rest] = String(app.studentName || "").trim().split(/\s+/);
+    const lastName = rest.join(" ");
+    const studentPayload: any = {
+      firstName: firstName || app.studentName,
+      lastName,
+      admissionNo: app.applicationNo,
+      email: app.email,
+      phone: app.phone,
+      gender: app.gender,
+      dateOfBirth: app.dateOfBirth,
+      guardianName: `${firstName || app.studentName}'s Guardian`,
+      guardianPhone: app.phone,
+      address: app.address,
+      admissionDate: new Date().toLocaleDateString("en-CA"),
+      currentClassId: req.body.currentClassId ?? null,
+      currentSectionId: req.body.currentSectionId ?? null,
+      academicYearId: req.body.academicYearId ?? null,
+      rollNo: req.body.rollNo,
+    };
+
+    // Call the internal /students POST handler by invoking the controller directly.
+    // We can't import the handler easily here, so we issue a fetch-style internal call
+    // via the express app. Simpler: forward to /students with a sub-request.
+    // For now, we just create the student inline (duplicated minimal logic) — TODO: extract to service.
+    const { Student, User } = await import("../../models");
+    const { sequelize } = await import("../../database/sequelize");
+    const { createUser } = await import("../users/users.service");
+
+    const result = await sequelize.transaction(async (transaction) => {
+      const branchId = Number(req.user?.branchId);
+      if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
+
+      const admissionNo = String(studentPayload.admissionNo || `STU-${Date.now()}`).trim();
+      const dup = await Student.findOne({ where: { admissionNo }, transaction });
+      if (dup) throw ApiError.conflict("Admission number already exists");
+
+      const slug = admissionNo.toLowerCase().replace(/[^a-z0-9]+/g, "") || "student";
+      const unique = `${Date.now().toString(36)}${Math.floor(Math.random() * 10000)}`;
+      let email = studentPayload.email ? String(studentPayload.email).trim().toLowerCase() : `${slug}.${unique}@school.local`;
+      let username = email.split("@")[0];
+      if (await User.findOne({ where: { email }, transaction })) email = `${slug}.${unique}@school.local`;
+      if (await User.findOne({ where: { username }, transaction })) username = `${username}_${unique}`;
+
+      const user = await createUser({
+        username, email,
+        firstName: studentPayload.firstName,
+        lastName: studentPayload.lastName,
+        role: "student",
+        gender: studentPayload.gender,
+        phone: studentPayload.guardianPhone,
+        branchId,
+        sendWelcome: !!studentPayload.email,
+        generatedBy: req.user!.id,
+        transaction,
+      });
+
+      const student = await Student.create({
+        admissionNo,
+        firstName: studentPayload.firstName,
+        lastName: studentPayload.lastName,
+        dateOfBirth: studentPayload.dateOfBirth,
+        gender: studentPayload.gender,
+        guardianName: studentPayload.guardianName || `${studentPayload.firstName}'s Guardian`,
+        guardianPhone: studentPayload.guardianPhone,
+        address: studentPayload.address,
+        email: studentPayload.email,
+        admissionDate: studentPayload.admissionDate,
+        admissionStatus: "new",
+        isActive: true,
+        currentClassId: studentPayload.currentClassId ?? null,
+        currentSectionId: studentPayload.currentSectionId ?? null,
+        branchId,
+        userId: user.id,
+      }, { transaction });
+
+      // Transition the application to 'admitted'.
+      await app.update({ status: "admitted", reviewedBy: req.user!.id }, { transaction });
+
+      await writeAuditLog({
+        action: "create",
+        entity: "student",
+        entityId: student.id,
+        userId: req.user!.id,
+        role: req.user!.role,
+        branchId,
+        ip: req.ip,
+        newData: { admissionNo, fromApplication: app.id },
+      });
+
+      return { student, application: app };
+    });
+
+    ApiResponse.success(res, 201, "Student registered from application", result);
+  })
+);
+
 export default router;

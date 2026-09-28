@@ -117,7 +117,12 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
   if (sectionId !== undefined && (!Number.isInteger(Number(sectionId)) || Number(sectionId) <= 0)) throw ApiError.badRequest("Invalid sectionId");
   await validateClassScope(Number(classId), sectionId !== undefined ? Number(sectionId) : undefined, req);
 
-  const scope = branchFilter(req);
+  // Derive branchId from the class so super_admin (whose req.user.branchId is null) doesn't
+  // accidentally save attendance with branchId=null and then clobber an existing branchId
+  // via updateOnDuplicate.
+  const cls = await SchoolClass.findByPk(Number(classId));
+  const resolvedBranchId = cls?.branchId ?? req.user?.branchId ?? null;
+  const scope = resolvedBranchId != null ? { branchId: resolvedBranchId } : {};
   const enrolments = await Enrolment.findAll({
     where: {
       ...scope,

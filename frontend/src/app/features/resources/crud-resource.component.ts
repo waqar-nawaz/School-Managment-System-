@@ -699,7 +699,15 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     for (const f of this.config.fields) {
       let v = this.formValues[f.key];
       if (v === '' || v === null || v === undefined) v = this.formDefault(f);
-      if (v !== undefined) body[f.key] = v;
+      if (v !== undefined) {
+        // Convert comma-separated recipient IDs into a number[] for the backend.
+        if (f.key === 'recipientIds' && typeof v === 'string') {
+          const ids = v.split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0);
+          body[f.key] = ids;
+        } else {
+          body[f.key] = v;
+        }
+      }
     }
     const request = this.editingId
       ? this.api.put(`${this.config.api}/${this.editingId}`, body)

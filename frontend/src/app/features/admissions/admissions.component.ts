@@ -224,7 +224,11 @@ export class AdmissionsComponent implements OnInit {
   }
 
   load(): void {
-    this.api.get<any[]>('/admissions', { page: 1, limit: 200, q: this.search, status: this.status }).subscribe({
+    // Send status filter as filter[status] so the backend crudFactory picks it up
+    // (flat `status=` is ignored by buildWhere).
+    const params: Record<string, unknown> = { page: 1, limit: 200, q: this.search };
+    if (this.status) params['filter[status]'] = this.status;
+    this.api.get<any[]>('/admissions', params).subscribe({
       next: (res) => (this.apps = res?.data ?? []),
       error: () => {},
     });
@@ -250,38 +254,20 @@ export class AdmissionsComponent implements OnInit {
     });
   }
 
-  /** Create a student record from this application (the actual admission). */
+  /** Create a student record from this application — atomic single-call flow. */
   registerStudent(app: any): void {
     if (!app?.id || app.status === 'admitted' || app.status === 'rejected' || app.status === 'withdrawn') return;
-    const parts = String(app.studentName || '').trim().split(/\s+/);
-    const body: Record<string, unknown> = {
-      firstName: parts[0] || 'Student',
-      lastName: parts.slice(1).join(' '),
-      email: app.email || undefined,
-      gender: app.gender || undefined,
-      dob: app.dateOfBirth || undefined,
-      guardianPhone: app.phone || undefined,
-      admissionNo: app.applicationNo || undefined,
-      // Local date — avoids UTC-vs-local timezone bug on admission date.
-      admissionDate: new Date().toLocaleDateString('en-CA'),
-    };
-    this.api.post('/students', body).subscribe({
-      next: () => {
+    // Use the atomic backend endpoint POST /admissions/:id/register which creates
+    // the Student + transitions the application in one transaction.
+    this.api.post(`/admissions/${app.id}/register`, {}).subscribe({
+      next: (res) => {
         this.toasts.success(`${app.studentName} admitted as a student`);
-        // Backend now allows enquiry→admitted directly so the registerStudent flow works from any state.
-        this.api.patch(`/admissions/${app.id}/status`, { status: 'admitted' }).subscribe({
-          next: () => {
-            this.load();
-            this.loadPipeline();
-          },
-          error: () => {
-            // Surface the failure instead of swallowing it — the student record was created but the
-            // application status couldn't transition. Operator can manually move it.
-            this.toasts.error('Student created but admission status could not be updated — please update it manually');
-          },
-        });
+        this.load();
+        this.loadPipeline();
       },
-      error: () => {},
+      error: (err) => {
+        this.toasts.error(err?.error?.message || 'Could not register student from application');
+      },
     });
   }
 

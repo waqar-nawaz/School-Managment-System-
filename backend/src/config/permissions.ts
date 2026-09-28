@@ -109,7 +109,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "fee-types:read", "fee-types:create", "fee-types:update",
     "invoices:read", "invoices:create", "invoices:update", "invoices:delete",
     "payments:read", "payments:create",
-    "receipts:read", "receipts:create", "refunds:create",
+    "receipts:read", "receipts:create", "refunds:create", "refunds:approve",
     "expenses:read", "expenses:create", "expenses:update",
     "payroll:read", "payroll:create", "payroll:update",
     "payslips:read", "payslips:create",

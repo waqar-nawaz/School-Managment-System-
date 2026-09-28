@@ -209,7 +209,9 @@ export function defineAssociations(): void {
   Payment.belongsTo(Invoice, { foreignKey: "invoiceId" });
   Payment.belongsTo(Student, { foreignKey: "studentId" });
   Receipt.belongsTo(Payment, { foreignKey: "paymentId" });
+  Receipt.belongsTo(Invoice, { foreignKey: "invoiceId" });
   Refund.belongsTo(Invoice, { foreignKey: "invoiceId" });
+  Refund.belongsTo(Payment, { foreignKey: "paymentId" });
 
   PayrollItem.hasMany(Payslip, { as: "payslips", foreignKey: "payrollItemId" });
   Payslip.belongsTo(PayrollItem, { foreignKey: "payrollItemId" });

@@ -34,7 +34,7 @@ export class AdmissionApplication extends BaseModel {
   @Column({ type: DataType.TEXT })
   address!: string;
 
-  @Column({ type: DataType.ENUM("enquiry", "applied", "shortlisted", "admitted", "rejected", "waitlisted"), defaultValue: "enquiry" })
+  @Column({ type: DataType.ENUM("enquiry", "applied", "shortlisted", "admitted", "rejected", "waitlisted", "withdrawn"), defaultValue: "enquiry" })
   status!: string;
 
   @Index

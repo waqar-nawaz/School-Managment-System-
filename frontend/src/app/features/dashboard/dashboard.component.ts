@@ -102,7 +102,8 @@ export class DashboardComponent implements OnInit {
 
   load(): void {
     this.loading = true;
-    this.api.get<DashboardStats>('/dashboard').subscribe({
+    // Send the browser-local date so the backend's `presentToday` count uses the same "today" as the user.
+    this.api.get<DashboardStats>('/dashboard', { date: new Date().toLocaleDateString('en-CA') }).subscribe({
       next: (res) => {
         this.stats = res?.data ?? null;
         this.loading = false;

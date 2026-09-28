@@ -19,6 +19,18 @@ const base = createCrudController<BookIssue>({
   model: BookIssue,
   searchable: ["status", "requestedFor"],
   defaultSort: [["issueDate", "DESC"]],
+  includes: [
+    { association: "borrower", attributes: ["id", "firstName", "lastName", "email"] },
+    { association: "bookCopy", attributes: ["id", "accessionNo", "status"], include: [{ association: "book", attributes: ["id", "title", "isbn"] }] },
+  ],
+  decorate: (row: any) => {
+    const p = row && typeof row.get === "function" ? row.get({ plain: true }) : { ...row };
+    p.borrowerName = p.borrower ? `${p.borrower.firstName} ${p.borrower.lastName}`.trim() : "";
+    p.accessionNo = p.bookCopy?.accessionNo ?? "";
+    p.bookTitle = p.bookCopy?.book?.title ?? "";
+    p.isOverdue = p.status === "issued" && p.dueDate && new Date(p.dueDate) < new Date();
+    return p;
+  },
 });
 
 router.get("/", authorize("library:read"), (req, res, next) => base.list(req, res).catch(next));
