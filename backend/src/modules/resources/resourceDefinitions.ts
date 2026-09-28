@@ -925,15 +925,16 @@ const validateHostelAllocation = async (body: any, req: Request) => {
     : null;
   if (activeStudent) throw new Error("Student already has an active hostel allocation");
 
+  const previousRoomId = existing && Number(existing.bedId) !== bedId
+    ? Number((await Bed.findByPk(existing.bedId))?.roomId ?? 0)
+    : 0;
   if (existing && Number(existing.bedId) !== bedId) {
     const previousBed = await Bed.findByPk(existing.bedId);
     if (previousBed && previousBed.status === "occupied") await previousBed.update({ status: "available" });
   }
   await bed.update({ status: status === "active" ? "occupied" : "available" });
   await refreshRoomStatus(room.id);
-  if (existing && Number(existing.bedId) !== bedId) {
-    await refreshRoomStatus(Number(existing.bedId) ? Number((await Bed.findByPk(existing.bedId))?.roomId) : room.id);
-  }
+  if (previousRoomId > 0 && previousRoomId !== room.id) await refreshRoomStatus(previousRoomId);
 
   body.studentId = studentId; body.bedId = bedId; body.roomId = room.id; body.hostelId = hostel.id;
   body.status = status; body.monthlyFee = monthlyFee; body.checkIn = checkIn; body.checkOut = checkOut; body.branchId = branchId;
@@ -1532,10 +1533,11 @@ export const RESOURCES: ResourceDefinition[] = [
       const rooms = Array.isArray(p.rooms) ? p.rooms : [];
       const totalBeds = rooms.reduce((n: number, room: any) => n + (Array.isArray(room.beds) ? room.beds.length : 0), 0);
       const occupiedBeds = rooms.reduce((n: number, room: any) => n + (Array.isArray(room.beds) ? room.beds.filter((b: any) => b.status === "occupied").length : 0), 0);
+      const availableBeds = rooms.reduce((n: number, room: any) => n + (Array.isArray(room.beds) ? room.beds.filter((b: any) => b.status === "available").length : 0), 0);
       p.roomCount = rooms.length;
       p.totalBeds = totalBeds;
       p.occupiedBeds = occupiedBeds;
-      p.availableBeds = Math.max(totalBeds - occupiedBeds, 0);
+      p.availableBeds = availableBeds;
       p.capacity = totalBeds;
       return p;
     },
@@ -1558,7 +1560,8 @@ export const RESOURCES: ResourceDefinition[] = [
       const beds = Array.isArray(p.beds) ? p.beds : [];
       p.bedCount = beds.length;
       p.availableBeds = beds.filter((b: any) => b.status === "available").length;
-      p.status = p.bedCount >= Number(p.capacity) ? "full" : "available";
+      p.occupiedBeds = beds.filter((b: any) => b.status === "occupied").length;
+      p.status = p.availableBeds === 0 ? "full" : "available";
       p.roomLabel = `Room ${p.roomNo} — ${p.hostelName}`;
       return p;
     },
