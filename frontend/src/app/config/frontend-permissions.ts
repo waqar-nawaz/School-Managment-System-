@@ -42,7 +42,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'certificates:read', 'certificates:create', 'certificates:update',
     'health-records:read', 'discipline-records:read', 'discipline-records:update',
     'complaints:read', 'complaints:create', 'complaints:update',
-    'inventory:read', 'assets:read', 'media:read', 'visitors:read', 'visitors:create',
+    'inventory:read', 'assets:read', 'visitors:read', 'visitors:create',
   ],
 
   teacher: [
@@ -87,7 +87,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'dashboard:read', 'academic:read', 'classes:read', 'sections:read', 'students:read',
     'fees:read', 'fees:create', 'fee-types:read', 'fee-types:create', 'fee-types:update',
     'invoices:read', 'invoices:create', 'invoices:update', 'invoices:delete',
-    'payments:read', 'payments:create', 'receipts:read', 'receipts:create', 'refunds:create',
+    'payments:read', 'payments:create', 'receipts:read', 'receipts:create', 'refunds:create', 'refunds:approve',
     'expenses:read', 'expenses:create', 'expenses:update',
     'payroll:read', 'payroll:create', 'payroll:update', 'payslips:read', 'payslips:create',
     'reports:read', 'reports:export',

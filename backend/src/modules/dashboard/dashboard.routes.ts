@@ -16,8 +16,12 @@ router.get(
   "/",
   authorize("dashboard:read"),
   asyncHandler(async (req, res) => {
-    // Local date — avoids UTC-vs-local timezone bug.
-    const today = new Date().toLocaleDateString("en-CA");
+    // Accept an optional ?date=YYYY-MM-DD from the browser so client and server agree on "today"
+    // (closes the timezone drift between server-UTC and browser-local).
+    const dateParam = typeof req.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date as string)
+      ? (req.query.date as string)
+      : new Date().toLocaleDateString("en-CA");
+    const today = dateParam;
     const branchFilter = req.user?.branchId != null ? { branchId: req.user.branchId } : {};
 
     const [

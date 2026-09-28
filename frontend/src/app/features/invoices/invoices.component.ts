@@ -23,7 +23,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     <div class="card">
       <div class="card-toolbar">
         <div class="search-box">
-          <input class="form-control" placeholder="Search invoice no…" [(ngModel)]="search" (ngModelChange)="load()" />
+          <input class="form-control" placeholder="Search invoice no…" [(ngModel)]="search" (ngModelChange)="debouncedLoad()" />
           @if (search) {
             <button type="button" class="search-clear" (click)="clearSearch()" aria-label="Clear search">
               <app-icon name="x" [size]="14" />
@@ -40,7 +40,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
             @for (inv of invoices; track inv.id) {
               <tr>
                 <td>{{ inv.invoiceNo }}</td>
-                <td>{{ inv.studentId }}</td>
+                <td>{{ studentNameOf(inv) }}</td>
                 <td>{{ money(inv.amount) }}</td>
                 <td>{{ money(inv.discount ?? 0) }}</td>
                 <td>{{ money(inv.totalDue) }}</td>
@@ -161,6 +161,25 @@ export class InvoicesComponent implements OnInit {
       next: (res) => (this.invoices = res?.data ?? []),
       error: () => {},
     });
+  }
+
+  debouncedLoad(): void {
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null;
+      this.load();
+    }, 300);
+  }
+
+  // Backend eagerly loads the `student` association (invoices.routes.ts:20).
+  // Resolve a human-readable name; fall back to the raw ID if the association is missing.
+  studentNameOf(inv: any): string {
+    const s = inv?.student;
+    if (!s) return `#${inv?.studentId ?? ''}`;
+    const first = s.firstName ?? '';
+    const last = s.lastName ?? '';
+    const name = `${first} ${last}`.trim();
+    return name || s.admissionNo || `#${inv?.studentId ?? ''}`;
   }
 
   money(v: unknown): string {

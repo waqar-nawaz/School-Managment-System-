@@ -7,7 +7,7 @@ import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
 import { writeAuditLog } from "../../services/audit.service";
 import {
-  User, Student, Teacher, Staff, Invoice, Payment, Attendance, ExamResult, Expense, Enrolment,
+  User, Student, Teacher, Staff, Invoice, Payment, Attendance, ExamResult, Expense, Enrolment, Refund,
 } from "../../models";
 
 const router = Router();
@@ -115,6 +115,10 @@ router.get(
 
     const invoiced = await Invoice.sum("totalDue", { where: invoiceWhere }) || 0;
     const collected = await Payment.sum("amount", { where: paymentWhere }) || 0;
+    // Subtract processed refunds from collected so the report reflects net cash collected.
+    const refundWhere: any = { refundedOn: { [Op.between]: [from, to] }, status: "processed" };
+    if (branchId) refundWhere.branchId = branchId;
+    const refunded = await Refund.sum("amount", { where: refundWhere }) || 0;
 
     let spentWhere: any = { expensedOn: { [Op.between]: [from, to] }, status: "approved" };
     if (branchId) {
@@ -122,8 +126,21 @@ router.get(
     }
     const spent = await Expense.sum("amount", { where: spentWhere }) || 0;
 
+    // Outstanding = sum of unpaid balances on invoices issued in the range.
+    // Previous calc (invoiced - collected) was wrong when invoice issueDate and payment paidOn
+    // fell in different reporting periods.
+    const outstandingInvoices = await Invoice.findAll({
+      where: invoiceWhere,
+      attributes: ["totalDue", "amountPaid"],
+      raw: true,
+    });
+    const outstanding = outstandingInvoices.reduce(
+      (sum, inv) => sum + Math.max(0, Number(inv.totalDue) - Number(inv.amountPaid)),
+      0
+    );
+
     ApiResponse.success(res, 200, "Fees report", {
-      invoiced, collected, outstanding: invoiced - collected, spent,
+      invoiced, collected, refunded, outstanding, spent,
     });
   })
 );
@@ -173,16 +190,19 @@ router.get(
       (async () => {
         const where: any = { status: "successful" };
         if (branchId) {
-          const studentIds = await branchStudentIds(branchId) || [];
-          where.studentId = { [Op.in]: studentIds };
+          where.branchId = branchId;
         }
-        return (await Payment.sum("amount", { where })) || 0;
+        const collected = (await Payment.sum("amount", { where })) || 0;
+        // Subtract processed refunds so a refunded payment doesn't count as collected.
+        const refundWhere: any = { status: "processed" };
+        if (branchId) refundWhere.branchId = branchId;
+        const refunded = (await Refund.sum("amount", { where: refundWhere })) || 0;
+        return collected - refunded;
       })(),
       (async () => {
-        const where: any = { status: { [Op.in]: ["pending", "partial"] } };
+        const where: any = { status: { [Op.in]: ["pending", "partial", "overdue"] } };
         if (branchId) {
-          const studentIds = await branchStudentIds(branchId) || [];
-          where.studentId = { [Op.in]: studentIds };
+          where.branchId = branchId;
         }
         return Invoice.count({ where });
       })(),

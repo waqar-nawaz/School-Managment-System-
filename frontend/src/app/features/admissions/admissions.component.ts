@@ -5,8 +5,21 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 
-// Must match the backend ADMISSION_STATUS enum.
-const STATUSES = ['enquiry', 'applied', 'shortlisted', 'admitted', 'rejected', 'waitlisted'];
+// Must match the backend ADMISSION_STATUS enum (utils/constants.ts).
+// `withdrawn` was missing — backend allows admitted→withdrawn.
+const STATUSES = ['enquiry', 'applied', 'shortlisted', 'admitted', 'rejected', 'waitlisted', 'withdrawn'];
+
+// Mirror of the backend state machine (admissions.routes.ts).
+// Used by the per-row status dropdown so the user can only pick valid transitions.
+const ADMISSION_TRANSITIONS: Record<string, string[]> = {
+  enquiry: ['applied', 'admitted', 'rejected', 'waitlisted'],
+  applied: ['shortlisted', 'admitted', 'rejected', 'waitlisted'],
+  shortlisted: ['admitted', 'rejected', 'waitlisted'],
+  waitlisted: ['admitted', 'rejected'],
+  admitted: ['withdrawn'],
+  rejected: [],
+  withdrawn: [],
+};
 
 @Component({
   selector: 'app-admissions',
@@ -37,7 +50,7 @@ const STATUSES = ['enquiry', 'applied', 'shortlisted', 'admitted', 'rejected', '
     <div class="card">
       <div class="card-toolbar">
         <div class="search-box">
-          <input class="form-control" placeholder="Search application…" [(ngModel)]="search" (ngModelChange)="load()" />
+          <input class="form-control" placeholder="Search application…" [(ngModel)]="search" (ngModelChange)="debouncedLoad()" />
           @if (search) {
             <button type="button" class="search-clear" (click)="clearSearch()" aria-label="Clear search">
               <app-icon name="x" [size]="14" />
@@ -71,7 +84,10 @@ const STATUSES = ['enquiry', 'applied', 'shortlisted', 'admitted', 'rejected', '
                     </button>
                   }
                   <select class="form-control form-control-sm" style="display:inline-block;width:auto;margin-left:.4rem" [value]="app.status" (change)="transition(app, $event)">
-                    @for (s of STATUSES; track s) { <option [value]="s">{{ s | titlecase }}</option> }
+                    @for (s of nextStatuses(app.status); track s) { <option [value]="s">{{ s | titlecase }}</option> }
+                    @if (nextStatuses(app.status).length === 0) {
+                      <option [value]="app.status" disabled>{{ app.status | titlecase }} (terminal)</option>
+                    }
                   </select>
                 </td>
               </tr>
@@ -165,6 +181,7 @@ export class AdmissionsComponent implements OnInit {
   showForm = false;
   saving = false;
   form: Record<string, any> = {};
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly api: ApiService,
@@ -207,10 +224,27 @@ export class AdmissionsComponent implements OnInit {
   }
 
   load(): void {
-    this.api.get<any[]>('/admissions', { page: 1, limit: 200, q: this.search, status: this.status }).subscribe({
+    // Send status filter as filter[status] so the backend crudFactory picks it up
+    // (flat `status=` is ignored by buildWhere).
+    const params: Record<string, unknown> = { page: 1, limit: 200, q: this.search };
+    if (this.status) params['filter[status]'] = this.status;
+    this.api.get<any[]>('/admissions', params).subscribe({
       next: (res) => (this.apps = res?.data ?? []),
       error: () => {},
     });
+  }
+
+  debouncedLoad(): void {
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null;
+      this.load();
+    }, 300);
+  }
+
+  /** Compute the list of statuses the user may transition to from the current status. */
+  nextStatuses(current: string): string[] {
+    return ADMISSION_TRANSITIONS[current] ?? [];
   }
 
   loadPipeline(): void {
@@ -220,30 +254,20 @@ export class AdmissionsComponent implements OnInit {
     });
   }
 
-  /** Create a student record from this application (the actual admission). */
+  /** Create a student record from this application — atomic single-call flow. */
   registerStudent(app: any): void {
-    if (!app?.id || app.status === 'admitted' || app.status === 'rejected') return;
-    const parts = String(app.studentName || '').trim().split(/\s+/);
-    const body: Record<string, unknown> = {
-      firstName: parts[0] || 'Student',
-      lastName: parts.slice(1).join(' '),
-      email: app.email || undefined,
-      gender: app.gender || undefined,
-      dob: app.dateOfBirth || undefined,
-      guardianPhone: app.phone || undefined,
-      admissionNo: app.applicationNo || undefined,
-      // Local date — avoids UTC-vs-local timezone bug on admission date.
-      admissionDate: new Date().toLocaleDateString('en-CA'),
-    };
-    this.api.post('/students', body).subscribe({
-      next: () => {
+    if (!app?.id || app.status === 'admitted' || app.status === 'rejected' || app.status === 'withdrawn') return;
+    // Use the atomic backend endpoint POST /admissions/:id/register which creates
+    // the Student + transitions the application in one transaction.
+    this.api.post(`/admissions/${app.id}/register`, {}).subscribe({
+      next: (res) => {
         this.toasts.success(`${app.studentName} admitted as a student`);
-        this.api.patch(`/admissions/${app.id}/status`, { status: 'admitted' }).subscribe(() => {
-          this.load();
-          this.loadPipeline();
-        });
+        this.load();
+        this.loadPipeline();
       },
-      error: () => {},
+      error: (err) => {
+        this.toasts.error(err?.error?.message || 'Could not register student from application');
+      },
     });
   }
 
@@ -261,6 +285,6 @@ export class AdmissionsComponent implements OnInit {
   }
 
   badgeOf(s: string): string {
-    return ({ admitted: 'success', shortlisted: 'info', rejected: 'danger', waitlisted: 'warning', applied: 'info', enquiry: '' } as Record<string, string>)[s] ?? '';
+    return ({ admitted: 'success', shortlisted: 'info', rejected: 'danger', waitlisted: 'warning', withdrawn: 'warning', applied: 'info', enquiry: '' } as Record<string, string>)[s] ?? '';
   }
 }

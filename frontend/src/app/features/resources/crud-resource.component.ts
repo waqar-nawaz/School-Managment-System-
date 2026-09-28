@@ -725,7 +725,15 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
       }
       let v = this.formValues[f.key];
       if (v === '' || v === null || v === undefined) v = this.formDefault(f);
-      if (v !== undefined) body[f.key] = v;
+      if (v !== undefined) {
+        // Convert comma-separated recipient IDs into a number[] for the backend.
+        if (f.key === 'recipientIds' && typeof v === 'string') {
+          const ids = v.split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0);
+          body[f.key] = ids;
+        } else {
+          body[f.key] = v;
+        }
+      }
     }
     const request = this.editingId
       ? this.api.put(`${this.config.api}/${this.editingId}`, body)
@@ -738,9 +746,17 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         this.toasts.success(this.editingId ? 'Record updated' : 'Record created');
         this.load();
       },
-      error: () => {
+      error: (err) => {
         this.saving = false;
         this.saveBusy = false;
+        // Map backend field-level errors ({ errors: [{ path, message }] }) to inline red messages
+        // so the user sees exactly which field failed — instead of only a generic toast.
+        const errs = err?.error?.errors;
+        if (Array.isArray(errs)) {
+          for (const e of errs) {
+            if (e?.path) this.fieldErrors[e.path] = e.message ?? 'Invalid value';
+          }
+        }
       },
     });
   }

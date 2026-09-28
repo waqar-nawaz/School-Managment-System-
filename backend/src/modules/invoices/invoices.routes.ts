@@ -5,7 +5,7 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { Invoice, FeeType, Student, Enrolment, Term, Payment, Receipt, StudentGuardian } from "../../models";
+import { Invoice, FeeType, Student, Enrolment, Term, Payment, Receipt, StudentGuardian, Parent } from "../../models";
 import { createCrudController } from "../../utils/crudFactory";
 import { writeAuditLog } from "../../services/audit.service";
 import { v4 as uuidv4 } from "uuid";
@@ -23,7 +23,43 @@ const base = createCrudController<Invoice>({
 
 router.get("/", authorize("invoices:read"), (req, res, next) => base.list(req, res).catch(next));
 router.get("/:id", authorize("invoices:read"), (req, res, next) => base.getOne(req, res).catch(next));
-router.put("/:id", authorize("invoices:update"), (req, res, next) => base.update(req, res).catch(next));
+// PUT freezes financial fields once the invoice has any payment (amountPaid > 0) or is cancelled.
+// Allows editing only of metadata fields like notes/dueDate (not amounts, status, lineItems).
+router.put("/:id", authorize("invoices:update"), asyncHandler(async (req, res, next) => {
+  const callerBranch = req.user!.branchId;
+  const invoice = await Invoice.findByPk(req.params.id);
+  if (!invoice) throw ApiError.notFound("Invoice not found");
+  if (callerBranch != null && Number(invoice.branchId) !== Number(callerBranch)) {
+    throw ApiError.forbidden("Invoice does not belong to your branch");
+  }
+  const frozen = Number(invoice.amountPaid) > 0 || invoice.status === "cancelled" || invoice.status === "paid";
+  const FROZEN_FIELDS = new Set(["amount", "lineItems", "totalDue", "amountPaid", "status", "invoiceNo", "studentId", "branchId", "discount", "tax"]);
+  const body = { ...req.body };
+  if (frozen) {
+    for (const k of Object.keys(body)) {
+      if (FROZEN_FIELDS.has(k)) delete body[k];
+    }
+  } else {
+    // Even before payment, prevent overriding audit/pk fields.
+    for (const k of ["id", "createdAt", "updatedAt", "invoiceNo", "amountPaid", "studentId", "branchId"]) {
+      delete body[k];
+    }
+  }
+  if (Object.keys(body).length === 0) {
+    throw ApiError.badRequest("Invoice is locked — cannot modify financial fields once payment has been recorded");
+  }
+  await invoice.update(body);
+  await writeAuditLog({
+    action: "update",
+    entity: "invoice",
+    entityId: invoice.id,
+    userId: req.user!.id,
+    role: req.user!.role,
+    branchId: invoice.branchId,
+    newData: body,
+  });
+  ApiResponse.success(res, 200, "Invoice updated", invoice);
+}));
 // Note: DELETE on financial records is intentionally disabled.
 // Use PATCH /:id/status with status='cancelled' to void an invoice.
 // router.delete("/:id", authorize("invoices:delete"), (req, res, next) => base.remove(req, res).catch(next));
@@ -117,6 +153,7 @@ router.patch("/:id/status", authorize("invoices:update"), asyncHandler(async (re
   if (callerBranch != null && Number(invoice.branchId) !== Number(callerBranch)) {
     throw ApiError.forbidden("Invoice does not belong to your branch");
   }
+  const oldStatus = invoice.status;  // capture BEFORE update
   const nextStatus = String(req.body.status || "");
   const allowed = INVOICE_TRANSITIONS[invoice.status] ?? [];
   if (!allowed.includes(nextStatus)) {
@@ -133,7 +170,7 @@ router.patch("/:id/status", authorize("invoices:update"), asyncHandler(async (re
     userId: req.user!.id,
     role: req.user!.role,
     branchId: invoice.branchId,
-    oldData: { status: invoice.status },
+    oldData: { status: oldStatus },
     newData: { status: nextStatus },
   });
   ApiResponse.success(res, 200, "Invoice updated", invoice);
@@ -153,10 +190,15 @@ router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, r
     if (callerBranch != null && Number(invoice.branchId) !== Number(callerBranch)) {
       throw ApiError.forbidden("Invoice does not belong to your branch");
     }
-    // Parent role: must be linked to the invoice's student via StudentGuardian.
+    // Parent role: must be linked to the invoice's student via Parent → StudentGuardian.
+    // Previous bug used the wrong column name (`guardianId` which doesn't exist on
+    // `student_guardians`) and the wrong value (`req.user.id` instead of `parent.id`).
+    // The result was that every parent payment returned 403.
     if (callerRole === "parent") {
+      const parent = await Parent.findOne({ where: { userId: req.user!.id }, transaction: t });
+      if (!parent) throw ApiError.forbidden("Parent profile not found");
       const link = await StudentGuardian.findOne({
-        where: { guardianId: req.user!.id, studentId: invoice.studentId },
+        where: { parentId: parent.id, studentId: invoice.studentId },
         transaction: t,
       });
       if (!link) throw ApiError.forbidden("You can only pay invoices for your own children");
@@ -168,13 +210,18 @@ router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, r
     const remaining = Math.max(0, Number(invoice.totalDue) - Number(invoice.amountPaid));
     if (amount > remaining) throw ApiError.badRequest(`Payment exceeds remaining balance of ${remaining}`);
 
+    // Validate payment method against the documented enum + common aliases the frontend sends.
+    const ALLOWED_METHODS = new Set(["cash", "card", "bank", "mobile", "online", "bank_transfer", "cheque"]);
+    const method = String(req.body.method || "cash").toLowerCase();
+    if (!ALLOWED_METHODS.has(method)) throw ApiError.badRequest(`Invalid payment method: ${method}`);
+
     const payment = await Payment.create({
       receiptNo: `PAY-${uuidv4().slice(0, 8).toUpperCase()}`,
       invoiceId: invoice.id,
       studentId: invoice.studentId,
       branchId: invoice.branchId,
       amount,
-      method: req.body.method || "cash",
+      method,
       reference: req.body.reference,
       paidOn: req.body.paidOn || new Date(),
       status: "successful",
@@ -205,7 +252,7 @@ router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, r
       role: req.user!.role,
       branchId: invoice.branchId,
       ip: req.ip,
-      newData: { invoiceId: invoice.id, amount, method: payment.method },
+      newData: { invoiceId: invoice.id, amount, method },
     });
 
     await t.commit();

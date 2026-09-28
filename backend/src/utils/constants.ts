@@ -21,7 +21,7 @@ export const ATTENDANCE_STATUS = ["present", "absent", "late", "excused", "holid
 export const PAYMENT_STATUS = ["pending", "partial", "paid", "overdue", "cancelled"] as const;
 export const BOOK_ISSUE_STATUS = ["requested", "issued", "returned", "overdue", "lost"] as const;
 export const LEAVE_STATUS = ["pending", "approved", "rejected", "cancelled"] as const;
-export const ADMISSION_STATUS = ["enquiry", "applied", "shortlisted", "admitted", "rejected", "waitlisted"] as const;
+export const ADMISSION_STATUS = ["enquiry", "applied", "shortlisted", "admitted", "rejected", "waitlisted", "withdrawn"] as const;
 export const EXAM_TYPES = ["weekly", "monthly", "midterm", "final", "quiz"] as const;
 export const CERTIFICATE_TYPES = ["transfer", "character", "bonafide", "provisional", "mark_sheet"] as const;
 

@@ -9,7 +9,7 @@ import {
   Route, RouteStop, Vehicle, DriverAssignment, StudentTransport, Hostel, Room, Bed,
   HostelAllocation, Event, Notice, Announcement, Message, Notification, Syllabus,
   LessonPlan, HealthRecord, DisciplineRecord, Complaint, InventoryItem, Asset,
-  AuditLog, VisitorLog, User, BookIssue,
+  AuditLog, VisitorLog, User, BookIssue, MessageRecipient,
 } from "../../models";
 
 export interface ResourceDefinition {
@@ -47,9 +47,9 @@ const validateStaffProfile = async (body: any, req: Request, model: any, label: 
   if (String(user.role) !== expectedRole) throw ApiError.badRequest(`Selected user must have the ${expectedRole} role`);
   if (Number(user.branchId) !== branchId) throw ApiError.badRequest(`Selected ${label} user does not belong to your branch`);
   const staffNo = String(body.staffNo ?? existing?.staffNo ?? "").trim();
-  if (!staffNo) throw new Error("staffNo is required");
+  if (!staffNo) throw ApiError.badRequest("staffNo is required");
   const duplicate = await model.findOne({ where: { staffNo, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw new Error(`${label} staffNo already exists in this branch`);
+  if (duplicate) throw ApiError.badRequest(`${label} staffNo already exists in this branch`);
   body.userId = userId;
   body.staffNo = staffNo;
   body.branchId = branchId;
@@ -68,7 +68,7 @@ const validateParentProfile = async (body: any, req: Request) => {
   if (String(user.role) !== "parent") throw ApiError.badRequest("Selected user must have the parent role");
   if (Number(user.branchId) !== branchId) throw ApiError.badRequest("Selected parent user does not belong to your branch");
   const fullName = String(body.fullName ?? existing?.fullName ?? "").trim();
-  if (!fullName) throw new Error("Parent fullName is required");
+  if (!fullName) throw ApiError.badRequest("Parent fullName is required");
   body.userId = userId;
   body.fullName = fullName;
   body.branchId = branchId;
@@ -122,8 +122,8 @@ const validateSchoolClass = async (body: any, req: Request) => {
   const level = String(body.level ?? existing?.level ?? "").trim();
   const capacity = Number(body.capacity ?? existing?.capacity ?? 0);
   const isActive = body.isActive !== undefined ? Boolean(body.isActive) : Boolean(existing?.isActive ?? true);
-  if (!name) throw new Error("Class name is required");
-  if (!Number.isInteger(capacity) || capacity < 0) throw new Error("Class capacity must be a non-negative integer");
+  if (!name) throw ApiError.badRequest("Class name is required");
+  if (!Number.isInteger(capacity) || capacity < 0) throw ApiError.badRequest("Class capacity must be a non-negative integer");
   const duplicate = await SchoolClass.findOne({
     where: {
       name,
@@ -131,7 +131,7 @@ const validateSchoolClass = async (body: any, req: Request) => {
       ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
     },
   });
-  if (duplicate) throw new Error("Class already exists in this branch");
+  if (duplicate) throw ApiError.badRequest("Class already exists in this branch");
   body.name = name;
   body.level = level || null;
   body.capacity = capacity;
@@ -215,16 +215,16 @@ const validateAcademicYear = async (body: any, req: Request) => {
   const end = body.endDate !== undefined ? new Date(body.endDate) : (existing?.endDate ? new Date(existing.endDate) : null);
   const isCurrent = body.isCurrent !== undefined ? Boolean(body.isCurrent) : Boolean(existing?.isCurrent);
   const isClosed = body.isClosed !== undefined ? Boolean(body.isClosed) : Boolean(existing?.isClosed);
-  if (!name) throw new Error("Academic year name is required");
+  if (!name) throw ApiError.badRequest("Academic year name is required");
   if (!start || !end || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end) {
-    throw new Error("Academic year startDate must be before endDate");
+    throw ApiError.badRequest("Academic year startDate must be before endDate");
   }
-  if (isClosed && isCurrent) throw new Error("A closed academic year cannot be current");
+  if (isClosed && isCurrent) throw ApiError.badRequest("A closed academic year cannot be current");
   if (isCurrent) {
     const current = await AcademicYear.findOne({
       where: { isCurrent: true, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
     });
-    if (current) throw new Error("Another academic year is already marked as current");
+    if (current) throw ApiError.badRequest("Another academic year is already marked as current");
   }
   body.name = name;
   body.startDate = start;
@@ -369,7 +369,8 @@ const validateExamResult = async (body: any, req: Request) => {
 
 const parseTimeMinutes = (value: unknown): number | null => {
   const s = String(value ?? "").trim();
-  const m = /^(\\d{1,2}):(\\d{2})$/.exec(s);
+  // NOTE: literal \d (not escaped \\d) — earlier double-escaped regex matched a literal backslash+d, not a digit.
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s);
   if (!m) return null;
   const h = Number(m[1]), min = Number(m[2]);
   return h >= 0 && h <= 23 && min >= 0 && min <= 59 ? h * 60 + min : null;
@@ -435,15 +436,15 @@ const validateExam = async (body: any, req: Request) => {
   const maxMarks = Number(body.maxMarks ?? existing?.maxMarks ?? 100);
   const type = String(body.examType ?? existing?.examType ?? 'midterm');
   const status = String(body.status ?? existing?.status ?? 'draft');
-  if (!name || !Number.isInteger(academicYearId) || academicYearId <= 0) throw new Error('name and academicYearId are required');
-  if (!['weekly','monthly','midterm','final','quiz'].includes(type)) throw new Error('Invalid exam type');
-  if (!['draft','published','completed','cancelled'].includes(status)) throw new Error('Invalid exam status');
-  if (!start || !end || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) throw new Error('Invalid exam date range');
-  if (!Number.isInteger(maxMarks) || maxMarks <= 0) throw new Error('maxMarks must be a positive integer');
+  if (!name || !Number.isInteger(academicYearId) || academicYearId <= 0) throw ApiError.badRequest('name and academicYearId are required');
+  if (!['weekly','monthly','midterm','final','quiz'].includes(type)) throw ApiError.badRequest('Invalid exam type');
+  if (!['draft','published','completed','cancelled'].includes(status)) throw ApiError.badRequest('Invalid exam status');
+  if (!start || !end || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) throw ApiError.badRequest('Invalid exam date range');
+  if (!Number.isInteger(maxMarks) || maxMarks <= 0) throw ApiError.badRequest('maxMarks must be a positive integer');
   const year = await AcademicYear.findByPk(academicYearId);
-  if (!year) throw new Error('Academic year not found');
-  if (start < new Date(year.startDate) || end > new Date(year.endDate)) throw new Error('Exam dates must be within the academic year');
-  if (termId) { const term = await Term.findByPk(termId); if (!term || Number(term.academicYearId) !== academicYearId) throw new Error('Selected term does not belong to the academic year'); }
+  if (!year) throw ApiError.badRequest('Academic year not found');
+  if (start < new Date(year.startDate) || end > new Date(year.endDate)) throw ApiError.badRequest('Exam dates must be within the academic year');
+  if (termId) { const term = await Term.findByPk(termId); if (!term || Number(term.academicYearId) !== academicYearId) throw ApiError.badRequest('Selected term does not belong to the academic year'); }
   body.name=name; body.academicYearId=academicYearId; body.termId=termId; body.startDate=start; body.endDate=end; body.maxMarks=maxMarks; body.examType=type; body.status=status; body.branchId=req.user?.branchId;
   return body;
 };
@@ -637,14 +638,14 @@ const validateReportCard = async (body: any, req: Request) => {
   const existing = await getExisting(ReportCard, req);
   const enrolmentId = Number(body.enrolmentId ?? existing?.enrolmentId);
   const termId = body.termId !== undefined ? (body.termId ? Number(body.termId) : null) : (existing?.termId ?? null);
-  if (!Number.isInteger(enrolmentId) || enrolmentId <= 0) throw new Error('enrolmentId is required');
+  if (!Number.isInteger(enrolmentId) || enrolmentId <= 0) throw ApiError.badRequest('enrolmentId is required');
   const enrolment = await Enrolment.findByPk(enrolmentId);
-  if (!enrolment) throw new Error('Enrolment not found');
-  if (req.user?.branchId != null && Number(enrolment.branchId) !== Number(req.user.branchId)) throw new Error('Enrolment does not belong to your branch');
-  if (termId) { const term = await Term.findByPk(termId); if (!term || Number(term.academicYearId) !== Number(enrolment.academicYearId)) throw new Error('Term does not belong to the enrolment academic year'); }
-  if (existing && Number(existing.enrolmentId) !== enrolmentId) throw new Error('Report card enrolment cannot be changed');
+  if (!enrolment) throw ApiError.badRequest('Enrolment not found');
+  if (req.user?.branchId != null && Number(enrolment.branchId) !== Number(req.user.branchId)) throw ApiError.badRequest('Enrolment does not belong to your branch');
+  if (termId) { const term = await Term.findByPk(termId); if (!term || Number(term.academicYearId) !== Number(enrolment.academicYearId)) throw ApiError.badRequest('Term does not belong to the enrolment academic year'); }
+  if (existing && Number(existing.enrolmentId) !== enrolmentId) throw ApiError.badRequest('Report card enrolment cannot be changed');
   const duplicate = await ReportCard.findOne({ where: { enrolmentId, termId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw new Error('Report card already exists for this enrolment and term');
+  if (duplicate) throw ApiError.badRequest('Report card already exists for this enrolment and term');
   body.enrolmentId=enrolmentId; body.studentId=enrolment.studentId; body.termId=termId; body.branchId=req.user?.branchId;
   return body;
 };
@@ -731,14 +732,14 @@ const validateVehicle = async (body: any, req: Request) => {
 const validateInventory = async (body: any, req: Request) => {
   const existing = await getExisting(InventoryItem, req);
   const name = String(body.name ?? existing?.name ?? "").trim();
-  if (!name) throw new Error("Inventory item name is required");
+  if (!name) throw ApiError.badRequest("Inventory item name is required");
 
   const quantity = Number(body.quantity ?? existing?.quantity ?? 0);
   const minQuantity = Number(body.minQuantity ?? existing?.minQuantity ?? 0);
   const unitPrice = Number(body.unitPrice ?? existing?.unitPrice ?? 0);
-  if (!Number.isInteger(quantity) || quantity < 0) throw new Error("quantity must be a non-negative integer");
-  if (!Number.isInteger(minQuantity) || minQuantity < 0) throw new Error("minQuantity must be a non-negative integer");
-  if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error("unitPrice must be a non-negative number");
+  if (!Number.isInteger(quantity) || quantity < 0) throw ApiError.badRequest("quantity must be a non-negative integer");
+  if (!Number.isInteger(minQuantity) || minQuantity < 0) throw ApiError.badRequest("minQuantity must be a non-negative integer");
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) throw ApiError.badRequest("unitPrice must be a non-negative number");
 
   const sku = String(body.sku ?? existing?.sku ?? "").trim();
   const branchId = req.user?.branchId;
@@ -750,7 +751,7 @@ const validateInventory = async (body: any, req: Request) => {
         ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
       },
     });
-    if (duplicate) throw new Error("Inventory SKU already exists");
+    if (duplicate) throw ApiError.badRequest("Inventory SKU already exists");
     body.sku = sku;
   }
   body.name = name;
@@ -764,7 +765,7 @@ const validateAsset = async (body: any, req: Request) => {
   const existing = await getExisting(Asset, req);
   const assetCode = String(body.assetCode ?? existing?.assetCode ?? "").trim();
   const name = String(body.name ?? existing?.name ?? "").trim();
-  if (!assetCode || !name) throw new Error("assetCode and name are required");
+  if (!assetCode || !name) throw ApiError.badRequest("assetCode and name are required");
 
   const branchId = req.user?.branchId;
   const duplicate = await Asset.findOne({
@@ -774,21 +775,21 @@ const validateAsset = async (body: any, req: Request) => {
       ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
     },
   });
-  if (duplicate) throw new Error("Asset code already exists");
+  if (duplicate) throw ApiError.badRequest("Asset code already exists");
 
   if (body.purchaseDate !== undefined || existing?.purchaseDate) {
     const date = body.purchaseDate !== undefined ? new Date(body.purchaseDate) : new Date(existing.purchaseDate);
-    if (!Number.isFinite(date.getTime())) throw new Error("Invalid purchaseDate");
+    if (!Number.isFinite(date.getTime())) throw ApiError.badRequest("Invalid purchaseDate");
     body.purchaseDate = date;
   }
   if (body.purchasePrice !== undefined || existing?.purchasePrice !== undefined) {
     const price = Number(body.purchasePrice ?? existing?.purchasePrice ?? 0);
-    if (!Number.isFinite(price) || price < 0) throw new Error("purchasePrice must be a non-negative number");
+    if (!Number.isFinite(price) || price < 0) throw ApiError.badRequest("purchasePrice must be a non-negative number");
     body.purchasePrice = price;
   }
   const allowed = ["in_use", "stored", "maintenance", "scrapped"];
   const status = String(body.status ?? existing?.status ?? "in_use");
-  if (!allowed.includes(status)) throw new Error("Invalid asset status");
+  if (!allowed.includes(status)) throw ApiError.badRequest("Invalid asset status");
   body.assetCode = assetCode;
   body.name = name;
   body.status = status;
@@ -800,17 +801,17 @@ const validateDiscipline = async (body: any, req: Request) => {
   const studentId = Number(body.studentId ?? existing?.studentId);
   const type = String(body.type ?? existing?.type ?? "").trim();
   const recordedOn = body.recordedOn !== undefined ? new Date(body.recordedOn) : new Date(existing?.recordedOn ?? Date.now());
-  if (!Number.isInteger(studentId) || studentId <= 0) throw new Error("Valid studentId is required");
-  if (!type) throw new Error("type is required");
+  if (!Number.isInteger(studentId) || studentId <= 0) throw ApiError.badRequest("Valid studentId is required");
+  if (!type) throw ApiError.badRequest("type is required");
   if (!["warning", "detention", "suspension", "praise"].includes(type)) {
-    throw new Error("Invalid discipline record type");
+    throw ApiError.badRequest("Invalid discipline record type");
   }
-  if (!Number.isFinite(recordedOn.getTime())) throw new Error("Invalid recordedOn date");
+  if (!Number.isFinite(recordedOn.getTime())) throw ApiError.badRequest("Invalid recordedOn date");
 
   const student = await Student.findByPk(studentId);
-  if (!student) throw new Error("Student not found");
+  if (!student) throw ApiError.badRequest("Student not found");
   if (req.user?.branchId != null && Number(student.branchId) !== Number(req.user.branchId)) {
-    throw new Error("Student does not belong to your branch");
+    throw ApiError.badRequest("Student does not belong to your branch");
   }
 
   body.studentId = studentId;
@@ -825,8 +826,8 @@ const validateHostel = async (body: any, req: Request) => {
   const name = String(body.name ?? existing?.name ?? "").trim();
   const gender = String(body.gender ?? existing?.gender ?? "");
   const branchId = req.user?.branchId;
-  if (!name) throw new Error("Hostel name is required");
-  if (!["boys", "girls", "coed"].includes(gender)) throw new Error("Invalid hostel gender");
+  if (!name) throw ApiError.badRequest("Hostel name is required");
+  if (!["boys", "girls", "coed"].includes(gender)) throw ApiError.badRequest("Invalid hostel gender");
   // Capacity is derived from actual beds; keep the legacy column for compatibility.
   body.name = name; body.gender = gender; body.capacity = existing?.capacity ?? 0; body.branchId = branchId;
   return body;
@@ -838,18 +839,18 @@ const validateRoom = async (body: any, req: Request) => {
   const roomNo = String(body.roomNo ?? existing?.roomNo ?? "").trim();
   const capacity = Number(body.capacity ?? existing?.capacity ?? 4);
   const branchId = req.user?.branchId;
-  if (!Number.isInteger(hostelId) || hostelId <= 0 || !roomNo) throw new Error("hostelId and roomNo are required");
-  if (!Number.isInteger(capacity) || capacity < 1) throw new Error("Room capacity must be positive");
+  if (!Number.isInteger(hostelId) || hostelId <= 0 || !roomNo) throw ApiError.badRequest("hostelId and roomNo are required");
+  if (!Number.isInteger(capacity) || capacity < 1) throw ApiError.badRequest("Room capacity must be positive");
   if (existing) {
     const currentBedCount = await Bed.count({ where: { roomId: existing.id } });
-    if (capacity < currentBedCount) throw new Error("Room capacity cannot be less than its existing beds");
+    if (capacity < currentBedCount) throw ApiError.badRequest("Room capacity cannot be less than its existing beds");
   }
   const hostel = await Hostel.findByPk(hostelId);
   if (!hostel || hostel.isActive === false || (branchId != null && Number(hostel.branchId) !== Number(branchId))) {
-    throw new Error("Hostel does not belong to your branch or is inactive");
+    throw ApiError.badRequest("Hostel does not belong to your branch or is inactive");
   }
   const duplicate = await Room.findOne({ where: { hostelId, roomNo, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw new Error("Room number already exists in this hostel");
+  if (duplicate) throw ApiError.badRequest("Room number already exists in this hostel");
   body.hostelId = hostelId; body.roomNo = roomNo; body.capacity = capacity; body.branchId = branchId;
   return body;
 };
@@ -859,19 +860,19 @@ const validateBed = async (body: any, req: Request) => {
   const roomId = Number(body.roomId ?? existing?.roomId);
   const bedNo = String(body.bedNo ?? existing?.bedNo ?? "").trim();
   const branchId = req.user?.branchId;
-  if (!Number.isInteger(roomId) || roomId <= 0 || !bedNo) throw new Error("roomId and bedNo are required");
+  if (!Number.isInteger(roomId) || roomId <= 0 || !bedNo) throw ApiError.badRequest("roomId and bedNo are required");
   const room = await Room.findByPk(roomId);
-  if (!room || (branchId != null && Number(room.branchId) !== Number(branchId))) throw new Error("Room does not belong to your branch");
+  if (!room || (branchId != null && Number(room.branchId) !== Number(branchId))) throw ApiError.badRequest("Room does not belong to your branch");
   const hostel = await Hostel.findByPk(room.hostelId);
   if (!hostel || hostel.isActive === false || (branchId != null && Number(hostel.branchId) !== Number(branchId))) {
-    throw new Error("Room's hostel is inactive or outside your branch");
+    throw ApiError.badRequest("Room's hostel is inactive or outside your branch");
   }
   const duplicate = await Bed.findOne({ where: { roomId, bedNo, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw new Error("Bed number already exists in this room");
+  if (duplicate) throw ApiError.badRequest("Bed number already exists in this room");
   if (!existing) {
     const bedCount = await Bed.count({ where: { roomId } });
     if (bedCount >= Number(room.capacity)) {
-      throw new Error(`Room ${room.roomNo} has reached its capacity of ${room.capacity} beds`);
+      throw ApiError.badRequest(`Room ${room.roomNo} has reached its capacity of ${room.capacity} beds`);
     }
   }
   body.roomId = roomId; body.bedNo = bedNo; body.branchId = branchId;
@@ -898,33 +899,33 @@ const validateHostelAllocation = async (body: any, req: Request) => {
   const checkIn = body.checkIn !== undefined ? new Date(body.checkIn) : (existing?.checkIn ? new Date(existing.checkIn) : new Date());
   const checkOut = body.checkOut !== undefined ? (body.checkOut ? new Date(body.checkOut) : null) : (existing?.checkOut ? new Date(existing.checkOut) : null);
 
-  if (!Number.isInteger(studentId) || studentId <= 0 || !Number.isInteger(bedId) || bedId <= 0) throw new Error("studentId and bedId are required");
-  if (!["active", "checked_out", "transferred"].includes(status)) throw new Error("Invalid hostel allocation status");
-  if (!Number.isFinite(monthlyFee) || monthlyFee < 0) throw new Error("monthlyFee must be non-negative");
-  if (!Number.isFinite(checkIn.getTime()) || (checkOut && (!Number.isFinite(checkOut.getTime()) || checkOut < checkIn))) throw new Error("Invalid hostel allocation date range");
+  if (!Number.isInteger(studentId) || studentId <= 0 || !Number.isInteger(bedId) || bedId <= 0) throw ApiError.badRequest("studentId and bedId are required");
+  if (!["active", "checked_out", "transferred"].includes(status)) throw ApiError.badRequest("Invalid hostel allocation status");
+  if (!Number.isFinite(monthlyFee) || monthlyFee < 0) throw ApiError.badRequest("monthlyFee must be non-negative");
+  if (!Number.isFinite(checkIn.getTime()) || (checkOut && (!Number.isFinite(checkOut.getTime()) || checkOut < checkIn))) throw ApiError.badRequest("Invalid hostel allocation date range");
 
   const student = await Student.findByPk(studentId);
-  if (!student || (branchId != null && Number(student.branchId) !== Number(branchId))) throw new Error("Student does not belong to your branch");
+  if (!student || (branchId != null && Number(student.branchId) !== Number(branchId))) throw ApiError.badRequest("Student does not belong to your branch");
 
   const bed = await Bed.findByPk(bedId);
-  if (!bed || (branchId != null && Number(bed.branchId) !== Number(branchId))) throw new Error("Selected bed does not belong to your branch");
+  if (!bed || (branchId != null && Number(bed.branchId) !== Number(branchId))) throw ApiError.badRequest("Selected bed does not belong to your branch");
   const changingBed = !existing || Number(existing.bedId) !== bedId;
-  if (changingBed && bed.status !== "available") throw new Error("Selected bed is not available");
+  if (changingBed && bed.status !== "available") throw ApiError.badRequest("Selected bed is not available");
 
   const room = await Room.findByPk(bed.roomId);
-  if (!room || (branchId != null && Number(room.branchId) !== Number(branchId))) throw new Error("Room does not belong to your branch");
+  if (!room || (branchId != null && Number(room.branchId) !== Number(branchId))) throw ApiError.badRequest("Room does not belong to your branch");
   const hostel = await Hostel.findByPk(room.hostelId);
-  if (requestedRoomId !== undefined && requestedRoomId !== room.id) throw new Error("Selected room does not match the selected bed");
-  if (requestedHostelId !== undefined && requestedHostelId !== hostel?.id) throw new Error("Selected hostel does not match the selected room");
-  if (!hostel || hostel.isActive === false || (branchId != null && Number(hostel.branchId) !== Number(branchId))) throw new Error("Hostel does not belong to your branch or is inactive");
+  if (requestedRoomId !== undefined && requestedRoomId !== room.id) throw ApiError.badRequest("Selected room does not match the selected bed");
+  if (requestedHostelId !== undefined && requestedHostelId !== hostel?.id) throw ApiError.badRequest("Selected hostel does not match the selected room");
+  if (!hostel || hostel.isActive === false || (branchId != null && Number(hostel.branchId) !== Number(branchId))) throw ApiError.badRequest("Hostel does not belong to your branch or is inactive");
 
   const activeBed = await HostelAllocation.findOne({ where: { bedId, status: "active", ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (status === "active" && activeBed) throw new Error("Selected bed is already allocated");
+  if (status === "active" && activeBed) throw ApiError.badRequest("Selected bed is already allocated");
 
   const activeStudent = status === "active"
     ? await HostelAllocation.findOne({ where: { studentId, status: "active", ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } })
     : null;
-  if (activeStudent) throw new Error("Student already has an active hostel allocation");
+  if (activeStudent) throw ApiError.badRequest("Student already has an active hostel allocation");
 
   const previousRoomId = existing && Number(existing.bedId) !== bedId
     ? Number((await Bed.findByPk(existing.bedId))?.roomId ?? 0)
@@ -949,13 +950,13 @@ const validateCertificate = async (body: any, req: Request) => {
   const type = String(body.type ?? existing?.type ?? "");
   const issuedOn = body.issuedOn !== undefined ? new Date(body.issuedOn) : (existing?.issuedOn ? new Date(existing.issuedOn) : new Date());
   const branchId = req.user?.branchId;
-  if (!certNo || !Number.isInteger(studentId) || studentId <= 0) throw new Error("certNo and studentId are required");
-  if (!["transfer", "character", "bonafide", "provisional", "mark_sheet"].includes(type)) throw new Error("Invalid certificate type");
-  if (!Number.isFinite(issuedOn.getTime())) throw new Error("Invalid issuedOn date");
+  if (!certNo || !Number.isInteger(studentId) || studentId <= 0) throw ApiError.badRequest("certNo and studentId are required");
+  if (!["transfer", "character", "bonafide", "provisional", "mark_sheet"].includes(type)) throw ApiError.badRequest("Invalid certificate type");
+  if (!Number.isFinite(issuedOn.getTime())) throw ApiError.badRequest("Invalid issuedOn date");
   const student = await Student.findByPk(studentId);
-  if (!student || (branchId != null && Number(student.branchId) !== Number(branchId))) throw new Error("Student does not belong to your branch");
+  if (!student || (branchId != null && Number(student.branchId) !== Number(branchId))) throw ApiError.badRequest("Student does not belong to your branch");
   const duplicate = await Certificate.findOne({ where: { certNo, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw new Error("Certificate number already exists");
+  if (duplicate) throw ApiError.badRequest("Certificate number already exists");
   body.studentId = studentId; body.certNo = certNo; body.type = type; body.issuedOn = issuedOn; body.branchId = branchId;
   return body;
 };
@@ -1018,12 +1019,12 @@ const validateHealthRecord = async (body: any, req: Request) => {
   const existing = await getExisting(HealthRecord, req);
   const studentId = Number(body.studentId ?? existing?.studentId);
   const branchId = req.user?.branchId;
-  if (!Number.isInteger(studentId) || studentId <= 0) throw new Error("studentId is required");
+  if (!Number.isInteger(studentId) || studentId <= 0) throw ApiError.badRequest("studentId is required");
   const student = await Student.findByPk(studentId);
-  if (!student || (branchId != null && Number(student.branchId) !== Number(branchId))) throw new Error("Student does not belong to your branch");
+  if (!student || (branchId != null && Number(student.branchId) !== Number(branchId))) throw ApiError.badRequest("Student does not belong to your branch");
   body.studentId = studentId; body.branchId = branchId;
   if (body.lastCheckup !== undefined && body.lastCheckup) {
-    const d = new Date(body.lastCheckup); if (!Number.isFinite(d.getTime())) throw new Error("Invalid lastCheckup date"); body.lastCheckup = d;
+    const d = new Date(body.lastCheckup); if (!Number.isFinite(d.getTime())) throw ApiError.badRequest("Invalid lastCheckup date"); body.lastCheckup = d;
   }
   return body;
 };
@@ -1036,14 +1037,14 @@ const validateComplaint = async (body: any, req: Request) => {
   const status = String(body.status ?? existing?.status ?? "open");
   const priority = String(body.priority ?? existing?.priority ?? "low");
   const branchId = req.user?.branchId;
-  if (!title || !description) throw new Error("Complaint title and description are required");
-  if (!["grievance", "harassment", "infrastructure", "other"].includes(category)) throw new Error("Invalid complaint category");
-  if (!["open", "in_progress", "resolved", "closed", "rejected"].includes(status)) throw new Error("Invalid complaint status");
-  if (!["low", "medium", "high", "urgent"].includes(priority)) throw new Error("Invalid complaint priority");
+  if (!title || !description) throw ApiError.badRequest("Complaint title and description are required");
+  if (!["grievance", "harassment", "infrastructure", "other"].includes(category)) throw ApiError.badRequest("Invalid complaint category");
+  if (!["open", "in_progress", "resolved", "closed", "rejected"].includes(status)) throw ApiError.badRequest("Invalid complaint status");
+  if (!["low", "medium", "high", "urgent"].includes(priority)) throw ApiError.badRequest("Invalid complaint priority");
   const assignedTo = body.assignedTo ?? existing?.assignedTo;
   if (assignedTo != null) {
     const user = await User.findByPk(Number(assignedTo));
-    if (!user || !user.isActive || (branchId != null && Number(user.branchId) !== Number(branchId))) throw new Error("Assigned user does not belong to your branch");
+    if (!user || !user.isActive || (branchId != null && Number(user.branchId) !== Number(branchId))) throw ApiError.badRequest("Assigned user does not belong to your branch");
     body.assignedTo = Number(assignedTo);
   }
   body.title = title; body.description = description; body.category = category; body.status = status; body.priority = priority; body.branchId = branchId;
@@ -1055,12 +1056,12 @@ const validateRole = async (body: any, req: Request) => {
   const existing = await getExisting(Role, req);
   const name = String(body.name ?? existing?.name ?? "").trim().toLowerCase();
   const label = String(body.label ?? existing?.label ?? name).trim();
-  if (!name) throw new Error("Role name is required");
-  if (!/^[a-z][a-z0-9_-]{1,49}$/.test(name)) throw new Error("Invalid role name");
+  if (!name) throw ApiError.badRequest("Role name is required");
+  if (!/^[a-z][a-z0-9_-]{1,49}$/.test(name)) throw ApiError.badRequest("Invalid role name");
   const duplicate = await Role.findOne({ where: { name, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw new Error("Role name already exists");
+  if (duplicate) throw ApiError.badRequest("Role name already exists");
   if (existing?.isSystem) {
-    if (body.name !== undefined && name !== existing.name) throw new Error("System role name cannot be changed");
+    if (body.name !== undefined && name !== existing.name) throw ApiError.badRequest("System role name cannot be changed");
     body.name = existing.name;
     body.isSystem = true;
   } else {
@@ -1078,16 +1079,16 @@ const validateBranch = async (body: any, req: Request) => {
   const email = String(body.email ?? existing?.email ?? "").trim();
   const phone = String(body.phone ?? existing?.phone ?? "").trim();
   const isActive = body.isActive !== undefined ? Boolean(body.isActive) : Boolean(existing?.isActive ?? true);
-  if (!name) throw new Error("Branch name is required");
-  if (code && !/^[A-Za-z0-9_-]{1,50}$/.test(code)) throw new Error("Invalid branch code");
-  if (email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) throw new Error("Invalid branch email");
+  if (!name) throw ApiError.badRequest("Branch name is required");
+  if (code && !/^[A-Za-z0-9_-]{1,50}$/.test(code)) throw ApiError.badRequest("Invalid branch code");
+  if (email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) throw ApiError.badRequest("Invalid branch email");
   const duplicate = await Branch.findOne({
     where: { name, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
   });
-  if (duplicate) throw new Error("Branch name already exists");
+  if (duplicate) throw ApiError.badRequest("Branch name already exists");
   if (code) {
     const codeDuplicate = await Branch.findOne({ where: { code, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-    if (codeDuplicate) throw new Error("Branch code already exists");
+    if (codeDuplicate) throw ApiError.badRequest("Branch code already exists");
   }
   body.name = name;
   body.code = code || null;
@@ -1104,11 +1105,11 @@ const validateBook = async (body: any, req: Request) => {
   const title = String(body.title ?? existing?.title ?? "").trim();
   const copies = Number(body.copies ?? existing?.copies ?? 1);
   const price = Number(body.price ?? existing?.price ?? 0);
-  if (!isbn || !title) throw new Error("ISBN and title are required");
-  if (!Number.isInteger(copies) || copies < 0) throw new Error("copies must be a non-negative integer");
-  if (!Number.isFinite(price) || price < 0) throw new Error("price must be non-negative");
+  if (!isbn || !title) throw ApiError.badRequest("ISBN and title are required");
+  if (!Number.isInteger(copies) || copies < 0) throw ApiError.badRequest("copies must be a non-negative integer");
+  if (!Number.isFinite(price) || price < 0) throw ApiError.badRequest("price must be non-negative");
   const duplicate = await Book.findOne({ where: { isbn, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw new Error("ISBN already exists in this branch");
+  if (duplicate) throw ApiError.badRequest("ISBN already exists in this branch");
   body.isbn = isbn; body.title = title; body.copies = copies; body.price = price; body.branchId = branchId;
   return body;
 };
@@ -1118,12 +1119,12 @@ const validateBookCopy = async (body: any, req: Request) => {
   const branchId = req.user?.branchId;
   const bookId = Number(body.bookId ?? existing?.bookId);
   const accessionNo = String(body.accessionNo ?? existing?.accessionNo ?? "").trim();
-  if (!Number.isInteger(bookId) || bookId <= 0 || !accessionNo) throw new Error("bookId and accessionNo are required");
+  if (!Number.isInteger(bookId) || bookId <= 0 || !accessionNo) throw ApiError.badRequest("bookId and accessionNo are required");
   const book = await Book.findByPk(bookId);
-  if (!book || (branchId != null && Number(book.branchId) !== Number(branchId))) throw new Error("Book does not belong to your branch");
+  if (!book || (branchId != null && Number(book.branchId) !== Number(branchId))) throw ApiError.badRequest("Book does not belong to your branch");
   const duplicate = await BookCopy.findOne({ where: { accessionNo, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw new Error("Accession number already exists in this branch");
-  if (body.status !== undefined && !["available","issued","reserved","damaged","lost"].includes(String(body.status))) throw new Error("Invalid copy status");
+  if (duplicate) throw ApiError.badRequest("Accession number already exists in this branch");
+  if (body.status !== undefined && !["available","issued","reserved","damaged","lost"].includes(String(body.status))) throw ApiError.badRequest("Invalid copy status");
   body.bookId = bookId; body.accessionNo = accessionNo; body.branchId = branchId;
   if (existing) delete body.status;
   return body;
@@ -1136,11 +1137,11 @@ const validateBookFine = async (body: any, req: Request) => {
   const userId = Number(body.userId ?? existing?.userId);
   const amount = Number(body.amount ?? existing?.amount);
   const issue = await BookIssue.findByPk(issueId);
-  if (!issue || (branchId != null && Number(issue.branchId) !== Number(branchId))) throw new Error("Book issue does not belong to your branch");
-  if (!Number.isInteger(userId) || userId <= 0) throw new Error("userId is required");
+  if (!issue || (branchId != null && Number(issue.branchId) !== Number(branchId))) throw ApiError.badRequest("Book issue does not belong to your branch");
+  if (!Number.isInteger(userId) || userId <= 0) throw ApiError.badRequest("userId is required");
   const user = await User.findByPk(userId);
-  if (!user || (branchId != null && Number(user.branchId) !== Number(branchId))) throw new Error("User does not belong to your branch");
-  if (!Number.isFinite(amount) || amount < 0) throw new Error("Fine amount must be non-negative");
+  if (!user || (branchId != null && Number(user.branchId) !== Number(branchId))) throw ApiError.badRequest("User does not belong to your branch");
+  if (!Number.isFinite(amount) || amount < 0) throw ApiError.badRequest("Fine amount must be non-negative");
   body.bookIssueId = issueId; body.userId = userId; body.amount = amount; body.branchId = branchId;
   return body;
 };
@@ -1201,30 +1202,30 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeCreate: async (body, req) => {
       const month = String(body.month ?? "").trim();
       const branchId = req.user?.branchId;
-      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("month must be in YYYY-MM format");
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw ApiError.badRequest("month must be in YYYY-MM format");
       const payeeType = body.payeeType === "staff" ? "staff" : body.payeeType === "teacher" ? "teacher" : null;
-      if (!payeeType) throw new Error("payeeType must be teacher or staff");
+      if (!payeeType) throw ApiError.badRequest("payeeType must be teacher or staff");
       const teacherId = body.teacherId ? Number(body.teacherId) : null;
       const staffId = body.staffId ? Number(body.staffId) : null;
       if ((payeeType === "teacher" && (!teacherId || staffId)) || (payeeType === "staff" && (!staffId || teacherId))) {
-        throw new Error("Payroll must reference exactly one matching teacher or staff member");
+        throw ApiError.badRequest("Payroll must reference exactly one matching teacher or staff member");
       }
       const payee = payeeType === "teacher"
         ? await Teacher.findByPk(teacherId as number, { include: [{ model: User, where: branchId != null ? { branchId } : undefined, required: branchId != null }] })
         : await Staff.findByPk(staffId as number, { include: [{ model: User, where: branchId != null ? { branchId } : undefined, required: branchId != null }] });
-      if (!payee || !payee.isActive) throw new Error("Selected payroll payee is not active or does not belong to your branch");
+      if (!payee || !payee.isActive) throw ApiError.badRequest("Selected payroll payee is not active or does not belong to your branch");
       const duplicate = await PayrollItem.findOne({ where: { ...(branchId != null ? { branchId } : {}), ...(payeeType === "teacher" ? { teacherId } : { staffId }), month } });
-      if (duplicate) throw new Error("Payroll already exists for this payee and month");
+      if (duplicate) throw ApiError.badRequest("Payroll already exists for this payee and month");
       const basicSalary = Number(body.basicSalary);
       const allowances = Number(body.allowances ?? 0);
       const deductions = Number(body.deductions ?? 0);
       if (!Number.isFinite(basicSalary) || basicSalary < 0 || !Number.isFinite(allowances) || allowances < 0 || !Number.isFinite(deductions) || deductions < 0) {
-        throw new Error("Salary amounts must be valid non-negative numbers");
+        throw ApiError.badRequest("Salary amounts must be valid non-negative numbers");
       }
       const status = String(body.status ?? "draft");
-      if (!["draft", "approved", "paid"].includes(status)) throw new Error("Invalid payroll status");
-      if (status === "paid" && !body.paidOn) throw new Error("paidOn is required when payroll status is paid");
-      if (body.paidOn && !Number.isFinite(new Date(body.paidOn).getTime())) throw new Error("Invalid paidOn date");
+      if (!["draft", "approved", "paid"].includes(status)) throw ApiError.badRequest("Invalid payroll status");
+      if (status === "paid" && !body.paidOn) throw ApiError.badRequest("paidOn is required when payroll status is paid");
+      if (body.paidOn && !Number.isFinite(new Date(body.paidOn).getTime())) throw ApiError.badRequest("Invalid paidOn date");
       body.branchId = branchId;
       body.month = month;
       body.payeeType = payeeType;
@@ -1239,34 +1240,34 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeUpdate: async (body, req) => {
       const id = Number(req.params.id);
       const current = await PayrollItem.findByPk(id);
-      if (!current) throw new Error("Payroll item not found");
-      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw new Error("Payroll item does not belong to your branch");
+      if (!current) throw ApiError.badRequest("Payroll item not found");
+      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw ApiError.badRequest("Payroll item does not belong to your branch");
       const branchId = req.user?.branchId;
       const month = String(body.month ?? current.month ?? "").trim();
-      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("month must be in YYYY-MM format");
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw ApiError.badRequest("month must be in YYYY-MM format");
       const payeeType = body.payeeType ?? current.payeeType;
-      if (payeeType !== "teacher" && payeeType !== "staff") throw new Error("payeeType must be teacher or staff");
+      if (payeeType !== "teacher" && payeeType !== "staff") throw ApiError.badRequest("payeeType must be teacher or staff");
       const teacherId = body.teacherId !== undefined ? (body.teacherId ? Number(body.teacherId) : null) : (current.teacherId ?? null);
       const staffId = body.staffId !== undefined ? (body.staffId ? Number(body.staffId) : null) : (current.staffId ?? null);
       if ((payeeType === "teacher" && (!teacherId || staffId)) || (payeeType === "staff" && (!staffId || teacherId))) {
-        throw new Error("Payroll must reference exactly one matching teacher or staff member");
+        throw ApiError.badRequest("Payroll must reference exactly one matching teacher or staff member");
       }
       const payee = payeeType === "teacher"
         ? await Teacher.findByPk(teacherId as number, { include: [{ model: User, where: branchId != null ? { branchId } : undefined, required: branchId != null }] })
         : await Staff.findByPk(staffId as number, { include: [{ model: User, where: branchId != null ? { branchId } : undefined, required: branchId != null }] });
-      if (!payee || !payee.isActive) throw new Error("Selected payroll payee is not active or does not belong to your branch");
+      if (!payee || !payee.isActive) throw ApiError.badRequest("Selected payroll payee is not active or does not belong to your branch");
       const duplicate = await PayrollItem.findOne({ where: { ...(branchId != null ? { branchId } : {}), ...(payeeType === "teacher" ? { teacherId } : { staffId }), month, id: { [Op.ne]: id } } });
-      if (duplicate) throw new Error("Payroll already exists for this payee and month");
+      if (duplicate) throw ApiError.badRequest("Payroll already exists for this payee and month");
       const basicSalary = Number(body.basicSalary ?? current.basicSalary);
       const allowances = Number(body.allowances ?? current.allowances ?? 0);
       const deductions = Number(body.deductions ?? current.deductions ?? 0);
       if (!Number.isFinite(basicSalary) || basicSalary < 0 || !Number.isFinite(allowances) || allowances < 0 || !Number.isFinite(deductions) || deductions < 0) {
-        throw new Error("Salary amounts must be valid non-negative numbers");
+        throw ApiError.badRequest("Salary amounts must be valid non-negative numbers");
       }
       const status = String(body.status ?? current.status);
-      if (!["draft", "approved", "paid"].includes(status)) throw new Error("Invalid payroll status");
-      if (status === "paid" && !(body.paidOn ?? current.paidOn)) throw new Error("paidOn is required when payroll status is paid");
-      if (body.paidOn && !Number.isFinite(new Date(body.paidOn).getTime())) throw new Error("Invalid paidOn date");
+      if (!["draft", "approved", "paid"].includes(status)) throw ApiError.badRequest("Invalid payroll status");
+      if (status === "paid" && !(body.paidOn ?? current.paidOn)) throw ApiError.badRequest("paidOn is required when payroll status is paid");
+      if (body.paidOn && !Number.isFinite(new Date(body.paidOn).getTime())) throw ApiError.badRequest("Invalid paidOn date");
       body.branchId = current.branchId ?? branchId;
       body.month = month;
       body.payeeType = payeeType;
@@ -1284,19 +1285,19 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeCreate: async (body, req) => {
       const branchId = req.user?.branchId;
       const payrollItemId = Number(body.payrollItemId);
-      if (!Number.isInteger(payrollItemId) || payrollItemId <= 0) throw new Error("payrollItemId is required");
+      if (!Number.isInteger(payrollItemId) || payrollItemId <= 0) throw ApiError.badRequest("payrollItemId is required");
       const item = await PayrollItem.findByPk(payrollItemId);
-      if (!item) throw new Error("Payroll item not found");
-      if (branchId != null && Number(item.branchId) !== Number(branchId)) throw new Error("Payroll item does not belong to your branch");
+      if (!item) throw ApiError.badRequest("Payroll item not found");
+      if (branchId != null && Number(item.branchId) !== Number(branchId)) throw ApiError.badRequest("Payroll item does not belong to your branch");
       const existing = await Payslip.findOne({ where: { payrollItemId, ...(branchId != null ? { branchId } : {}) } });
-      if (existing) throw new Error("A payslip already exists for this payroll item");
+      if (existing) throw ApiError.badRequest("A payslip already exists for this payroll item");
       if ((body.gross === undefined || body.gross === null || body.gross === "") || (body.net === undefined || body.net === null || body.net === "")) {
         body.gross = Number(item.basicSalary) + Number(item.allowances ?? 0);
         body.net = Number(item.netPay ?? body.gross);
       }
       const gross = Number(body.gross);
       const net = Number(body.net);
-      if (!Number.isFinite(gross) || gross < 0 || !Number.isFinite(net) || net < 0 || net > gross) throw new Error("Payslip gross/net amounts are invalid");
+      if (!Number.isFinite(gross) || gross < 0 || !Number.isFinite(net) || net < 0 || net > gross) throw ApiError.badRequest("Payslip gross/net amounts are invalid");
       body.branchId = item.branchId ?? branchId;
       body.gross = gross;
       body.net = net;
@@ -1305,12 +1306,12 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeUpdate: async (body, req) => {
       const id = Number(req.params.id);
       const current = await Payslip.findByPk(id);
-      if (!current) throw new Error("Payslip not found");
-      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw new Error("Payslip does not belong to your branch");
-      if (body.payrollItemId !== undefined && Number(body.payrollItemId) !== Number(current.payrollItemId)) throw new Error("Payroll item cannot be changed on a payslip");
+      if (!current) throw ApiError.badRequest("Payslip not found");
+      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw ApiError.badRequest("Payslip does not belong to your branch");
+      if (body.payrollItemId !== undefined && Number(body.payrollItemId) !== Number(current.payrollItemId)) throw ApiError.badRequest("Payroll item cannot be changed on a payslip");
       const gross = Number(body.gross ?? current.gross);
       const net = Number(body.net ?? current.net);
-      if (!Number.isFinite(gross) || gross < 0 || !Number.isFinite(net) || net < 0 || net > gross) throw new Error("Payslip gross/net amounts are invalid");
+      if (!Number.isFinite(gross) || gross < 0 || !Number.isFinite(net) || net < 0 || net > gross) throw ApiError.badRequest("Payslip gross/net amounts are invalid");
       body.payrollItemId = current.payrollItemId;
       body.branchId = current.branchId ?? req.user?.branchId;
       body.gross = gross;
@@ -1326,13 +1327,13 @@ export const RESOURCES: ResourceDefinition[] = [
       const leaveType = String(body.leaveType ?? "").trim().toLowerCase();
       const startDate = new Date(body.startDate);
       const endDate = new Date(body.endDate);
-      if (!userId) throw new Error("Authenticated user is required");
-      if (!["sick", "casual", "annual", "unpaid", "maternity"].includes(leaveType)) throw new Error("Invalid leave type");
-      if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) throw new Error("Invalid leave date range");
+      if (!userId) throw ApiError.badRequest("Authenticated user is required");
+      if (!["sick", "casual", "annual", "unpaid", "maternity"].includes(leaveType)) throw ApiError.badRequest("Invalid leave type");
+      if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) throw ApiError.badRequest("Invalid leave date range");
       const days = Math.floor((Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) - Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000) + 1;
       const user = await User.findByPk(userId);
-      if (!user || !user.isActive) throw new Error("User is not active");
-      if (branchId != null && Number(user.branchId) !== Number(branchId)) throw new Error("User does not belong to your branch");
+      if (!user || !user.isActive) throw ApiError.badRequest("User is not active");
+      if (branchId != null && Number(user.branchId) !== Number(branchId)) throw ApiError.badRequest("User does not belong to your branch");
       const overlap = await LeaveRequest.findOne({
         where: {
           userId,
@@ -1342,7 +1343,7 @@ export const RESOURCES: ResourceDefinition[] = [
           endDate: { [Op.gte]: startDate },
         },
       });
-      if (overlap) throw new Error("An overlapping pending or approved leave already exists");
+      if (overlap) throw ApiError.badRequest("An overlapping pending or approved leave already exists");
       body.userId = userId;
       body.branchId = branchId;
       body.leaveType = leaveType;
@@ -1356,17 +1357,17 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeUpdate: async (body, req) => {
       const id = Number(req.params.id);
       const current = await LeaveRequest.findByPk(id);
-      if (!current) throw new Error("Leave request not found");
-      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw new Error("Leave request does not belong to your branch");
+      if (!current) throw ApiError.badRequest("Leave request not found");
+      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw ApiError.badRequest("Leave request does not belong to your branch");
       const startDate = body.startDate !== undefined ? new Date(body.startDate) : new Date(current.startDate);
       const endDate = body.endDate !== undefined ? new Date(body.endDate) : new Date(current.endDate);
       const days = Number(body.days ?? current.days);
       const leaveType = String(body.leaveType ?? current.leaveType).trim().toLowerCase();
       const status = String(body.status ?? current.status).toLowerCase();
-      if (!["sick", "casual", "annual", "unpaid", "maternity"].includes(leaveType)) throw new Error("Invalid leave type");
-      if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) throw new Error("Invalid leave date range");
-      if (!Number.isFinite(days) || days <= 0) throw new Error("days must be greater than 0");
-      if (!["pending", "approved", "rejected", "cancelled"].includes(status)) throw new Error("Invalid leave status");
+      if (!["sick", "casual", "annual", "unpaid", "maternity"].includes(leaveType)) throw ApiError.badRequest("Invalid leave type");
+      if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) throw ApiError.badRequest("Invalid leave date range");
+      if (!Number.isFinite(days) || days <= 0) throw ApiError.badRequest("days must be greater than 0");
+      if (!["pending", "approved", "rejected", "cancelled"].includes(status)) throw ApiError.badRequest("Invalid leave status");
       const overlap = await LeaveRequest.findOne({
         where: {
           userId: current.userId,
@@ -1377,7 +1378,7 @@ export const RESOURCES: ResourceDefinition[] = [
           id: { [Op.ne]: id },
         },
       });
-      if (overlap && status !== "rejected" && status !== "cancelled") throw new Error("An overlapping pending or approved leave already exists");
+      if (overlap && status !== "rejected" && status !== "cancelled") throw ApiError.badRequest("An overlapping pending or approved leave already exists");
       body.userId = current.userId;
       body.branchId = current.branchId ?? req.user?.branchId;
       body.leaveType = leaveType;
@@ -1455,29 +1456,29 @@ export const RESOURCES: ResourceDefinition[] = [
     path: "student-transport", model: StudentTransport, searchable: [], permission: "student-transport",
     beforeCreate: async (body, req) => {
       const student = await Student.findByPk(body.studentId);
-      if (!student) throw new Error("Student not found");
+      if (!student) throw ApiError.badRequest("Student not found");
       if (req.user?.branchId != null && Number(student.branchId) !== Number(req.user.branchId)) {
-        throw new Error("Selected student does not belong to your branch");
+        throw ApiError.badRequest("Selected student does not belong to your branch");
       }
       const route = await Route.findByPk(body.routeId);
-      if (!route || !route.isActive) throw new Error("Selected route is not active");
+      if (!route || !route.isActive) throw ApiError.badRequest("Selected route is not active");
       if (req.user?.branchId != null && Number(route.branchId) !== Number(req.user.branchId)) {
-        throw new Error("Selected route does not belong to your branch");
+        throw ApiError.badRequest("Selected route does not belong to your branch");
       }
       if (body.stopId) {
         const stop = await RouteStop.findByPk(body.stopId);
-        if (!stop || Number(stop.routeId) !== Number(body.routeId)) throw new Error("Selected stop does not belong to the selected route");
+        if (!stop || Number(stop.routeId) !== Number(body.routeId)) throw ApiError.badRequest("Selected stop does not belong to the selected route");
       }
       if (body.vehicleId) {
         const vehicle = await Vehicle.findByPk(body.vehicleId);
-        if (!vehicle || vehicle.status !== "active") throw new Error("Selected vehicle is not active");
+        if (!vehicle || vehicle.status !== "active") throw ApiError.badRequest("Selected vehicle is not active");
       }
       const active = await StudentTransport.findOne({ where: { studentId: body.studentId, isActive: true } });
-      if (active) throw new Error("Student already has an active transport assignment");
+      if (active) throw ApiError.badRequest("Student already has an active transport assignment");
       const start = body.startDate ? new Date(body.startDate) : new Date();
       const end = body.endDate ? new Date(body.endDate) : null;
       if (!Number.isFinite(start.getTime()) || (end && (!Number.isFinite(end.getTime()) || end < start))) {
-        throw new Error("Invalid transport date range");
+        throw ApiError.badRequest("Invalid transport date range");
       }
       body.startDate = start;
       body.endDate = end;
@@ -1487,31 +1488,31 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeUpdate: async (body, req) => {
       const id = Number(req.params.id);
       const current = await StudentTransport.findByPk(id);
-      if (!current) throw new Error("Student transport assignment not found");
+      if (!current) throw ApiError.badRequest("Student transport assignment not found");
       const studentId = body.studentId ?? current.studentId;
       const routeId = body.routeId ?? current.routeId;
       const student = await Student.findByPk(studentId);
       const route = await Route.findByPk(routeId);
-      if (!student || !route) throw new Error("Student or route not found");
+      if (!student || !route) throw ApiError.badRequest("Student or route not found");
       if (req.user?.branchId != null && (Number(student.branchId) !== Number(req.user.branchId) || Number(route.branchId) !== Number(req.user.branchId))) {
-        throw new Error("Student or route does not belong to your branch");
+        throw ApiError.badRequest("Student or route does not belong to your branch");
       }
       if (body.stopId) {
         const stop = await RouteStop.findByPk(body.stopId);
-        if (!stop || Number(stop.routeId) !== Number(routeId)) throw new Error("Selected stop does not belong to the selected route");
+        if (!stop || Number(stop.routeId) !== Number(routeId)) throw ApiError.badRequest("Selected stop does not belong to the selected route");
       }
       if (body.vehicleId) {
         const vehicle = await Vehicle.findByPk(body.vehicleId);
-        if (!vehicle || vehicle.status !== "active") throw new Error("Selected vehicle is not active");
+        if (!vehicle || vehicle.status !== "active") throw ApiError.badRequest("Selected vehicle is not active");
       }
       const nextActive = body.isActive !== undefined ? Boolean(body.isActive) : current.isActive;
       if (nextActive) {
         const duplicate = await StudentTransport.findOne({ where: { studentId, isActive: true, id: { [Op.ne]: id } } });
-        if (duplicate) throw new Error("Student already has another active transport assignment");
+        if (duplicate) throw ApiError.badRequest("Student already has another active transport assignment");
       }
       const start = body.startDate !== undefined ? new Date(body.startDate) : new Date(current.startDate);
       const end = body.endDate !== undefined ? (body.endDate ? new Date(body.endDate) : null) : (current.endDate ? new Date(current.endDate) : null);
-      if (!Number.isFinite(start.getTime()) || (end && (!Number.isFinite(end.getTime()) || end < start))) throw new Error("Invalid transport date range");
+      if (!Number.isFinite(start.getTime()) || (end && (!Number.isFinite(end.getTime()) || end < start))) throw ApiError.badRequest("Invalid transport date range");
       body.startDate = start;
       body.endDate = end;
       return body;
@@ -1631,43 +1632,64 @@ export const RESOURCES: ResourceDefinition[] = [
       }
     },
   },
-  { path: "events", model: Event, searchable: ["title", "category", "venue"], permission: "events" },
-  { path: "notices", model: Notice, searchable: ["title", "type"], permission: "notices" },
-  { path: "announcements", model: Announcement, searchable: ["title", "priority"], permission: "announcements" },
   {
     path: "messages", model: Message, searchable: ["subject"], permission: "messages",
     beforeCreate: async (body, req) => {
       const senderId = Number(req.user?.id);
       const branchId = req.user?.branchId;
-      if (!senderId) throw new Error("Authenticated sender is required");
+      if (!senderId) throw ApiError.badRequest("Authenticated sender is required");
       const sender = await User.findByPk(senderId);
-      if (!sender || !sender.isActive) throw new Error("Sender is not active");
-      if (branchId != null && Number(sender.branchId) !== Number(branchId)) throw new Error("Sender does not belong to your branch");
+      if (!sender || !sender.isActive) throw ApiError.badRequest("Sender is not active");
+      if (branchId != null && Number(sender.branchId) !== Number(branchId)) throw ApiError.badRequest("Sender does not belong to your branch");
       const kind = String(body.kind ?? "direct").trim().toLowerCase();
-      if (!["direct", "broadcast", "group"].includes(kind)) throw new Error("Invalid message kind");
+      if (!["direct", "broadcast", "group"].includes(kind)) throw ApiError.badRequest("Invalid message kind");
       const messageBody = String(body.body ?? "").trim();
-      if (!messageBody) throw new Error("Message body is required");
+      if (!messageBody) throw ApiError.badRequest("Message body is required");
+      // Capture recipientIds before they reach model.create (which would reject unknown column).
+      const recipientIds: number[] = Array.isArray(body.recipientIds)
+        ? body.recipientIds.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0)
+        : [];
+      if (kind !== "broadcast" && recipientIds.length === 0) {
+        throw ApiError.badRequest("recipientIds is required for direct/group messages");
+      }
       body.senderId = senderId;
       body.branchId = branchId;
       body.kind = kind;
       body.body = messageBody;
       body.isGroup = kind === "group";
+      delete body.recipientIds;
+      // Stash on req so the resource router's create() can pick it up after model.create.
+      (req as any).__messageRecipientIds = recipientIds;
       return body;
     },
     beforeUpdate: async (body, req) => {
       const current = await Message.findByPk(req.params.id);
-      if (!current) throw new Error("Message not found");
-      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw new Error("Message does not belong to your branch");
+      if (!current) throw ApiError.badRequest("Message not found");
+      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw ApiError.badRequest("Message does not belong to your branch");
       delete body.senderId;
       body.branchId = current.branchId ?? req.user?.branchId;
       if (body.kind !== undefined) {
         const kind = String(body.kind).trim().toLowerCase();
-        if (!["direct", "broadcast", "group"].includes(kind)) throw new Error("Invalid message kind");
+        if (!["direct", "broadcast", "group"].includes(kind)) throw ApiError.badRequest("Invalid message kind");
         body.kind = kind;
         body.isGroup = kind === "group";
       }
-      if (body.body !== undefined && !String(body.body).trim()) throw new Error("Message body is required");
+      if (body.body !== undefined && !String(body.body).trim()) throw ApiError.badRequest("Message body is required");
       return body;
+    },
+    afterCreate: async (row: any, req: Request) => {
+      const recipientIds: number[] = (req as any).__messageRecipientIds ?? [];
+      if (recipientIds.length) {
+        await MessageRecipient.bulkCreate(
+          recipientIds.map((rid) => ({ messageId: row.id, recipientId: rid, branchId: row.branchId }))
+        );
+      }
+    },
+    includes: [{ association: "sender", attributes: ["id", "firstName", "lastName", "email"] }],
+    decorate: (row) => {
+      const p = plain(row);
+      p.senderName = p.sender ? `${p.sender.firstName} ${p.sender.lastName}`.trim() : "";
+      return p;
     },
   },
   { path: "notifications", model: Notification, searchable: ["title"], permission: "notifications", readonly: true },
@@ -1705,10 +1727,10 @@ export const RESOURCES: ResourceDefinition[] = [
     path: "visitor-logs", model: VisitorLog, searchable: ["visitorName", "purpose"], permission: "visitors",
     beforeCreate: (body, req) => {
       const checkedIn = body.checkedIn ? new Date(body.checkedIn) : new Date();
-      if (!Number.isFinite(checkedIn.getTime())) throw new Error("Invalid checkedIn date");
+      if (!Number.isFinite(checkedIn.getTime())) throw ApiError.badRequest("Invalid checkedIn date");
       const checkedOut = body.checkedOut ? new Date(body.checkedOut) : null;
       if (checkedOut && (!Number.isFinite(checkedOut.getTime()) || checkedOut < checkedIn)) {
-        throw new Error("checkedOut must be after checkedIn");
+        throw ApiError.badRequest("checkedOut must be after checkedIn");
       }
       body.checkedIn = checkedIn;
       body.checkedOut = checkedOut;
@@ -1717,11 +1739,11 @@ export const RESOURCES: ResourceDefinition[] = [
     },
     beforeUpdate: async (body, req) => {
       const current = await VisitorLog.findByPk(req.params.id);
-      if (!current) throw new Error("Visitor log not found");
+      if (!current) throw ApiError.badRequest("Visitor log not found");
       const checkedIn = body.checkedIn !== undefined ? new Date(body.checkedIn) : new Date(current.checkedIn);
       const checkedOut = body.checkedOut !== undefined ? (body.checkedOut ? new Date(body.checkedOut) : null) : (current.checkedOut ? new Date(current.checkedOut) : null);
       if (!Number.isFinite(checkedIn.getTime()) || (checkedOut && (!Number.isFinite(checkedOut.getTime()) || checkedOut < checkedIn))) {
-        throw new Error("Invalid visitor check-in/check-out time");
+        throw ApiError.badRequest("Invalid visitor check-in/check-out time");
       }
       body.checkedIn = checkedIn;
       body.checkedOut = checkedOut;

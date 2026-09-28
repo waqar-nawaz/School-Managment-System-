@@ -50,6 +50,11 @@ const BADGE_COMMON: Record<string, string> = {
   complete: 'success', completed: 'success', draft: '',
   issued: 'success', returned: 'info', available: 'success', occupied: 'info',
   in_use: 'success', maintenance: 'warning',
+  // additional badges for library / transport / finance / admissions flows
+  requested: 'info', lost: 'danger', successful: 'success', failed: 'danger',
+  refunded: 'info', reversed: 'warning', enrolled: 'success', admitted: 'success',
+  shortlisted: 'info', waitlisted: 'warning', withdrawn: 'danger',
+  checked_out: 'info', transferred: 'warning',
 };
 
 const STATUS_OPTIONS = (list: string[]) => list.map((v) => ({ label: v.replace(/_/g, ' '), value: v }));
@@ -351,14 +356,16 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
       refField('hostelId', 'Hostel', '/hostels', 'name', undefined, true),
       refField('roomId', 'Room', '/rooms', 'roomLabel', undefined, true),
       refField('bedId', 'Bed', '/beds', 'bedLabel', undefined, true),
-      { key: 'checkIn', label: 'Check-in', type: 'dateonly' },
+      { key: 'checkIn', label: 'Check-in', type: 'dateonly', required: true },
+      { key: 'checkOut', label: 'Check-out', type: 'dateonly' },
       { key: 'monthlyFee', label: 'Monthly fee', type: 'number' },
+      { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['active', 'checked_out', 'transferred']), required: true },
     ]),
   },
   events: {
     key: 'events', label: 'Events', api: '/events',
     columns: [nameCol('title'), nameCol('category'), { key: 'startAt', label: 'Starts', type: 'datetime' }, nameCol('venue'), boolCol('isPublic', 'Public')],
-    fields: fields([{ key: 'title', label: 'Title', required: true }, { key: 'description', label: 'Description', type: 'textarea' }, { key: 'category', label: 'Category', type: 'select', options: STATUS_OPTIONS(['general', 'sports', 'cultural', 'exam', 'holiday']) }, { key: 'startAt', label: 'Start', type: 'dateonly', required: true }, { key: 'endAt', label: 'End', type: 'dateonly' }, { key: 'venue', label: 'Venue' }, { key: 'allDay', label: 'All day', type: 'bool' }, { key: 'isPublic', label: 'Public', type: 'bool' }]),
+    fields: fields([{ key: 'title', label: 'Title', required: true }, { key: 'description', label: 'Description', type: 'textarea' }, { key: 'category', label: 'Category', type: 'select', options: STATUS_OPTIONS(['general', 'sports', 'cultural', 'exam', 'holiday']) }, { key: 'startAt', label: 'Start', type: 'date', required: true }, { key: 'endAt', label: 'End', type: 'date' }, { key: 'venue', label: 'Venue' }, { key: 'allDay', label: 'All day', type: 'bool' }, { key: 'isPublic', label: 'Public', type: 'bool' }]),
   },
   notices: {
     key: 'notices', label: 'Notices', api: '/notices',
@@ -368,12 +375,12 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   announcements: {
     key: 'announcements', label: 'Announcements', api: '/announcements',
     columns: [nameCol('title'), nameCol('priority'), { key: 'startsAt', label: 'Starts', type: 'datetime' }, { key: 'endsAt', label: 'Ends', type: 'datetime' }, boolCol('isPinned', 'Pinned')],
-    fields: fields([{ key: 'title', label: 'Title', required: true }, { key: 'body', label: 'Body', type: 'textarea' }, { key: 'priority', label: 'Priority', type: 'select', options: STATUS_OPTIONS(['info', 'important', 'critical']) }, { key: 'startsAt', label: 'Starts at', type: 'dateonly', required: true }, { key: 'endsAt', label: 'Ends at', type: 'dateonly' }, { key: 'isPinned', label: 'Pinned', type: 'bool' }]),
+    fields: fields([{ key: 'title', label: 'Title', required: true }, { key: 'body', label: 'Body', type: 'textarea' }, { key: 'priority', label: 'Priority', type: 'select', options: STATUS_OPTIONS(['info', 'important', 'critical']) }, { key: 'startsAt', label: 'Starts at', type: 'date', required: true }, { key: 'endsAt', label: 'Ends at', type: 'date' }, { key: 'isPinned', label: 'Pinned', type: 'bool' }]),
   },
   messages: {
     key: 'messages', label: 'Messages', api: '/messages',
-    columns: [nameCol('subject'), { key: 'senderId', label: 'Sender', type: 'number' }, nameCol('kind'), boolCol('isArchived', 'Archived')],
-    fields: fields([{ key: 'subject', label: 'Subject' }, { key: 'body', label: 'Message', type: 'textarea', required: true }, { key: 'kind', label: 'Kind', type: 'select', options: STATUS_OPTIONS(['direct', 'broadcast', 'group']) }]),
+    columns: [nameCol('subject'), { key: 'senderName', label: 'Sender', type: 'text' }, nameCol('kind'), boolCol('isArchived', 'Archived')],
+    fields: fields([{ key: 'subject', label: 'Subject' }, { key: 'body', label: 'Message', type: 'textarea', required: true }, { key: 'kind', label: 'Kind', type: 'select', options: STATUS_OPTIONS(['direct', 'broadcast', 'group']) }, { key: 'recipientIds', label: 'Recipients (comma-separated user IDs)', hint: 'For broadcast, leave blank' }]),
   },
   notifications: {
     key: 'notifications', label: 'Notifications', api: '/notifications',
@@ -466,17 +473,17 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   'book-issues': {
     key: 'book-issues', label: 'Book Issues', api: '/book-issues',
-    columns: [{ key: 'bookCopyId', label: 'Copy', type: 'number' }, { key: 'userId', label: 'Borrower', type: 'number' }, { key: 'issueDate', label: 'Issued', type: 'date' }, { key: 'dueDate', label: 'Due', type: 'date' }, statusCol()],
+    columns: [{ key: 'bookTitle', label: 'Book', type: 'text' }, { key: 'accessionNo', label: 'Copy', type: 'text' }, { key: 'borrowerName', label: 'Borrower', type: 'text' }, { key: 'issueDate', label: 'Issued', type: 'date' }, { key: 'dueDate', label: 'Due', type: 'date' }, statusCol()],
     fields: fields([
       refField('bookCopyId', 'Book copy', '/book-copies', 'accessionNo', undefined, true),
-      refField('studentId', 'Student', '/students', 'firstName', 'admissionNo', true),
+      refField('studentId', 'Student', '/students', 'firstName', 'admissionNo'),
       { key: 'dueInDays', label: 'Due in (days)', type: 'number' },
       { key: 'requestedFor', label: 'Requested for', type: 'select', options: STATUS_OPTIONS(['student', 'teacher', 'staff']) },
     ]),
   },
   payments: {
     key: 'payments', label: 'Payments', api: '/payments',
-    columns: [{ key: 'invoiceId', label: 'Invoice', type: 'number' }, { key: 'method', label: 'Method', type: 'text' }, { key: 'reference', label: 'Reference', type: 'text' }, { key: 'amount', label: 'Amount', type: 'money' }, { key: 'paidOn', label: 'Paid', type: 'datetime' }, statusCol()],
+    columns: [nameCol('receiptNo', 'Receipt No'), { key: 'invoiceNo', label: 'Invoice', type: 'text' }, { key: 'studentName', label: 'Student', type: 'text' }, nameCol('method'), nameCol('reference'), { key: 'amount', label: 'Amount', type: 'money' }, { key: 'paidOn', label: 'Paid', type: 'datetime' }, statusCol()],
     fields: [],
     canCreate: false,
   },
@@ -488,7 +495,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   complaints: {
     key: 'complaints', label: 'Complaints', api: '/complaints',
     columns: [nameCol('title'), { key: 'priority', label: 'Priority', type: 'badge', badgeMap: BADGE_COMMON }, nameCol('category'), { key: 'assignedTo', label: 'Assigned To', type: 'number' }, statusCol()],
-    fields: fields([{ key: 'title', label: 'Title', required: true }, { key: 'description', label: 'Details', type: 'textarea', required: true }, { key: 'category', label: 'Category', type: 'select', options: STATUS_OPTIONS(['academic', 'facility', 'staff', 'transport', 'other']), required: true }, { key: 'priority', label: 'Priority', type: 'select', options: STATUS_OPTIONS(['high', 'medium', 'low']) }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['open', 'in_progress', 'resolved', 'closed']) }, refField('assignedTo', 'Assigned to', '/users', 'firstName', 'email')]),
+    fields: fields([{ key: 'title', label: 'Title', required: true }, { key: 'description', label: 'Details', type: 'textarea', required: true }, { key: 'category', label: 'Category', type: 'select', options: STATUS_OPTIONS(['grievance', 'harassment', 'infrastructure', 'other']), required: true }, { key: 'priority', label: 'Priority', type: 'select', options: STATUS_OPTIONS(['low', 'medium', 'high', 'urgent']) }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['open', 'in_progress', 'resolved', 'closed', 'rejected']) }, refField('assignedTo', 'Assigned to', '/users', 'firstName', 'email')]),
   },
   media: {
     key: 'media', label: 'Media', api: '/media',

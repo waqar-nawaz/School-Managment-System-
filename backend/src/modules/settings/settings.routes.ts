@@ -5,8 +5,10 @@ import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
 import { Settings } from "../../models";
+import { sequelize } from "../../database/sequelize";
 import { z } from "zod";
 import { validate } from "../../middlewares/validate";
+import { writeAuditLog } from "../../services/audit.service";
 
 const router = Router();
 
@@ -37,8 +39,13 @@ router.get(
   asyncHandler(async (req, res) => {
     const scope = (req.query.scope as string) || "system";
     const rows = await Settings.findAll({ where: { scope } });
-    const map: Record<string, string> = {};
-    for (const r of rows) map[r.key] = r.value;
+    // Return shape: { [key]: { value, isPublic } } so the frontend can preserve the isPublic flag
+    // across load → edit → save cycles. Previously this returned a flat string map, which silently
+    // wiped isPublic to false on every save.
+    const map: Record<string, { value: string; isPublic: boolean; description?: string }> = {};
+    for (const r of rows) {
+      map[r.key] = { value: r.value, isPublic: Boolean(r.isPublic), description: r.description ?? undefined };
+    }
     ApiResponse.success(res, 200, "Settings fetched", map);
   })
 );
@@ -50,6 +57,15 @@ router.post(
   asyncHandler(async (req, res) => {
     const { scope, key, value, description, isPublic } = req.body;
     await Settings.upsert({ scope, key, value, description, isPublic: isPublic ?? false });
+    await writeAuditLog({
+      action: "update",
+      entity: "settings",
+      entityId: key,
+      userId: req.user?.id,
+      role: req.user?.role,
+      branchId: req.user?.branchId,
+      newData: { scope, value, isPublic: isPublic ?? false },
+    });
     ApiResponse.success(res, 200, "Setting saved", { key, value });
   })
 );
@@ -59,12 +75,33 @@ router.post(
   authorize("settings:manage"),
   asyncHandler(async (req, res) => {
     const entries = Array.isArray(req.body) ? req.body : [];
-    for (const e of entries) {
+    const saved: string[] = [];
+    const errors: Array<{ index: number; key?: string; errors: unknown[] }> = [];
+    entries.forEach((e, index) => {
       const parsed = upsertSchema.safeParse(e);
-      if (!parsed.success) continue;
-      await Settings.upsert(parsed.data);
-    }
-    ApiResponse.success(res, 200, `Saved ${entries.length} settings`, null);
+      if (!parsed.success) {
+        errors.push({ index, key: typeof e?.key === "string" ? e.key : undefined, errors: parsed.error.issues });
+        return;
+      }
+      saved.push(parsed.data.key);
+    });
+    // Wrap in a transaction so partial failures don't leave a mixed state.
+    await sequelize.transaction(async (t) => {
+      for (const e of entries) {
+        const parsed = upsertSchema.safeParse(e);
+        if (!parsed.success) continue;
+        await Settings.upsert(parsed.data, { transaction: t });
+      }
+    });
+    await writeAuditLog({
+      action: "update",
+      entity: "settings",
+      userId: req.user?.id,
+      role: req.user?.role,
+      branchId: req.user?.branchId,
+      newData: { saved: saved.length, errors: errors.length },
+    });
+    ApiResponse.success(res, 200, `Saved ${saved.length} of ${entries.length} settings`, { saved, errors });
   })
 );
 
@@ -74,7 +111,17 @@ router.delete(
   asyncHandler(async (req, res) => {
     const { scope, key } = req.query as { scope?: string; key?: string };
     if (!key) throw ApiError.badRequest("key query param required");
-    await Settings.destroy({ where: { key, ...(scope ? { scope } : {}) } });
+    if (!scope) throw ApiError.badRequest("scope query param required");
+    await Settings.destroy({ where: { key, scope } });
+    await writeAuditLog({
+      action: "delete",
+      entity: "settings",
+      entityId: key,
+      userId: req.user?.id,
+      role: req.user?.role,
+      branchId: req.user?.branchId,
+      oldData: { scope, key },
+    });
     ApiResponse.success(res, 200, "Setting deleted", null);
   })
 );

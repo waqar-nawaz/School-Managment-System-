@@ -35,7 +35,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
             </button>
           }
         </div>
-        <select class="form-control" style="max-width:160px" [(ngModel)]="roleFilter" (ngModelChange)="load()">
+        <select class="form-control" style="max-width:160px" [(ngModel)]="roleFilter" (ngModelChange)="onFilterChange()">
           <option value="">All roles</option>
           @for (r of ROLES; track r) { <option [value]="r">{{ r }}</option> }
         </select>
@@ -187,6 +187,16 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                   <option value="">—</option><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option>
                 </select>
               </div>
+              @if (isSuperAdmin) {
+                <div class="form-group">
+                  <label>Branch *</label>
+                  <select class="form-control" name="branchId" [(ngModel)]="form.branchId">
+                    <option [ngValue]="null">— select —</option>
+                    @for (b of branches) { <option [ngValue]="b.id">{{ b.name }}</option> }
+                  </select>
+                  @if (fieldErrors['branchId']) { <div class="field-error">{{ fieldErrors['branchId'] }}</div> }
+                </div>
+              }
               <div class="form-group">
                 <label class="form-check"><input type="checkbox" class="form-checkbox" name="isActive" [(ngModel)]="form.isActive" /> Active</label>
               </div>
@@ -306,6 +316,9 @@ export class UsersComponent implements OnInit {
   canCreate = false;
   canUpdate = false;
   canDelete = false;
+  isSuperAdmin = false;
+  branches: Array<{ id: number; name: string }> = [];
+  fieldErrors: Record<string, string> = {};
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -316,10 +329,19 @@ export class UsersComponent implements OnInit {
     this.canCreate = this.perms.hasPermission('users:create') || this.perms.hasPermission('users:manage');
     this.canUpdate = this.perms.hasPermission('users:update') || this.perms.hasPermission('users:manage');
     this.canDelete = this.perms.hasPermission('users:delete') || this.perms.hasPermission('users:manage');
+    this.isSuperAdmin = this.perms.hasPermission('*') || perms.role === 'super_admin';
   }
 
   ngOnInit(): void {
     this.load();
+    if (this.isSuperAdmin) this.loadBranches();
+  }
+
+  private loadBranches(): void {
+    this.api.get<Array<{ id: number; name: string; isActive: boolean }>>('/branches', { page: 1, limit: 100 }).subscribe({
+      next: (res) => { this.branches = (res?.data ?? []).filter((b) => b.isActive); },
+      error: () => {},
+    });
   }
 
   get totalPages(): number {
@@ -348,6 +370,13 @@ export class UsersComponent implements OnInit {
       this.page = 1;
       this.load();
     }, 300);
+  }
+
+  // Filter change must reset to page 1 — otherwise the user can stay on a page
+  // that's now past totalPages with an empty list shown.
+  onFilterChange(): void {
+    this.page = 1;
+    this.load();
   }
 
   prevPage(): void {
@@ -419,6 +448,7 @@ export class UsersComponent implements OnInit {
     };
     if (!this.editing) payload['password'] = this.form['password'];
 
+    this.fieldErrors = {};
     const req = this.editing
       ? this.api.put(`/users/${this.form['id']}`, payload)
       : this.api.post('/users', payload);
@@ -429,8 +459,15 @@ export class UsersComponent implements OnInit {
         this.toasts.success(this.editing ? 'User updated' : 'User created');
         this.load();
       },
-      error: () => {
+      error: (err) => {
         this.saving = false;
+        // Map backend field-level errors ({ errors: [{ path, message }] }) to inline red messages.
+        const errs = err?.error?.errors;
+        if (Array.isArray(errs)) {
+          for (const e of errs) {
+            if (e?.path) this.fieldErrors[e.path] = e.message ?? 'Invalid value';
+          }
+        }
       },
     });
   }

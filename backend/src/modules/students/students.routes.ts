@@ -311,6 +311,11 @@ router.put("/:id", authorize("students:update"), asyncHandler(async (req, res) =
 
 router.delete("/:id", authorize("students:delete"), asyncHandler(async (req, res) => {
   const student = await assertStudentAccess(req, Number(req.params.id));
+  // Release the seat: mark active enrolments as 'withdrawn' so capacity checks free up.
+  await Enrolment.update(
+    { status: "withdrawn" },
+    { where: { studentId: student.id, status: "active" } }
+  );
   await student.update({ isActive: false });
   ApiResponse.success(res, 200, "Student deactivated", null);
 }));
@@ -337,6 +342,11 @@ router.patch("/:id/reactivate", authorize("students:update"), asyncHandler(async
   }
 
   await student.update({ isActive: true });
+  // Flip the previously withdrawn enrolments back to 'active'.
+  await Enrolment.update(
+    { status: "active" },
+    { where: { studentId: student.id, status: "withdrawn" } }
+  );
   await writeAuditLog({
     action: "update", entity: "student", entityId: student.id, userId: req.user!.id,
     role: req.user!.role, ip: req.ip, newData: { isActive: true },

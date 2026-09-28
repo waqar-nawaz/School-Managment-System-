@@ -144,6 +144,23 @@ async function ensureColumns(): Promise<void> {
   } catch {
     /* legacy data cleanup must never prevent the application from starting */
   }
+
+  // Patch ENUM columns where we added new values (idempotent, dialect-aware).
+  // Sequelize.sync({alter:false}) does NOT alter existing column types, so we
+  // changeColumn manually. Safe to run on every boot.
+  try {
+    if (env.db.dialect === "mysql") {
+      await sequelize.query(
+        "ALTER TABLE admission_applications MODIFY status ENUM('enquiry','applied','shortlisted','admitted','rejected','waitlisted','withdrawn') NOT NULL DEFAULT 'enquiry'"
+      );
+      logger.info("Patched admission_applications.status ENUM to include 'withdrawn'");
+    } else if (env.db.dialect === "postgres") {
+      // Postgres requires the new value to be added to the existing type before it can be used.
+      await sequelize.query(`ALTER TYPE enum_admission_applications_status ADD VALUE IF NOT EXISTS 'withdrawn'`).catch(() => {});
+    }
+  } catch (err) {
+    logger.warn(`Could not patch admission_applications.status ENUM: ${(err as Error).message}`);
+  }
 }
 
 /**

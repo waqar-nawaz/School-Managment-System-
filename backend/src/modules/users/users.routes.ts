@@ -112,6 +112,14 @@ router.patch("/:id/status", authorize("users:update"), validate(updateUserStatus
     throw ApiError.forbidden("Cannot modify the superadmin account");
   }
   await user.update({ isActive: req.body.isActive });
+  // When deactivating, revoke all refresh tokens so existing JWTs stop working
+  // immediately (within the 60s active-cache window in authenticate.ts).
+  if (!req.body.isActive) {
+    await RefreshToken.update(
+      { revoked: true, revokedAt: new Date() },
+      { where: { userId: user.id, revoked: false } }
+    );
+  }
   await writeAuditLog({
     action: "update",
     entity: "user",

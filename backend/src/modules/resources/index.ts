@@ -17,6 +17,8 @@ function buildRouter(def: ResourceDefinition): Router {
     defaultSort: def.defaultSort ?? [["createdAt", "DESC"]],
     beforeCreate: def.beforeCreate,
     beforeUpdate: def.beforeUpdate,
+    beforeDelete: def.beforeDelete,
+    afterCreate: def.afterCreate,
     includes: def.includes,
     decorate: def.decorate,
   } as CrudOptions);
