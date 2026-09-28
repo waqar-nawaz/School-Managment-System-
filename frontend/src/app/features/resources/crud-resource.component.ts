@@ -569,6 +569,14 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         return;
       }
       params['filter[roomId]'] = roomId;
+      const hostelId = this.formValues['hostelId'];
+      if (hostelId === null || hostelId === undefined || hostelId === '') {
+        this.refOptions[field.key] = [];
+        return;
+      }
+      // Send both parents so a stale/global bed list can never leak a bed
+      // belonging to another hostel into the selected room.
+      params['filter[hostelId]'] = hostelId;
       params['filter[status]'] = 'available';
     }
 
