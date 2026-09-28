@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { Op } from "sequelize";
 import { authenticate } from "../../middlewares/authenticate";
-import { authorize } from "../../middlewares/authorize";
+import { authorize, allowRoles } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
@@ -46,7 +46,7 @@ async function validateClassScope(classId: number, sectionId: number | undefined
 }
 
 /** Attendance for one class/section on a date (teacher-facing register). */
-router.get("/register", authorize("attendance:read"), asyncHandler(async (req, res) => {
+router.get("/register", authorize("attendance:read"), allowRoles("super_admin","admin","principal","teacher","hostel_warden"), asyncHandler(async (req, res) => {
   const date = dateFromQuery(req);
   const classId = Number(req.query.classId);
   const sectionId = req.query.sectionId ? Number(req.query.sectionId) : undefined;
@@ -216,6 +216,9 @@ router.get("/student/:studentId", authorize("attendance:read"), asyncHandler(asy
   if (!Number.isInteger(studentId) || studentId <= 0) throw ApiError.badRequest("Invalid studentId");
   const student = await Student.findByPk(studentId);
   if (!student) throw ApiError.notFound("Student not found");
+  if (req.user?.role === "student" && Number(student.userId) !== Number(req.user.id)) {
+    throw ApiError.forbidden("Students can only view their own attendance");
+  }
   if (req.user?.branchId != null && Number(student.branchId) !== Number(req.user.branchId)) {
     throw ApiError.forbidden("Student does not belong to your branch");
   }
