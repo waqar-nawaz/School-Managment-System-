@@ -13,6 +13,7 @@ export interface CrudOptions<M extends Model = Model> {
   toSearchWhere?: (q: string) => WhereOptions;
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
+  beforeRemove?: (req: Request) => void | Promise<void>;
   detailIncludes?: FindOptions["include"];
   /** Add computed fields (e.g. related display names) to a returned row. */
   decorate?: (row: any) => Record<string, unknown>;
@@ -135,6 +136,7 @@ export function createCrudController<M extends Model = Model>(
       if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
       const row = await model.findOne({ where: lookup }) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
+      if (opts.beforeRemove) await opts.beforeRemove(req);
       await (row as any).destroy();
       ApiResponse.success(res, 200, `${model.name} deleted`, null);
     },
