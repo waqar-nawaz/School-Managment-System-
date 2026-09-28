@@ -1493,24 +1493,51 @@ export const RESOURCES: ResourceDefinition[] = [
       return body;
     },
   },
-  { path: "hostels", model: Hostel, searchable: ["name", "wardenName"], permission: "hostels", beforeCreate: validateHostel, beforeUpdate: validateHostel },
+  {
+    path: "hostels", model: Hostel, searchable: ["name", "wardenName"], permission: "hostels",
+    includes: [{ association: "rooms", attributes: ["id", "roomNo", "capacity"], include: [{ association: "beds", attributes: ["id", "status"] }] }],
+    beforeCreate: validateHostel, beforeUpdate: validateHostel,
+    decorate: (row) => {
+      const p = plain(row);
+      const rooms = Array.isArray(p.rooms) ? p.rooms : [];
+      const totalBeds = rooms.reduce((n: number, room: any) => n + (Array.isArray(room.beds) ? room.beds.length : 0), 0);
+      const occupiedBeds = rooms.reduce((n: number, room: any) => n + (Array.isArray(room.beds) ? room.beds.filter((b: any) => b.status === "occupied").length : 0), 0);
+      p.roomCount = rooms.length;
+      p.totalBeds = totalBeds;
+      p.occupiedBeds = occupiedBeds;
+      p.availableBeds = Math.max(totalBeds - occupiedBeds, 0);
+      p.capacity = totalBeds;
+      return p;
+    },
+  },
   {
     path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "rooms",
-    includes: [{ association: "hostel", attributes: ["id", "name"] }],
+    includes: [{ association: "hostel", attributes: ["id", "name"] }, { association: "beds", attributes: ["id", "status"] }],
     beforeCreate: validateRoom, beforeUpdate: validateRoom,
     decorate: (row) => {
       const p = plain(row);
       p.hostelName = p.hostel?.name ?? "";
+      const beds = Array.isArray(p.beds) ? p.beds : [];
+      p.bedCount = beds.length;
+      p.availableBeds = beds.filter((b: any) => b.status === "available").length;
+      p.status = p.bedCount >= Number(p.capacity) ? "full" : "available";
+      p.roomLabel = `Room ${p.roomNo} — ${p.hostelName}`;
       return p;
     },
   },
   {
     path: "beds", model: Bed, searchable: ["bedNo"], permission: "beds",
-    includes: [{ association: "room", attributes: ["id", "roomNo"] }],
+    includes: [{
+      association: "room",
+      attributes: ["id", "roomNo"],
+      include: [{ association: "hostel", attributes: ["id", "name"] }],
+    }],
     beforeCreate: validateBed, beforeUpdate: validateBed,
     decorate: (row) => {
       const p = plain(row);
       p.roomNo = p.room?.roomNo ?? "";
+      p.hostelName = p.room?.hostel?.name ?? "";
+      p.bedLabel = `Bed ${p.bedNo} — Room ${p.roomNo} — ${p.hostelName}`;
       return p;
     },
   },
