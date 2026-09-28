@@ -234,8 +234,14 @@ async function ensureBranchScopedNameIndexes(): Promise<void> {
 
 export async function connectDatabase(): Promise<void> {
   await sequelize.authenticate();
-  await sequelize.sync({ alter: false });
+
+  // Existing production databases may be older than the current models.
+  // Add newly introduced columns before sequelize.sync(), because sync can
+  // create indexes for model fields (such as invoices.branchId) before it
+  // gets a chance to reconcile the existing table.
   await ensureColumns();
+
+  await sequelize.sync({ alter: false });
   await ensureBranchScopedNameIndexes();
 }
 
