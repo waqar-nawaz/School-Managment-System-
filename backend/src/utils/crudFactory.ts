@@ -15,8 +15,6 @@ export interface CrudOptions<M extends Model = Model> {
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   afterCreate?: (row: M, req: Request) => void | Promise<void>;
   beforeRemove?: (req: Request) => void | Promise<void>;
-  /** Runs AFTER model.create() — use to create dependent rows (e.g. MessageRecipient rows for messages). */
-  afterCreate?: (row: any, req: Request) => void | Promise<void>;
   detailIncludes?: FindOptions["include"];
   /** Add computed fields (e.g. related display names) to a returned row. */
   decorate?: (row: any) => Record<string, unknown>;
