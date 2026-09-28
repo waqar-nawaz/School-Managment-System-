@@ -210,6 +210,24 @@ router.get("/summary", authorize("attendance:read"), asyncHandler(async (req, re
   ApiResponse.success(res, 200, "Attendance summary", { month, perDay });
 }));
 
+/** Current user's own attendance (student self-service). */
+router.get("/me", authorize("attendance:read"), asyncHandler(async (req, res) => {
+  const userId = Number(req.user?.id);
+  if (!Number.isInteger(userId) || userId <= 0) throw ApiError.unauthorized("Authenticated user required");
+  const student = await Student.findOne({ where: { userId } });
+  if (!student) throw ApiError.notFound("Student profile not found");
+  if (req.user?.branchId != null && Number(student.branchId) !== Number(req.user.branchId)) {
+    throw ApiError.forbidden("Student does not belong to your branch");
+  }
+  const month = String(req.query.month || localDateString().slice(0, 7));
+  const { start, end } = monthRange(month);
+  const rows = await Attendance.findAll({
+    where: { ...branchFilter(req), studentId: student.id, date: { [Op.gte]: start, [Op.lt]: end } },
+    order: [["date", "ASC"]],
+  });
+  ApiResponse.success(res, 200, "My attendance", rows);
+}));
+
 /** Per-student monthly record. */
 router.get("/student/:studentId", authorize("attendance:read"), asyncHandler(async (req, res) => {
   const studentId = Number(req.params.studentId);
