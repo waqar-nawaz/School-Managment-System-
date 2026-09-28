@@ -574,9 +574,9 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         this.refOptions[field.key] = [];
         return;
       }
-      // Send both parents so a stale/global bed list can never leak a bed
-      // belonging to another hostel into the selected room.
-      params['filter[hostelId]'] = hostelId;
+      // Beds are filtered by roomId. Hostel is derived from that room on
+      // the backend; Bed itself does not have a hostelId column, so do not
+      // send an invalid hostelId filter here.
       params['filter[status]'] = 'available';
     }
 
