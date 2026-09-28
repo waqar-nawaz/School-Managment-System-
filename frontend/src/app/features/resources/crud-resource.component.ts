@@ -399,6 +399,8 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
 
   setPageSize(size: number): void {
     this.pageSize = size;
+    // Reset to page 1 so the user doesn't land on an empty page (e.g. page 5 of 10/page → page 5 of 1/page).
+    this.page = 1;
     this.load();
   }
 

@@ -35,18 +35,22 @@ router.put("/:id", authorize("invoices:update"), asyncHandler(async (req, res, n
   const frozen = Number(invoice.amountPaid) > 0 || invoice.status === "cancelled" || invoice.status === "paid";
   const FROZEN_FIELDS = new Set(["amount", "lineItems", "totalDue", "amountPaid", "status", "invoiceNo", "studentId", "branchId", "discount", "tax"]);
   const body = { ...req.body };
+  // Status transitions must always go through PATCH /:id/status (state machine), never PUT.
+  // Amount/discount/tax are immutable after generation — void and re-generate if a price is wrong.
+  // Only metadata (notes, dueDate, termId) is editable via PUT.
+  const ALLOWED_METADATA = new Set(["notes", "dueDate", "termId"]);
   if (frozen) {
     for (const k of Object.keys(body)) {
-      if (FROZEN_FIELDS.has(k)) delete body[k];
+      if (FROZEN_FIELDS.has(k) || !ALLOWED_METADATA.has(k)) delete body[k];
     }
   } else {
-    // Even before payment, prevent overriding audit/pk fields.
-    for (const k of ["id", "createdAt", "updatedAt", "invoiceNo", "amountPaid", "studentId", "branchId"]) {
-      delete body[k];
+    // Even before payment, only metadata fields are editable.
+    for (const k of Object.keys(body)) {
+      if (!ALLOWED_METADATA.has(k)) delete body[k];
     }
   }
   if (Object.keys(body).length === 0) {
-    throw ApiError.badRequest("Invoice is locked — cannot modify financial fields once payment has been recorded");
+    throw ApiError.badRequest("Invoice is locked — use PATCH /:id/status for status changes or void+re-generate for amount changes");
   }
   await invoice.update(body);
   await writeAuditLog({

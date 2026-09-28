@@ -4,11 +4,21 @@ import { CommonModule } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
+
+// Mirror of backend INVOICE_TRANSITIONS (invoices.routes.ts).
+const INVOICE_TRANSITIONS: Record<string, string[]> = {
+  pending: ['partial', 'overdue', 'cancelled'],
+  partial: ['paid', 'overdue', 'cancelled'],
+  paid: ['cancelled'],
+  overdue: ['paid', 'partial', 'cancelled'],
+  cancelled: [],
+};
 
 @Component({
   selector: 'app-invoices',
   standalone: true,
-  imports: [FormsModule, CommonModule, IconComponent],
+  imports: [FormsModule, CommonModule, IconComponent, ConfirmDialogComponent],
   template: `
     <div class="page-header">
       <div>
@@ -30,11 +40,15 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
             </button>
           }
         </div>
+        <select class="form-control" style="max-width:160px" [(ngModel)]="statusFilter" (ngModelChange)="onFilterChange()">
+          <option value="">All statuses</option>
+          @for (s of ['pending','partial','paid','overdue','cancelled']; track s) { <option [value]="s">{{ s }}</option> }
+        </select>
       </div>
       <div class="table-responsive">
         <table class="table">
           <thead>
-            <tr><th>No</th><th>Student</th><th>Amount</th><th>Discount</th><th>Due</th><th>Paid</th><th>Due Date</th><th>Status</th><th style="width:90px;text-align:right">Pay</th></tr>
+            <tr><th>No</th><th>Student</th><th>Amount</th><th>Discount</th><th>Due</th><th>Paid</th><th>Due Date</th><th>Status</th><th style="width:90px;text-align:right">Actions</th></tr>
           </thead>
           <tbody>
             @for (inv of invoices; track inv.id) {
@@ -46,7 +60,15 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                 <td>{{ money(inv.totalDue) }}</td>
                 <td>{{ money(inv.amountPaid ?? 0) }}</td>
                 <td>{{ inv.dueDate | date: 'MMM d, y' }}</td>
-                <td><span class="badge badge-{{ badgeOf(inv.status) }}">{{ inv.status }}</span></td>
+                <td>
+                  <span class="badge badge-{{ badgeOf(inv.status) }}">{{ inv.status }}</span>
+                  @if (nextStatuses(inv.status).length) {
+                    <select class="form-control form-control-sm" style="display:inline-block;width:auto;margin-left:6px" (change)="transition(inv, $event)">
+                      <option value="">Change…</option>
+                      @for (s of nextStatuses(inv.status); track s) { <option [value]="s">{{ s }}</option> }
+                    </select>
+                  }
+                </td>
                 <td style="text-align:right">
                   @if (inv.status !== 'paid' && inv.status !== 'cancelled') {
                     <button class="btn btn-sm btn-primary" (click)="openPay(inv)"><app-icon name="credit-card" [size]="14" /> Pay</button>
@@ -54,11 +76,20 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                 </td>
               </tr>
             } @empty {
-              <tr><td colspan="9" class="empty-cell">No invoices.</td></tr>
+              <tr><td colspan="9" class="empty-cell">{{ loading ? 'Loading…' : 'No invoices.' }}</td></tr>
             }
           </tbody>
         </table>
       </div>
+      @if (invoices.length || total > 0) {
+        <div class="pagination-bar">
+          <span>{{ total }} invoice(s) — page {{ page }} of {{ totalPages }}</span>
+          <div>
+            <button class="btn btn-sm btn-ghost" [disabled]="page <= 1" (click)="setPage(page - 1)"><app-icon name="chevron-left" [size]="14" /></button>
+            <button class="btn btn-sm btn-ghost" [disabled]="page >= totalPages" (click)="setPage(page + 1)"><app-icon name="chevron-right" [size]="14" /></button>
+          </div>
+        </div>
+      }
     </div>
 
     @if (showGenerate) {
@@ -81,13 +112,24 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
               </div>
               <div class="form-group"><label>Term ID</label><input type="number" class="form-control" [(ngModel)]="genForm.termId" name="termId" /></div>
               <div class="form-group"><label>Academic year ID</label><input type="number" class="form-control" [(ngModel)]="genForm.academicYearId" name="academicYearId" /></div>
-              <div class="form-group"><label>Discount</label><input type="number" class="form-control" [(ngModel)]="genForm.discount" name="discount" /></div>
-              <div class="form-group"><label>Tax</label><input type="number" class="form-control" [(ngModel)]="genForm.tax" name="tax" /></div>
-              <div class="form-group"><label>Due in (days)</label><input type="number" class="form-control" [(ngModel)]="genForm.dueInDays" name="dueInDays" /></div>
+              <div class="form-group"><label>Discount</label><input type="number" min="0" class="form-control" [(ngModel)]="genForm.discount" name="discount" /></div>
+              <div class="form-group"><label>Tax</label><input type="number" min="0" class="form-control" [(ngModel)]="genForm.tax" name="tax" /></div>
+              <div class="form-group"><label>Due in (days)</label><input type="number" min="0" max="365" class="form-control" [(ngModel)]="genForm.dueInDays" name="dueInDays" /></div>
             </div>
             <div class="form-group">
               <label>Fee types (IDs, comma separated)</label>
               <input class="form-control" placeholder="e.g. 1,2,3" [(ngModel)]="genForm.feeTypeIdsRaw" name="feeTypeIdsRaw" />
+            </div>
+            <div class="form-group">
+              <label>Custom line items</label>
+              @for (ci of genForm.customItems; track $index) {
+                <div style="display:flex;gap:6px;margin-bottom:6px">
+                  <input class="form-control" placeholder="Item name" [(ngModel)]="ci.name" name="ciName{{$index}}" />
+                  <input type="number" min="0" class="form-control" placeholder="Amount" style="max-width:140px" [(ngModel)]="ci.amount" name="ciAmount{{$index}}" />
+                  <button type="button" class="btn btn-sm btn-ghost-danger" (click)="removeCustomItem($index)"><app-icon name="x" [size]="12" /></button>
+                </div>
+              }
+              <button type="button" class="btn btn-sm btn-ghost" (click)="addCustomItem()"><app-icon name="plus" [size]="12" /> Add item</button>
             </div>
             <div class="modal-actions">
               <button type="button" class="btn btn-ghost" (click)="showGenerate = false"><app-icon name="x" [size]="14" /> Cancel</button>
@@ -112,7 +154,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           <form (ngSubmit)="pay(p)" #p="ngForm">
             <div class="form-group">
               <label>Amount (balance {{ money(balanceOf(payTarget)) }})</label>
-              <input type="number" class="form-control" [(ngModel)]="payForm.amount" name="amount" required #amount="ngModel" />
+              <input type="number" min="0" class="form-control" [(ngModel)]="payForm.amount" name="amount" required #amount="ngModel" />
               @if (p.submitted && amount.invalid) {
                 <div class="field-error">Amount is required</div>
               }
@@ -124,6 +166,17 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
               </select>
             </div>
             <div class="form-group"><label>Reference</label><input class="form-control" [(ngModel)]="payForm.reference" name="reference" /></div>
+            <div class="form-group">
+              <label>Paid on</label>
+              <input type="date" class="form-control" [(ngModel)]="payForm.paidOn" name="paidOn" />
+            </div>
+            <div class="form-group">
+              <label>Currency</label>
+              <select class="form-control" [(ngModel)]="payForm.currency" name="currency">
+                @for (c of CURRENCIES; track c) { <option [value]="c">{{ c }}</option> }
+              </select>
+            </div>
+            <div class="form-group"><label>Notes</label><textarea class="form-control" [(ngModel)]="payForm.notes" name="notes" rows="2"></textarea></div>
             <div class="modal-actions">
               <button type="button" class="btn btn-ghost" (click)="payTarget = null"><app-icon name="x" [size]="14" /> Cancel</button>
               <button type="submit" class="btn btn-primary" [disabled]="busy">
@@ -134,17 +187,34 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
         </div>
       </div>
     }
+
+    @if (confirmDialog) {
+      <app-confirm-dialog
+        [title]="confirmDialog.title"
+        [message]="confirmDialog.message"
+        (confirm)="confirmDialog.onConfirm()"
+        (close)="confirmDialog = null"
+      />
+    }
   `,
 })
 export class InvoicesComponent implements OnInit {
-  readonly METHODS = ['cash', 'card', 'bank_transfer', 'cheque', 'online'];
+  // Align with backend invoices.routes.ts ALLOWED_METHODS (cash|card|bank|mobile|online|bank_transfer|cheque).
+  readonly METHODS = ['cash', 'card', 'bank', 'mobile', 'online', 'bank_transfer', 'cheque'];
+  readonly CURRENCIES = ['PKR', 'USD', 'GBP', 'EUR', 'AED'];
   invoices: any[] = [];
   search = '';
+  statusFilter = '';
   showGenerate = false;
   payTarget: any = null;
   busy = false;
-  genForm: any = { discount: 0, tax: 0, dueInDays: 14 };
-  payForm: any = { amount: 0, method: 'cash', reference: '' };
+  loading = false;
+  page = 1;
+  pageSize = 25;
+  total = 0;
+  genForm: any = { discount: 0, tax: 0, dueInDays: 14, feeTypeIdsRaw: '', customItems: [] };
+  payForm: any = { amount: 0, method: 'cash', reference: '', paidOn: '', currency: 'PKR', notes: '' };
+  confirmDialog: { title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void } | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -156,10 +226,21 @@ export class InvoicesComponent implements OnInit {
     this.load();
   }
 
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.total / this.pageSize));
+  }
+
   load(): void {
-    this.api.get<any[]>('/invoices', { page: 1, limit: 100, q: this.search }).subscribe({
-      next: (res) => (this.invoices = res?.data ?? []),
-      error: () => {},
+    this.loading = true;
+    const params: Record<string, unknown> = { page: this.page, limit: this.pageSize, q: this.search };
+    if (this.statusFilter) params['filter[status]'] = this.statusFilter;
+    this.api.get<any[]>('/invoices', params).subscribe({
+      next: (res) => {
+        this.invoices = res?.data ?? [];
+        this.total = res?.meta?.total ?? this.invoices.length;
+        this.loading = false;
+      },
+      error: () => { this.loading = false; },
     });
   }
 
@@ -167,12 +248,28 @@ export class InvoicesComponent implements OnInit {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
+      this.page = 1;
       this.load();
     }, 300);
   }
 
+  onFilterChange(): void {
+    this.page = 1;
+    this.load();
+  }
+
+  setPage(p: number): void {
+    if (p < 1 || p > this.totalPages) return;
+    this.page = p;
+    this.load();
+  }
+
+  // Compute the list of statuses the user may transition to from the current status.
+  nextStatuses(current: string): string[] {
+    return INVOICE_TRANSITIONS[current] ?? [];
+  }
+
   // Backend eagerly loads the `student` association (invoices.routes.ts:20).
-  // Resolve a human-readable name; fall back to the raw ID if the association is missing.
   studentNameOf(inv: any): string {
     const s = inv?.student;
     if (!s) return `#${inv?.studentId ?? ''}`;
@@ -196,12 +293,21 @@ export class InvoicesComponent implements OnInit {
 
   clearSearch(): void {
     this.search = '';
+    this.page = 1;
     this.load();
   }
 
   openGenerate(): void {
-    this.genForm = { discount: 0, tax: 0, dueInDays: 14, feeTypeIdsRaw: '' };
+    this.genForm = { discount: 0, tax: 0, dueInDays: 14, feeTypeIdsRaw: '', customItems: [] };
     this.showGenerate = true;
+  }
+
+  addCustomItem(): void {
+    this.genForm.customItems.push({ name: '', amount: 0 });
+  }
+
+  removeCustomItem(index: number): void {
+    this.genForm.customItems.splice(index, 1);
   }
 
   generate(form: NgForm): void {
@@ -211,8 +317,13 @@ export class InvoicesComponent implements OnInit {
     }
     this.busy = true;
     const feeTypeIds = (this.genForm.feeTypeIdsRaw || '').split(',').map((s: string) => Number(s.trim())).filter(Number.isFinite);
-    const body = { ...this.genForm, feeTypeIds };
+    const customItems = (this.genForm.customItems || [])
+      .filter((ci: any) => ci.name && Number(ci.amount) > 0)
+      .map((ci: any) => ({ name: String(ci.name), amount: Number(ci.amount) }));
+    const body = { ...this.genForm, feeTypeIds, customItems };
     delete body.feeTypeIdsRaw;
+    delete body.customItems;
+    if (customItems.length) body.customItems = customItems;
     this.api.post('/invoices/generate', body).subscribe({
       next: () => {
         this.busy = false;
@@ -220,15 +331,23 @@ export class InvoicesComponent implements OnInit {
         this.toasts.success('Invoice generated');
         this.load();
       },
-      error: () => {
+      error: (err) => {
         this.busy = false;
+        this.toasts.error(err?.error?.message || 'Could not generate invoice');
       },
     });
   }
 
   openPay(inv: any): void {
     this.payTarget = inv;
-    this.payForm = { amount: Math.max(0, Number(inv.totalDue) - Number(inv.amountPaid ?? 0)), method: 'cash', reference: '' };
+    this.payForm = {
+      amount: Math.max(0, Number(inv.totalDue) - Number(inv.amountPaid ?? 0)),
+      method: 'cash',
+      reference: '',
+      paidOn: new Date().toLocaleDateString('en-CA'),
+      currency: 'PKR',
+      notes: '',
+    };
   }
 
   pay(form: NgForm): void {
@@ -244,8 +363,43 @@ export class InvoicesComponent implements OnInit {
         this.toasts.success('Payment recorded, receipt issued');
         this.load();
       },
-      error: () => {
+      error: (err) => {
         this.busy = false;
+        this.toasts.error(err?.error?.message || 'Could not record payment');
+      },
+    });
+  }
+
+  transition(inv: any, event: Event): void {
+    const next = (event.target as HTMLSelectElement).value;
+    (event.target as HTMLSelectElement).value = '';
+    if (!next || next === inv.status) return;
+    // Confirm before terminal/irreversible transitions (cancelled).
+    if (next === 'cancelled') {
+      this.confirmDialog = {
+        title: 'Cancel invoice',
+        message: `Cancel invoice ${inv.invoiceNo}? This is irreversible — the invoice cannot be reopened.`,
+        confirmLabel: 'Cancel invoice',
+        danger: true,
+        onConfirm: () => {
+          this.confirmDialog = null;
+          this.doTransition(inv, next);
+        },
+      };
+      return;
+    }
+    this.doTransition(inv, next);
+  }
+
+  private doTransition(inv: any, next: string): void {
+    this.api.patch(`/invoices/${inv.id}/status`, { status: next }).subscribe({
+      next: () => {
+        inv.status = next;
+        this.toasts.success(`Invoice moved to ${next}`);
+        this.load();
+      },
+      error: (err) => {
+        this.toasts.error(err?.error?.message || `Could not transition to ${next}`);
       },
     });
   }
