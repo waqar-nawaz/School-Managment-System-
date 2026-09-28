@@ -13,6 +13,7 @@ export interface CrudOptions<M extends Model = Model> {
   toSearchWhere?: (q: string) => WhereOptions;
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
+  afterCreate?: (row: M, req: Request) => void | Promise<void>;
   beforeRemove?: (req: Request) => void | Promise<void>;
   detailIncludes?: FindOptions["include"];
   /** Add computed fields (e.g. related display names) to a returned row. */
