@@ -330,23 +330,30 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   hostels: {
     key: 'hostels', label: 'Hostels', api: '/hostels',
-    columns: [nameCol('name'), nameCol('gender'), { key: 'capacity', label: 'Capacity', type: 'number' }, nameCol('wardenName', 'Warden'), boolCol('isActive', 'Active')],
-    fields: fields([{ key: 'name', label: 'Hostel name', required: true }, { key: 'gender', label: 'Type', type: 'select', options: STATUS_OPTIONS(['boys', 'girls', 'coed']) }, { key: 'capacity', label: 'Capacity', type: 'number' }, { key: 'wardenName', label: 'Warden' }, { key: 'address', label: 'Address', type: 'textarea' }]),
+    columns: [nameCol('name'), nameCol('gender'), { key: 'roomCount', label: 'Rooms', type: 'number' }, { key: 'capacity', label: 'Beds', type: 'number' }, { key: 'occupiedBeds', label: 'Occupied', type: 'number' }, { key: 'availableBeds', label: 'Available', type: 'number' }, nameCol('wardenName', 'Warden'), boolCol('isActive', 'Active')],
+    fields: fields([{ key: 'name', label: 'Hostel name', required: true }, { key: 'gender', label: 'Type', type: 'select', options: STATUS_OPTIONS(['boys', 'girls', 'coed']) }, { key: 'wardenName', label: 'Warden' }, { key: 'address', label: 'Address', type: 'textarea' }]),
   },
   rooms: {
     key: 'rooms', label: 'Rooms', api: '/rooms',
-    columns: [{ key: 'hostelName', label: 'Hostel', type: 'text' }, nameCol('roomNo', 'Room'), { key: 'capacity', label: 'Capacity', type: 'number' }, nameCol('floor'), boolCol('isActive', 'Active')],
-    fields: fields([refField('hostelId', 'Hostel', '/hostels', 'name', undefined, true), { key: 'roomNo', label: 'Room number', required: true }, { key: 'capacity', label: 'Capacity', type: 'number' }, { key: 'floor', label: 'Floor' }]),
+    columns: [{ key: 'hostelName', label: 'Hostel', type: 'text' }, { key: 'roomLabel', label: 'Room', type: 'text' }, { key: 'capacity', label: 'Bed Capacity', type: 'number' }, { key: 'bedCount', label: 'Beds', type: 'number' }, { key: 'availableBeds', label: 'Available', type: 'number' }, statusCol()],
+    fields: fields([refField('hostelId', 'Hostel', '/hostels', 'name', undefined, true), { key: 'roomNo', label: 'Room number', required: true }, { key: 'capacity', label: 'Bed capacity', type: 'number', required: true }, { key: 'floor', label: 'Floor' }]),
   },
   beds: {
     key: 'beds', label: 'Beds', api: '/beds',
-    columns: [{ key: 'roomNo', label: 'Room', type: 'text' }, nameCol('bedNo', 'Bed'), boolCol('isActive', 'Active')],
-    fields: fields([refField('roomId', 'Room', '/rooms', 'roomNo', undefined, true), { key: 'bedNo', label: 'Bed number', required: true }]),
+    columns: [{ key: 'hostelName', label: 'Hostel', type: 'text' }, { key: 'roomNo', label: 'Room', type: 'text' }, nameCol('bedNo', 'Bed'), statusCol()],
+    fields: fields([refField('roomId', 'Room', '/rooms', 'roomLabel', undefined, true), { key: 'bedNo', label: 'Bed number', required: true }]),
   },
   'hostel-allocations': {
     key: 'hostel-allocations', label: 'Hostel Allocations', api: '/hostel-allocations',
     columns: [{ key: 'studentName', label: 'Student', type: 'text' }, { key: 'hostelName', label: 'Hostel', type: 'text' }, { key: 'roomNo', label: 'Room', type: 'text' }, { key: 'bedNo', label: 'Bed', type: 'text' }, { key: 'checkIn', label: 'Check-in', type: 'date' }, statusCol()],
-    fields: fields([refField('studentId', 'Student', '/students', 'firstName', 'admissionNo', true), refField('bedId', 'Bed', '/beds', 'bedNo', undefined, true), { key: 'checkIn', label: 'Check-in', type: 'dateonly' }, { key: 'monthlyFee', label: 'Monthly fee', type: 'number' }]),
+    fields: fields([
+      refField('studentId', 'Student', '/students', 'firstName', 'admissionNo', true),
+      refField('hostelId', 'Hostel', '/hostels', 'name', undefined, true),
+      refField('roomId', 'Room', '/rooms', 'roomLabel', undefined, true),
+      refField('bedId', 'Bed', '/beds', 'bedLabel', undefined, true),
+      { key: 'checkIn', label: 'Check-in', type: 'dateonly' },
+      { key: 'monthlyFee', label: 'Monthly fee', type: 'number' },
+    ]),
   },
   events: {
     key: 'events', label: 'Events', api: '/events',
