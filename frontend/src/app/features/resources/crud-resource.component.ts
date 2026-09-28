@@ -208,7 +208,7 @@ const NO_EXPORT = new Set([
           </div>
           <form (ngSubmit)="save()" (input)="clearFieldErrors()" #f="ngForm">
             <div class="form-grid">
-              @for (field of config.fields; track field.key) {
+              @for (field of formFields; track field.key) {
                 <div class="form-group" [class.form-group-full]="field.type === 'textarea'">
                   <label>{{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</label>
                   @switch (field.type) {
@@ -461,6 +461,19 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
       error: () => {},
     });
     input.value = '';
+  }
+
+  get formFields(): FieldConfig[] {
+    const fields = this.config?.fields ?? [];
+    if (this.resourceKey !== "leaves") return fields;
+    const requester = this.perms.isRole("student", "teacher", "parent");
+    if (!requester) return fields;
+    // Requesters can submit a leave, but cannot approve/reject it. On edit they may only cancel.
+    return fields
+      .filter((field) => field.key !== "status" || !!this.editingId)
+      .map((field) => field.key === "status" && this.editingId
+        ? { ...field, options: [{ label: "cancelled", value: "cancelled" }] }
+        : field);
   }
 
   get rowEditable(): boolean {
