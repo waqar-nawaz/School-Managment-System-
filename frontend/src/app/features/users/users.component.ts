@@ -192,7 +192,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                   <label>Branch *</label>
                   <select class="form-control" name="branchId" [(ngModel)]="form.branchId">
                     <option [ngValue]="null">— select —</option>
-                    @for (b of branches) { <option [ngValue]="b.id">{{ b.name }}</option> }
+                    @for (b of branches; track b.id) { <option [ngValue]="b.id">{{ b.name }}</option> }
                   </select>
                   @if (fieldErrors['branchId']) { <div class="field-error">{{ fieldErrors['branchId'] }}</div> }
                 </div>
