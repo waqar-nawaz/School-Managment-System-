@@ -20,6 +20,7 @@ export interface CrudOptions<M extends Model = Model> {
   decorate?: (row: any) => Record<string, unknown>;
   /** Additional fixed filters applied to list/count queries. */
   defaultWhere?: WhereOptions;
+  scopeWhere?: (req: Request) => WhereOptions;
   /** Allow-list of columns clients may filter on via filter[field]=value. */
   allowedFilters?: string[];
   /** Sensitive columns excluded from CSV exports and list responses. */
@@ -49,6 +50,7 @@ export function createCrudController<M extends Model = Model>(
     // Previously `defaultWhere: { isActive: true }` was bypassable via `?filter[isActive]=false`.
     const where: Record<string, unknown> = {};
     if (opts.defaultWhere) (where as any)[Op.and] = [opts.defaultWhere];
+    if (opts.scopeWhere) (where as any)[Op.and] = [...((where as any)[Op.and] ?? []), opts.scopeWhere(req)];
     const f = req.query as Record<string, unknown>;
 
     // Allow-list filtering: clients may only filter on declared columns.
@@ -104,6 +106,7 @@ export function createCrudController<M extends Model = Model>(
       const id = Number(req.params.id);
       if (!Number.isInteger(id)) throw ApiError.badRequest("Invalid id");
       const lookup: any = { id };
+      Object.assign(lookup, opts.scopeWhere ? opts.scopeWhere(req) : {});
       const userBranchId = (req as any).user?.branchId;
       const attrs = (model as any).rawAttributes || {};
       if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
@@ -144,6 +147,7 @@ export function createCrudController<M extends Model = Model>(
       const attrs = (model as any).rawAttributes || {};
       const userBranchId = (req as any).user?.branchId;
       const lookup: any = { id };
+      Object.assign(lookup, opts.scopeWhere ? opts.scopeWhere(req) : {});
       if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
       const row = await model.findOne({ where: lookup }) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
@@ -175,6 +179,7 @@ export function createCrudController<M extends Model = Model>(
       const attrs = (model as any).rawAttributes || {};
       const userBranchId = (req as any).user?.branchId;
       const lookup: any = { id };
+      Object.assign(lookup, opts.scopeWhere ? opts.scopeWhere(req) : {});
       if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
       const row = await model.findOne({ where: lookup }) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
