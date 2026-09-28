@@ -18,6 +18,7 @@ export interface ResourceDefinition {
   searchable: string[];
   permission: string; // module name used for :read/:create/:update/:delete
   defaultSort?: [string, "ASC" | "DESC"];
+  scopeWhere?: (req: Request) => Record<string, unknown>;
   readonly?: boolean; // no write operations exposed
   afterCreate?: (row: any, req: Request) => void | Promise<void>;
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
@@ -1322,6 +1323,7 @@ export const RESOURCES: ResourceDefinition[] = [
   },
   {
     path: "leaves", model: LeaveRequest, searchable: ["leaveType", "status"], permission: "leaves",
+    scopeWhere: (req) => ["student", "teacher", "parent"].includes(String(req.user?.role ?? "")) ? { userId: req.user?.id } : {},
     beforeCreate: async (body, req) => {
       const userId = Number(req.user?.id);
       const branchId = req.user?.branchId;
@@ -1359,6 +1361,12 @@ export const RESOURCES: ResourceDefinition[] = [
       const id = Number(req.params.id);
       const current = await LeaveRequest.findByPk(id);
       if (!current) throw ApiError.badRequest("Leave request not found");
+      const role = String(req.user?.role ?? "");
+      const approver = ["super_admin", "admin", "principal"].includes(role) || req.user?.claims?.includes("leaves:approve");
+      if (!approver && Number(current.userId) !== Number(req.user?.id)) throw ApiError.forbidden("You can only update your own leave request");
+      if (!approver && current.status !== "pending") throw ApiError.badRequest("Only pending leave requests can be changed by the requester");
+      if (!approver && body.status !== undefined && String(body.status).toLowerCase() !== "cancelled") throw ApiError.forbidden("You can only cancel your own pending leave request");
+      if (approver && body.status !== undefined && !["pending","approved","rejected"].includes(String(body.status).toLowerCase())) throw ApiError.badRequest("Approver can only set leave status to pending, approved, or rejected");
       if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw ApiError.badRequest("Leave request does not belong to your branch");
       const startDate = body.startDate !== undefined ? new Date(body.startDate) : new Date(current.startDate);
       const endDate = body.endDate !== undefined ? new Date(body.endDate) : new Date(current.endDate);
