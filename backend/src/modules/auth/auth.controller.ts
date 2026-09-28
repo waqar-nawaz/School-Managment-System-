@@ -96,6 +96,7 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
 const SAFE_USER_FIELDS = [
   "id", "username", "email", "firstName", "lastName", "role", "branchId",
   "isActive", "emailVerified", "lastLoginAt", "lastLoginIp", "passwordChangedAt",
+  "phone", "gender",
   "createdAt", "updatedAt",
 ] as const;
 

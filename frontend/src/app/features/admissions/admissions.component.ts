@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
 // Must match the backend ADMISSION_STATUS enum (utils/constants.ts).
 // `withdrawn` was missing — backend allows admitted→withdrawn.
@@ -24,7 +25,7 @@ const ADMISSION_TRANSITIONS: Record<string, string[]> = {
 @Component({
   selector: 'app-admissions',
   standalone: true,
-  imports: [FormsModule, CommonModule, IconComponent],
+  imports: [FormsModule, CommonModule, IconComponent, ConfirmDialogComponent],
   template: `
     <div class="page-header">
       <div>
@@ -170,6 +171,15 @@ const ADMISSION_TRANSITIONS: Record<string, string[]> = {
         </div>
       </div>
     }
+
+    @if (confirmDialog) {
+      <app-confirm-dialog
+        [title]="confirmDialog.title"
+        [message]="confirmDialog.message"
+        (confirm)="confirmDialog.onConfirm()"
+        (close)="confirmDialog = null"
+      />
+    }
   `,
 })
 export class AdmissionsComponent implements OnInit {
@@ -181,6 +191,7 @@ export class AdmissionsComponent implements OnInit {
   showForm = false;
   saving = false;
   form: Record<string, any> = {};
+  confirmDialog: { title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void } | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -257,10 +268,21 @@ export class AdmissionsComponent implements OnInit {
   /** Create a student record from this application — atomic single-call flow. */
   registerStudent(app: any): void {
     if (!app?.id || app.status === 'admitted' || app.status === 'rejected' || app.status === 'withdrawn') return;
-    // Use the atomic backend endpoint POST /admissions/:id/register which creates
-    // the Student + transitions the application in one transaction.
+    // Confirm before the irreversible register operation (creates Student + transitions to admitted).
+    this.confirmDialog = {
+      title: 'Register student',
+      message: `Register "${app.studentName}" as a student? This creates a student account and marks the application as admitted. Cannot be undone.`,
+      confirmLabel: 'Register student',
+      onConfirm: () => {
+        this.confirmDialog = null;
+        this.doRegisterStudent(app);
+      },
+    };
+  }
+
+  private doRegisterStudent(app: any): void {
     this.api.post(`/admissions/${app.id}/register`, {}).subscribe({
-      next: (res) => {
+      next: () => {
         this.toasts.success(`${app.studentName} admitted as a student`);
         this.load();
         this.loadPipeline();
@@ -273,14 +295,37 @@ export class AdmissionsComponent implements OnInit {
 
   transition(app: any, event: Event): void {
     const next = (event.target as HTMLSelectElement).value;
-    if (next === app.status) return;
+    (event.target as HTMLSelectElement).value = '';
+    if (!next || next === app.status) return;
+    // Confirm before terminal / irreversible transitions (rejected, withdrawn, admitted).
+    const terminal = ['rejected', 'withdrawn', 'admitted'];
+    if (terminal.includes(next)) {
+      this.confirmDialog = {
+        title: `Mark as ${next}`,
+        message: `Are you sure you want to mark "${app.studentName}" as ${next}? This action cannot be undone.`,
+        confirmLabel: `Mark as ${next}`,
+        danger: next === 'rejected' || next === 'withdrawn',
+        onConfirm: () => {
+          this.confirmDialog = null;
+          this.doTransition(app, next);
+        },
+      };
+      return;
+    }
+    this.doTransition(app, next);
+  }
+
+  private doTransition(app: any, next: string): void {
     this.api.patch(`/admissions/${app.id}/status`, { status: next }).subscribe({
       next: () => {
         app.status = next;
         this.toasts.success(`Application moved to ${next}`);
+        this.load();
         this.loadPipeline();
       },
-      error: () => {},
+      error: (err) => {
+        this.toasts.error(err?.error?.message || `Could not transition to ${next}`);
+      },
     });
   }
 

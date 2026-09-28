@@ -23,6 +23,8 @@ export interface ResourceDefinition {
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeRemove?: (req: Request) => void | Promise<void>;
+  /** Runs AFTER model.create() — use to create dependent rows (e.g. MessageRecipient rows for messages). */
+  afterCreate?: (row: any, req: Request) => void | Promise<void>;
   includes?: any[];
   decorate?: (row: any) => Record<string, unknown>;
 }
@@ -1526,10 +1528,10 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeRemove: async (req) => {
       const hostel = await Hostel.findByPk(Number(req.params.id));
       if (!hostel || (req.user?.branchId != null && Number(hostel.branchId) !== Number(req.user.branchId))) {
-        throw new Error("Hostel not found or outside your branch");
+        throw ApiError.notFound("Hostel not found or outside your branch");
       }
       const roomCount = await Room.count({ where: { hostelId: hostel.id } });
-      if (roomCount > 0) throw new Error("Cannot delete a hostel that still has rooms");
+      if (roomCount > 0) throw ApiError.badRequest("Cannot delete a hostel that still has rooms");
     },
     decorate: (row) => {
       const p = plain(row);
@@ -1552,10 +1554,10 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeRemove: async (req) => {
       const room = await Room.findByPk(Number(req.params.id));
       if (!room || (req.user?.branchId != null && Number(room.branchId) !== Number(req.user.branchId))) {
-        throw new Error("Room not found or outside your branch");
+        throw ApiError.notFound("Room not found or outside your branch");
       }
       const bedCount = await Bed.count({ where: { roomId: room.id } });
-      if (bedCount > 0) throw new Error("Cannot delete a room that still has beds");
+      if (bedCount > 0) throw ApiError.badRequest("Cannot delete a room that still has beds");
     },
     decorate: (row) => {
       const p = plain(row);
@@ -1589,9 +1591,9 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeRemove: async (req) => {
       const bed = await Bed.findByPk(Number(req.params.id));
       if (!bed || (req.user?.branchId != null && Number(bed.branchId) !== Number(req.user.branchId))) {
-        throw new Error("Bed not found or outside your branch");
+        throw ApiError.notFound("Bed not found or outside your branch");
       }
-      if (bed.status === "occupied") throw new Error("Cannot delete an occupied bed");
+      if (bed.status === "occupied") throw ApiError.badRequest("Cannot delete an occupied bed");
       await refreshRoomStatus(Number(bed.roomId));
     },
     decorate: (row) => {
@@ -1624,7 +1626,7 @@ export const RESOURCES: ResourceDefinition[] = [
     beforeRemove: async (req) => {
       const allocation = await HostelAllocation.findByPk(Number(req.params.id));
       if (!allocation || (req.user?.branchId != null && Number(allocation.branchId) !== Number(req.user.branchId))) {
-        throw new Error("Hostel allocation not found or outside your branch");
+        throw ApiError.notFound("Hostel allocation not found or outside your branch");
       }
       const bed = await Bed.findByPk(allocation.bedId);
       if (bed) {
@@ -1694,6 +1696,19 @@ export const RESOURCES: ResourceDefinition[] = [
     },
   },
   { path: "notifications", model: Notification, searchable: ["title"], permission: "notifications", readonly: true },
+  // Re-added after merge 3b16bac dropped them. Frontend menu + permissions expect these routes.
+  {
+    path: "events", model: Event, searchable: ["title", "category", "venue"], permission: "events",
+    beforeCreate: (body, req) => { body.createdBy = req.user?.id; body.branchId = req.user?.branchId ?? body.branchId; return body; },
+  },
+  {
+    path: "notices", model: Notice, searchable: ["title", "type"], permission: "notices",
+    beforeCreate: (body, req) => { body.createdBy = req.user?.id; body.branchId = req.user?.branchId ?? body.branchId; return body; },
+  },
+  {
+    path: "announcements", model: Announcement, searchable: ["title", "priority"], permission: "announcements",
+    beforeCreate: (body, req) => { body.createdBy = req.user?.id; body.branchId = req.user?.branchId ?? body.branchId; return body; },
+  },
   { path: "syllabus", model: Syllabus, searchable: ["title"], permission: "syllabus", beforeCreate: (body, req) => validateTeachingPlan(body, req), beforeUpdate: (body, req) => validateTeachingPlan(body, req) },
   { path: "lesson-plans", model: LessonPlan, searchable: ["title"], permission: "lesson-plans", beforeCreate: (body, req) => validateTeachingPlan({ ...body, __lessonPlan: true }, req), beforeUpdate: (body, req) => validateTeachingPlan({ ...body, __lessonPlan: true }, req) },
   { path: "health-records", model: HealthRecord, searchable: ["bloodGroup"], permission: "health-records", beforeCreate: validateHealthRecord, beforeUpdate: validateHealthRecord },
