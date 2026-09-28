@@ -33,12 +33,33 @@ interface SectionOption {
     <div class="page-header">
       <div>
         <h1 class="page-title">Attendance</h1>
-        <p class="page-subtitle">Select a class &amp; date, load the register, mark and save</p>
+        <p class="page-subtitle">{{ isStudent ? "View your own attendance" : "Select a class &amp; date, load the register, mark and save" }}</p>
       </div>
     </div>
 
+    @if (isStudent) {
+      <div class="card">
+        <div class="card-toolbar">
+          <input type="month" class="form-control" style="max-width:170px" [(ngModel)]="month" (ngModelChange)="loadMyAttendance()" />
+        </div>
+        @if (myAttendance.length) {
+          <div class="table-responsive">
+            <table class="table">
+              <thead><tr><th>Date</th><th>Status</th><th>Late (min)</th><th>Reason</th></tr></thead>
+              <tbody>
+                @for (e of myAttendance; track e.id ?? e.date) {
+                  <tr><td>{{ e.date }}</td><td>{{ e.status }}</td><td>{{ e.lateMinutes || 0 }}</td><td>{{ e.reason || "—" }}</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <p class="form-hint">No attendance records found for this month.</p>
+        }
+      </div>
+    } @else {
     <div class="card">
-      <div class="card-toolbar">
+      <div class="card-toolbar>
         <select class="form-control" style="max-width:200px" [(ngModel)]="classId" (ngModelChange)="onClassChange()">
           <option [ngValue]="null">— Select class —</option>
           @for (c of classes; track c.id) {
@@ -106,6 +127,7 @@ interface SectionOption {
         </p>
       }
     </div>
+    }
   `,
 })
 export class AttendanceComponent implements OnInit {
@@ -117,9 +139,15 @@ export class AttendanceComponent implements OnInit {
   // Local date — avoids UTC-vs-local timezone bug (e.g. UTC+5 saves yesterday between 00:00–05:00 PKT).
   date = new Date().toLocaleDateString('en-CA');
   entries: RegisterEntry[] = [];
+  myAttendance: Array<{ id?: number; date: string; status: string; lateMinutes?: number; reason?: string }> = [];
+  month = new Date().toLocaleDateString("en-CA").slice(0, 7);
   loaded = false;
   saving = false;
   canMark = false;
+
+  get isStudent(): boolean {
+    return this.perms.isRole("student");
+  }
 
   constructor(
     private readonly api: ApiService,
@@ -134,6 +162,14 @@ export class AttendanceComponent implements OnInit {
     this.api.get<ClassOption[]>('/classes', { page: 1, limit: 100 }).subscribe({
       next: (res) => (this.classes = (res?.data as ClassOption[]) ?? []),
       error: () => {},
+    });
+  }
+
+  loadMyAttendance(): void {
+    if (!this.isStudent) return;
+    this.api.get<Array<{ id?: number; date: string; status: string; lateMinutes?: number; reason?: string }>>("/attendance/me", { month: this.month }).subscribe({
+      next: (res) => (this.myAttendance = (res?.data as any[]) ?? []),
+      error: () => (this.myAttendance = []),
     });
   }
 
