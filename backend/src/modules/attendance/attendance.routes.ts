@@ -132,7 +132,25 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
     },
     attributes: ["studentId"],
   });
-  const allowedStudentIds = new Set(enrolments.map(e => Number(e.studentId)));
+
+  // Some existing students are assigned through Student.currentClassId/currentSectionId
+  // without an Enrolment row. The register endpoint already supports that legacy/current
+  // assignment, so bulk save must use the same roster or the UI shows students that cannot
+  // actually be saved (e.g. "Student 18 is not enrolled").
+  const enrolledIds = enrolments.map(e => Number(e.studentId));
+  const fallbackStudents = await Student.findAll({
+    where: {
+      ...scope,
+      currentClassId: Number(classId),
+      ...(sectionId !== undefined ? { currentSectionId: Number(sectionId) } : {}),
+      isActive: true,
+    },
+    attributes: ["id"],
+  });
+  const allowedStudentIds = new Set([
+    ...enrolledIds,
+    ...fallbackStudents.map(s => Number(s.id)),
+  ]);
   const cleaned = entries.map((e) => {
     const studentId = Number(e.studentId);
     if (!allowedStudentIds.has(studentId)) {
