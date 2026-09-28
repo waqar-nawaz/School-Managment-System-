@@ -57,7 +57,9 @@ interface SectionOption {
           <p class="form-hint">No attendance records found for this month.</p>
         }
       </div>
-    } @else {
+    }
+
+    @if (!isStudent) {
     <div class="card">
       <div class="card-toolbar">
         <select class="form-control" style="max-width:200px" [(ngModel)]="classId" (ngModelChange)="onClassChange()">
