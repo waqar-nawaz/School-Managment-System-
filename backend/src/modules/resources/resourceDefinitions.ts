@@ -21,6 +21,7 @@ export interface ResourceDefinition {
   readonly?: boolean; // no write operations exposed
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
+  beforeRemove?: (req: Request) => void | Promise<void>;
   includes?: any[];
   decorate?: (row: any) => Record<string, unknown>;
 }
