@@ -47,7 +47,7 @@ interface SectionOption {
             <table class="table">
               <thead><tr><th>Date</th><th>Status</th><th>Late (min)</th><th>Reason</th></tr></thead>
               <tbody>
-                @for (e of myAttendance; track e.id ?? e.date) {
+                @for (e of myAttendance; track e.date) {
                   <tr><td>{{ e.date }}</td><td>{{ e.status }}</td><td>{{ e.lateMinutes || 0 }}</td><td>{{ e.reason || "—" }}</td></tr>
                 }
               </tbody>
@@ -59,7 +59,7 @@ interface SectionOption {
       </div>
     } @else {
     <div class="card">
-      <div class="card-toolbar>
+      <div class="card-toolbar">
         <select class="form-control" style="max-width:200px" [(ngModel)]="classId" (ngModelChange)="onClassChange()">
           <option [ngValue]="null">— Select class —</option>
           @for (c of classes; track c.id) {
