@@ -80,12 +80,21 @@ interface SectionOption {
         </button>
       </div>
 
-      @if (entries.length) {
+      @if (loading) {
+        <p class="form-hint">Loading register…</p>
+      }
+
+      @if (errorState) {
+        <p class="form-hint" style="color:var(--danger)">Failed to load register. Please try again.</p>
+      }
+
+      @if (!loading && !errorState && entries.length) {
         <div class="table-responsive">
           <table class="table">
             <thead>
               <tr>
                 <th style="width:70px">Roll</th>
+                <th style="width:90px">Adm #</th>
                 <th>Student</th>
                 <th style="width:150px">Status</th>
                 <th style="width:110px">Late (min)</th>
@@ -96,6 +105,7 @@ interface SectionOption {
               @for (e of entries; track e.studentId) {
                 <tr>
                   <td>{{ e.rollNo ?? '—' }}</td>
+                  <td>{{ e.admissionNo || '—' }}</td>
                   <td>{{ e.studentName || ('#' + e.studentId) }}</td>
                   <td>
                     <select class="form-control form-control-sm" [(ngModel)]="e.status">
@@ -104,8 +114,22 @@ interface SectionOption {
                       }
                     </select>
                   </td>
-                  <td><input type="number" class="form-control form-control-sm" style="width:80px" [(ngModel)]="e.lateMinutes" /></td>
-                  <td><input class="form-control form-control-sm" [(ngModel)]="e.reason" /></td>
+                  <td>
+                    <input
+                      type="number"
+                      class="form-control form-control-sm"
+                      style="width:80px"
+                      [(ngModel)]="e.lateMinutes"
+                      [disabled]="e.status !== 'late'"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      class="form-control form-control-sm"
+                      [(ngModel)]="e.reason"
+                      [disabled]="!['absent','late','excused'].includes(e.status || '')"
+                    />
+                  </td>
                 </tr>
               }
             </tbody>
@@ -113,18 +137,21 @@ interface SectionOption {
         </div>
         @if (canMark) {
           <div class="modal-actions" style="justify-content:flex-start">
-            <button class="btn btn-primary" [disabled]="saving" (click)="save()">
+            <button class="btn btn-primary" [disabled]="saving || dateChanged" (click)="save()">
               <app-icon name="check" [size]="15" /> {{ saving ? 'Saving…' : 'Save attendance' }}
             </button>
             <button class="btn btn-ghost" (click)="markAll('present')"><app-icon name="check" [size]="15" /> All present</button>
             <button class="btn btn-ghost" (click)="markAll('absent')"><app-icon name="x" [size]="15" /> All absent</button>
+            @if (dateChanged) {
+              <span class="form-hint" style="color:var(--danger)">Date changed — click "Load register" to refresh</span>
+            }
           </div>
         }
-      } @else if (loaded) {
+      } @else if (!loading && !errorState && loaded) {
         <p class="form-hint">No active students in this class/section. Enrol students first (Enrolments or add a student with a class).</p>
-      } @else {
+      } @else if (!loading && !errorState && !loaded) {
         <p class="form-hint">
-          Choose the class (and section if needed) and the date, then click “Load register”.
+          Choose the class (and section if needed) and the date, then click "Load register".
           The list shows the students enrolled in that class, defaulting to present — change anyone who is absent/late and save.
         </p>
       }
@@ -140,15 +167,23 @@ export class AttendanceComponent implements OnInit {
   sectionId: number | null = null;
   // Local date — avoids UTC-vs-local timezone bug (e.g. UTC+5 saves yesterday between 00:00–05:00 PKT).
   date = new Date().toLocaleDateString('en-CA');
+  loadedDate: string | null = null;
   entries: RegisterEntry[] = [];
   myAttendance: Array<{ id?: number; date: string; status: string; lateMinutes?: number; reason?: string }> = [];
   month = new Date().toLocaleDateString("en-CA").slice(0, 7);
   loaded = false;
+  loading = false;
+  errorState = false;
   saving = false;
   canMark = false;
 
   get isStudent(): boolean {
     return this.perms.isRole("student");
+  }
+
+  /** True when the user changed the date input after loading — prevents saving to the wrong date. */
+  get dateChanged(): boolean {
+    return this.loadedDate !== null && this.date !== this.loadedDate;
   }
 
   constructor(
@@ -184,6 +219,8 @@ export class AttendanceComponent implements OnInit {
     this.sections = [];
     this.entries = [];
     this.loaded = false;
+    this.loadedDate = null;
+    this.errorState = false;
     if (this.classId) {
       this.api
         .get<SectionOption[]>('/sections', { 'filter[classId]': this.classId, page: 1, limit: 100 })
@@ -196,6 +233,8 @@ export class AttendanceComponent implements OnInit {
 
   loadRegister(): void {
     if (!this.classId) return;
+    this.loading = true;
+    this.errorState = false;
     const params: Record<string, unknown> = { classId: this.classId, date: this.date };
     if (this.sectionId) params.sectionId = this.sectionId;
     this.api.get<{ register: RegisterEntry[] }>('/attendance/register', params).subscribe({
@@ -205,10 +244,14 @@ export class AttendanceComponent implements OnInit {
           status: e.status || 'present',
         }));
         this.loaded = true;
+        this.loadedDate = this.date;
+        this.loading = false;
       },
       error: () => {
         this.entries = [];
         this.loaded = true;
+        this.errorState = true;
+        this.loading = false;
       },
     });
   }
@@ -218,6 +261,12 @@ export class AttendanceComponent implements OnInit {
   }
 
   save(): void {
+    // Guard: if the user changed the date after loading, don't save — they'd be
+    // writing date-X entries under date Y.
+    if (this.dateChanged) {
+      this.toasts.error('Date changed — click "Load register" to refresh first');
+      return;
+    }
     this.saving = true;
     const entries = this.entries.map((e) => ({
       studentId: e.studentId,
@@ -238,8 +287,9 @@ export class AttendanceComponent implements OnInit {
           this.toasts.success('Attendance saved');
           this.loadRegister();
         },
-        error: () => {
+        error: (err) => {
           this.saving = false;
+          this.toasts.error(err?.error?.message || 'Could not save attendance');
         },
       });
   }
