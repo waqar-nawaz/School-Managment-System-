@@ -30,20 +30,29 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
             <tbody>
               @for (r of byClass; track $index) {
                 <tr><td>{{ r?.class?.name ?? r.classId }}</td><td>{{ r?.count }}</td></tr>
-              } @empty { <tr><td colspan="2" class="empty-cell">No data.</td></tr> }
+              } @empty { <tr><td colspan="2" class="empty-cell">{{ loading ? 'Loading…' : 'No data.' }}</td></tr> }
             </tbody>
           </table>
         </div>
       }
       @if (active === 'attendance') {
         <h3 class="card-title">Attendance rate</h3>
+        <div class="form-row" style="gap:8px;margin-bottom:1rem">
+          <label>From <input type="date" class="form-control" style="max-width:180px" [(ngModel)]="dateFrom" (ngModelChange)="loadActive()" /></label>
+          <label>To <input type="date" class="form-control" style="max-width:180px" [(ngModel)]="dateTo" (ngModelChange)="loadActive()" /></label>
+        </div>
         <p><span class="stat-value">{{ ar?.rate ?? 0 }}%</span> <span class="form-hint">({{ ar?.present ?? 0 }} present of {{ ar?.total ?? 0 }})</span></p>
       }
       @if (active === 'fees') {
         <h3 class="card-title">Fees summary</h3>
+        <div class="form-row" style="gap:8px;margin-bottom:1rem">
+          <label>From <input type="date" class="form-control" style="max-width:180px" [(ngModel)]="dateFrom" (ngModelChange)="loadActive()" /></label>
+          <label>To <input type="date" class="form-control" style="max-width:180px" [(ngModel)]="dateTo" (ngModelChange)="loadActive()" /></label>
+        </div>
         <div class="stat-grid stat-grid-sm">
           <div class="mini-card"><span class="stat-label">Invoiced</span><span class="stat-value">{{ money(fees?.invoiced) }}</span></div>
           <div class="mini-card"><span class="stat-label">Collected</span><span class="stat-value">{{ money(fees?.collected) }}</span></div>
+          <div class="mini-card"><span class="stat-label">Refunded</span><span class="stat-value">{{ money(fees?.refunded) }}</span></div>
           <div class="mini-card"><span class="stat-label">Outstanding</span><span class="stat-value stat-warn">{{ money(fees?.outstanding) }}</span></div>
           <div class="mini-card"><span class="stat-label">Spent</span><span class="stat-value">{{ money(fees?.spent) }}</span></div>
         </div>
@@ -54,6 +63,9 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           <input type="number" class="form-control" style="max-width:160px" placeholder="Exam ID" [(ngModel)]="examId" />
           <button class="btn btn-primary" (click)="loadExam()"><app-icon name="bar-chart" [size]="15" /> Run</button>
         </div>
+        @if (!examId || examId <= 0) {
+          <p class="form-hint" style="margin-top:0.75rem">Enter a valid exam ID and click Run.</p>
+        }
         @if (perf) {
           <div class="stat-grid stat-grid-sm">
             <div class="mini-card"><span class="stat-label">Average</span><span class="stat-value">{{ round(perf.average) }}</span></div>
@@ -92,11 +104,13 @@ export class ReportsComponent implements OnInit {
   perf: any = null;
   snap: any = null;
   examId: number | null = null;
+  dateFrom = '';
+  dateTo = '';
+  loading = false;
 
   constructor(private readonly api: ApiService) {}
 
   ngOnInit(): void {
-    // Only load the active tab — saves 3 wasted requests per visit.
     this.loadActive();
   }
 
@@ -105,23 +119,36 @@ export class ReportsComponent implements OnInit {
     if (key !== 'exam') this.loadActive();
   }
 
-  loadAll(): void {
-    this.api.get<any[]>('/reports/students-by-class').subscribe((r) => (this.byClass = r?.data ?? []));
-    this.api.get<any>('/reports/attendance-rate').subscribe((r) => (this.ar = r?.data));
-    this.api.get<any>('/reports/fees').subscribe((r) => (this.fees = r?.data));
-    this.api.get<any>('/reports/comparison').subscribe((r) => (this.snap = r?.data));
+  private dateParams(): Record<string, string> {
+    const params: Record<string, string> = {};
+    if (this.dateFrom) params['from'] = this.dateFrom;
+    if (this.dateTo) params['to'] = this.dateTo;
+    return params;
   }
 
   loadActive(): void {
-    if (this.active === 'byclass') this.api.get<any[]>('/reports/students-by-class').subscribe((r) => (this.byClass = r?.data ?? []));
-    if (this.active === 'attendance') this.api.get<any>('/reports/attendance-rate').subscribe((r) => (this.ar = r?.data));
-    if (this.active === 'fees') this.api.get<any>('/reports/fees').subscribe((r) => (this.fees = r?.data));
-    if (this.active === 'snapshot') this.api.get<any>('/reports/comparison').subscribe((r) => (this.snap = r?.data));
+    this.loading = true;
+    const params = this.dateParams();
+    if (this.active === 'byclass') {
+      this.api.get<any[]>('/reports/students-by-class').subscribe({ next: (r) => { this.byClass = r?.data ?? []; this.loading = false; }, error: () => { this.loading = false; } });
+    }
+    if (this.active === 'attendance') {
+      this.api.get<any>('/reports/attendance-rate', params).subscribe({ next: (r) => { this.ar = r?.data; this.loading = false; }, error: () => { this.loading = false; } });
+    }
+    if (this.active === 'fees') {
+      this.api.get<any>('/reports/fees', params).subscribe({ next: (r) => { this.fees = r?.data; this.loading = false; }, error: () => { this.loading = false; } });
+    }
+    if (this.active === 'snapshot') {
+      this.api.get<any>('/reports/comparison').subscribe({ next: (r) => { this.snap = r?.data; this.loading = false; }, error: () => { this.loading = false; } });
+    }
   }
 
   loadExam(): void {
-    if (!this.examId || this.examId <= 0) return;
-    this.api.get<any>('/reports/exam-performance', { examId: this.examId }).subscribe((r) => (this.perf = r?.data));
+    if (!this.examId || this.examId <= 0) {
+      this.perf = null;
+      return;
+    }
+    this.api.get<any>('/reports/exam-performance', { examId: this.examId }).subscribe({ next: (r) => (this.perf = r?.data), error: () => {} });
   }
 
   money(v: unknown): string {

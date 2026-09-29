@@ -61,6 +61,7 @@ export const MENU: MenuItem[] = [
   { label: 'Notices', path: '/notices', icon: 'bell', group: 'Communication', permission: 'notices:read' },
   { label: 'Announcements', path: '/announcements', icon: 'megaphone', group: 'Communication', permission: 'announcements:read' },
   { label: 'Messages', path: '/messages', icon: 'mail', group: 'Communication', permission: 'messages:read' },
+  { label: 'Notifications', path: '/notifications', icon: 'bell', group: 'Communication', permission: 'notifications:read' },
   { label: 'Complaints', path: '/complaints', icon: 'message', group: 'Communication', permission: 'complaints:read' },
 
   { label: 'Certificates', path: '/certificates', icon: 'award', group: 'Services', permission: 'certificates:read' },

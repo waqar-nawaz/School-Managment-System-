@@ -87,6 +87,11 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
   const numTax = Number(tax);
   if (!Number.isFinite(numDiscount) || numDiscount < 0) throw ApiError.badRequest("discount must be non-negative");
   if (!Number.isFinite(numTax) || numTax < 0) throw ApiError.badRequest("tax must be non-negative");
+  // Validate dueInDays is a non-negative integer ≤ 365.
+  const numDueInDays = Number(dueInDays);
+  if (!Number.isInteger(numDueInDays) || numDueInDays < 0 || numDueInDays > 365) {
+    throw ApiError.badRequest("dueInDays must be an integer between 0 and 365");
+  }
 
   const student = await Student.findByPk(studentId);
   if (!student) throw ApiError.notFound("Student not found");
@@ -131,7 +136,7 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
     discount: numDiscount,
     tax: numTax,
     totalDue,
-    dueDate: new Date(Date.now() + Number(dueInDays) * 86400000),
+    dueDate: new Date(Date.now() + numDueInDays * 86400000),
     issueDate: new Date(),
     status: "pending",
     lineItems,

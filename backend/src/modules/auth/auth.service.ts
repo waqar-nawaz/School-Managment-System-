@@ -246,6 +246,31 @@ export async function verifyEmail(token: string): Promise<void> {
   await row.destroy();
 }
 
+/**
+ * Generate and store an email-verification token for the given user, then email
+ * the verification link. Returns true if the email was sent.
+ */
+export async function sendVerificationEmail(user: User, baseUrl: string): Promise<boolean> {
+  if (!user.email) return false;
+  // Invalidate any prior verification tokens for this user.
+  await Settings.destroy({ where: { scope: `verify:${user.id}` } });
+  const token = crypto.randomBytes(32).toString("hex");
+  const hashed = crypto.createHash("sha256").update(token).digest("hex");
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+  await Settings.create({
+    scope: `verify:${user.id}`,
+    key: hashed,
+    value: String(expiresAt),
+    description: "email-verification token",
+  });
+  const verifyUrl = `${baseUrl.replace(/\/+$/, "")}/auth/verify-email?token=${token}`;
+  return sendMail({
+    to: user.email,
+    subject: "Verify your email address",
+    html: `<p>Hi ${user.firstName},</p><p>Please verify your email address by clicking the link below (valid 24 hours):</p><p><a href="${verifyUrl}">${verifyUrl}</a></p>`,
+  });
+}
+
 export function sha256(value: string): string {
   return crypto.createHash("sha256").update(value).digest("hex");
 }

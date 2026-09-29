@@ -15,13 +15,15 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
       <p class="auth-sub">Choose a strong password to secure your account</p>
     </div>
     <form (ngSubmit)="submit(f)" #f="ngForm">
-      <div class="form-group">
-        <label>Reset token</label>
-        <input type="text" class="form-control" name="token" [(ngModel)]="token" required #tokenCtrl="ngModel" />
-        @if (f.submitted && tokenCtrl.invalid) {
-          <div class="field-error">Reset token is required</div>
-        }
-      </div>
+      @if (!tokenFromUrl) {
+        <div class="form-group">
+          <label>Reset token</label>
+          <input type="text" class="form-control" name="token" [(ngModel)]="token" required #tokenCtrl="ngModel" />
+          @if (f.submitted && tokenCtrl.invalid) {
+            <div class="field-error">Reset token is required</div>
+          }
+        </div>
+      }
       <div class="form-group">
         <label>New password</label>
         <div class="password-box">
@@ -45,6 +47,28 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           <div class="field-error">Password must be at least 8 characters</div>
         }
       </div>
+      <div class="form-group">
+        <label>Confirm new password</label>
+        <div class="password-box">
+          <input
+            [type]="showPassword ? 'text' : 'password'"
+            class="form-control"
+            name="confirm"
+            [(ngModel)]="confirmPassword"
+            required
+            #confirmCtrl="ngModel" />
+          <button
+            type="button"
+            class="password-toggle"
+            (click)="showPassword = !showPassword"
+            [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'">
+            <app-icon [name]="showPassword ? 'eye-off' : 'eye'" [size]="16" />
+          </button>
+        </div>
+        @if (f.submitted && (confirmCtrl.invalid || pwMismatch)) {
+          <div class="field-error">{{ confirmCtrl.invalid ? 'Please confirm your new password' : 'Passwords do not match' }}</div>
+        }
+      </div>
       <button type="submit" class="btn btn-primary btn-block btn-lg" [disabled]="busy">
         <app-icon name="check" [size]="16" /> {{ busy ? 'Saving…' : 'Save password' }}
       </button>
@@ -57,8 +81,11 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
 export class ResetPasswordComponent implements OnInit {
   token = '';
   password = '';
+  confirmPassword = '';
   busy = false;
   showPassword = false;
+  pwMismatch = false;
+  tokenFromUrl = false;
 
   constructor(
     private readonly api: ApiService,
@@ -69,12 +96,20 @@ export class ResetPasswordComponent implements OnInit {
 
   ngOnInit(): void {
     const token = this.route.snapshot.queryParamMap.get('token');
-    if (token) this.token = token;
+    if (token) {
+      this.token = token;
+      this.tokenFromUrl = true;
+    }
   }
 
   submit(form: NgForm): void {
+    this.pwMismatch = false;
     if (form.invalid) {
       form.form.markAllAsTouched();
+      return;
+    }
+    if (this.password !== this.confirmPassword) {
+      this.pwMismatch = true;
       return;
     }
     this.busy = true;

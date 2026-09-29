@@ -86,6 +86,17 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
   ApiResponse.success(res, 200, "Email verified", null);
 });
 
+export const sendVerification = asyncHandler(async (req: Request, res: Response) => {
+  const user = await User.findByPk(req.user!.id);
+  if (!user) throw ApiError.notFound("User not found");
+  if (user.emailVerified) {
+    ApiResponse.success(res, 200, "Email is already verified", null);
+    return;
+  }
+  const mailed = await authService.sendVerificationEmail(user, resolveBaseUrl(req));
+  ApiResponse.success(res, 200, mailed ? "Verification email sent" : "Could not send verification email", null);
+});
+
 export const me = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findByPk(req.user!.id);
   if (!user) throw ApiError.notFound("User not found");
