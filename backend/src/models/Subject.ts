@@ -8,8 +8,9 @@ export class Subject extends BaseModel {
   @Column({ type: DataType.STRING(120), allowNull: false })
   name!: string;
 
+  @Unique("uq_subject_branch_name")
   @ForeignKey(() => Branch)
-  @Column({ type: DataType.BIGINT.UNSIGNED })
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   branchId!: number;
 
   @Column({ type: DataType.STRING(10) })

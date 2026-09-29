@@ -1,6 +1,6 @@
 import { Request } from "express";
 import { ApiError } from "../../utils/ApiError";
-import { Op } from "sequelize";
+import { Op, WhereOptions } from "sequelize";
 import {
   Role, Permission, Branch, AcademicYear, Term, SchoolClass, Section, Subject, Student, Certificate,
   ClassSubject, Enrolment, Parent, Teacher, Staff, Exam, ExamSchedule, ExamResult,
@@ -18,7 +18,7 @@ export interface ResourceDefinition {
   searchable: string[];
   permission: string; // module name used for :read/:create/:update/:delete
   defaultSort?: [string, "ASC" | "DESC"];
-  scopeWhere?: (req: Request) => Record<string, unknown>;
+  scopeWhere?: (req: Request) => WhereOptions;
   readonly?: boolean; // no write operations exposed
   afterCreate?: (row: any, req: Request) => void | Promise<void>;
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
@@ -1405,7 +1405,7 @@ export const RESOURCES: ResourceDefinition[] = [
   },
   { path: "books", model: Book, searchable: ["title", "author", "isbn", "category"], permission: "library" },
   { path: "book-copies", model: BookCopy, searchable: ["accessionNo", "status"], permission: "library", beforeCreate: validateBookCopy, beforeUpdate: validateBookCopy },
-  { path: "book-fines", model: BookFine, searchable: ["receiptNo", "status"], permission: "book-fines" },
+  { path: "book-fines", model: BookFine, searchable: ["receiptNo", "status"], permission: "book-fines", beforeCreate: validateBookFine, beforeUpdate: validateBookFine },
   { path: "routes", model: Route, searchable: ["name", "startPoint", "endPoint"], permission: "routes", beforeCreate: validateRoute, beforeUpdate: validateRoute },
   { path: "route-stops", model: RouteStop, searchable: ["name"], permission: "route-stops", beforeCreate: validateRouteStop, beforeUpdate: validateRouteStop },
   { path: "vehicles", model: Vehicle, searchable: ["registrationNo", "model"], permission: "vehicles", beforeCreate: validateVehicle, beforeUpdate: validateVehicle },
@@ -1643,6 +1643,20 @@ export const RESOURCES: ResourceDefinition[] = [
   },
   {
     path: "messages", model: Message, searchable: ["subject"], permission: "messages",
+    // Restrict the list to messages the caller sent OR is a recipient of (privacy).
+    // Without this, anyone with messages:read sees every direct message in their branch.
+    // super_admin (no branchId) is exempt — they can audit all messages.
+    scopeWhere: (req: Request) => {
+      const userId = req.user?.id;
+      const branchId = req.user?.branchId;
+      if (branchId == null) return {}; // super_admin sees all
+      return {
+        [Op.or]: [
+          { senderId: userId },
+          { "$recipients.recipientId$": userId },
+        ],
+      };
+    },
     beforeCreate: async (body, req) => {
       const senderId = Number(req.user?.id);
       const branchId = req.user?.branchId;

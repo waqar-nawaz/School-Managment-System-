@@ -142,6 +142,29 @@ export function defineAssociations(): void {
   Role.hasMany(User, { foreignKey: "role", sourceKey: "name" });
   User.belongsTo(Role, { foreignKey: "role", targetKey: "name", as: "roleInfo" });
 
+  // Role ↔ Permission many-to-many via RolePermission (DB-backed RBAC).
+  // NOTE: RolePermission.roleId stores Role.name (string), and RolePermission.permissionKey
+  // stores Permission.key (string) — both columns are STRING not BIGINT because the
+  // references are to the natural keys (Role.name, Permission.key), not the surrogate PKs.
+  Role.belongsToMany(Permission, {
+    through: { model: RolePermission, unique: false },
+    foreignKey: "roleId",
+    otherKey: "permissionKey",
+    sourceKey: "name",
+    targetKey: "key",
+    as: "permissions",
+  });
+  Permission.belongsToMany(Role, {
+    through: { model: RolePermission, unique: false },
+    foreignKey: "permissionKey",
+    otherKey: "roleId",
+    sourceKey: "key",
+    targetKey: "name",
+    as: "roles",
+  });
+  RolePermission.belongsTo(Role, { foreignKey: "roleId", targetKey: "name" });
+  RolePermission.belongsTo(Permission, { foreignKey: "permissionKey", targetKey: "key" });
+
   // Auth sessions
   User.hasMany(RefreshToken, { as: "refreshTokens", foreignKey: "userId" });
   RefreshToken.belongsTo(User, { foreignKey: "userId" });

@@ -5,11 +5,12 @@ import { Branch } from "./Branch";
 
 @Table({ tableName: "teachers" })
 export class Teacher extends BaseModel {
+  @Unique("uq_teacher_branch_staff_no")
   @ForeignKey(() => Branch)
-  @Column({ type: DataType.BIGINT.UNSIGNED })
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   branchId!: number;
 
-  @Unique
+  @Unique("uq_teacher_branch_staff_no")
   @Column({ type: DataType.STRING(30), allowNull: false })
   staffNo!: string;
 

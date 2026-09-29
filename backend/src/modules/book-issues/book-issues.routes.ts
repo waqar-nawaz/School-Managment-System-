@@ -148,7 +148,8 @@ router.post("/:id/return", authorize("book-issues:update"), asyncHandler(async (
     await current.update({ returnDate: returnedAt, status: "returned" }, { transaction });
     await copy.update({ status: "available" }, { transaction });
     if (lateDays > 0) {
-      await BookFine.create({ bookIssueId: current.id, userId: current.userId, amount: lateDays * perDay, reason: `${lateDays} day(s) late`, status: "pending" }, { transaction });
+      // Set branchId on the BookFine so branch users can see the fine in their list (was missing — fines were invisible).
+      await BookFine.create({ bookIssueId: current.id, userId: current.userId, amount: lateDays * perDay, reason: `${lateDays} day(s) late`, status: "pending", branchId: current.branchId ?? branchOf(req) ?? undefined }, { transaction });
     }
     return current;
   });
@@ -169,6 +170,9 @@ router.post("/:id/mark-lost", authorize("book-issues:update"), asyncHandler(asyn
   const issue = await sequelize.transaction(async (transaction) => {
     const current = await BookIssue.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!current) throw ApiError.notFound("Issue not found");
+    // Branch-scope guard (was missing — closed a cross-tenant IDOR where a branch-A user could
+    // mark a branch-B book issue as lost by ID).
+    assertBranch(current, req, "Book issue");
     if (current.status !== "issued") throw ApiError.badRequest("Only issued books can be marked lost");
     const copy = await BookCopy.findByPk(current.bookCopyId, { transaction, lock: transaction.LOCK.UPDATE });
     if (!copy || copy.status !== "issued") throw ApiError.badRequest("Book copy is not currently issued");
@@ -178,7 +182,8 @@ router.post("/:id/mark-lost", authorize("book-issues:update"), asyncHandler(asyn
     const fine = lostFine + (book ? Number(book.price || 0) : 0);
     await current.update({ status: "lost", returnDate: new Date() }, { transaction });
     await copy.update({ status: "lost" }, { transaction });
-    await BookFine.create({ bookIssueId: current.id, userId: current.userId, amount: fine, reason: "Book lost", status: "pending" }, { transaction });
+    // Set branchId on the BookFine so branch users can see the fine in their list.
+    await BookFine.create({ bookIssueId: current.id, userId: current.userId, amount: fine, reason: "Book lost", status: "pending", branchId: current.branchId ?? branchOf(req) ?? undefined }, { transaction });
     return current;
   });
   await writeAuditLog({

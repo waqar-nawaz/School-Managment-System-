@@ -118,12 +118,17 @@ router.put("/:id", authorize("certificates:update"), asyncHandler(async (req, re
   if (callerBranch != null && Number(cert.branchId) !== Number(callerBranch)) {
     throw ApiError.forbidden("Certificate does not belong to your branch");
   }
-  const { title, body, signedBy, studentId } = req.body;
+  const { title, body, signedBy, studentId, type } = req.body;
+  // Validate type against the enum if provided (was silently dropped before).
+  if (type !== undefined && !CERTIFICATE_TYPES.includes(type as any)) {
+    throw ApiError.badRequest(`Unknown certificate type. Allowed: ${CERTIFICATE_TYPES.join(", ")}`);
+  }
   await cert.update({
     ...(title !== undefined ? { title } : {}),
     ...(body !== undefined ? { body } : {}),
     ...(signedBy !== undefined ? { signedBy } : {}),
     ...(studentId !== undefined ? { studentId } : {}),
+    ...(type !== undefined ? { type } : {}),
   });
   await writeAuditLog({
     action: "update",

@@ -19,6 +19,7 @@ function buildRouter(def: ResourceDefinition): Router {
     beforeUpdate: def.beforeUpdate,
     beforeRemove: def.beforeRemove,
     afterCreate: def.afterCreate,
+    scopeWhere: def.scopeWhere,
     includes: def.includes,
     decorate: def.decorate,
   } as CrudOptions);
