@@ -181,10 +181,13 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
   try {
     // Use bulkCreate with updateOnDuplicate instead of N+1 sequential upserts.
     // The unique index (studentId, date) makes upsert semantics safe.
+    // NOTE: "branchId" is intentionally NOT in the updateOnDuplicate list — it should be
+    // set only on INSERT (which the `cleaned` array already does). Overwriting it on every
+    // conflict would re-stamp historical rows if a class is ever moved to another branch.
     if (cleaned.length) {
       await Attendance.bulkCreate(cleaned, {
         transaction: t,
-        updateOnDuplicate: ["status", "lateMinutes", "reason", "takenBy", "classId", "sectionId", "branchId", "updatedAt"],
+        updateOnDuplicate: ["status", "lateMinutes", "reason", "takenBy", "classId", "sectionId", "updatedAt"],
       });
     }
     await t.commit();
@@ -208,7 +211,7 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
 
 /** Attendance summary across a month/date range. */
 router.get("/summary", authorize("attendance:read"), asyncHandler(async (req, res) => {
-  const month = String(req.query.month || new Date().toISOString().slice(0, 7));
+  const month = String(req.query.month || localDateString().slice(0, 7));
   const classId = req.query.classId ? Number(req.query.classId) : undefined;
   if (classId !== undefined && (!Number.isInteger(classId) || classId <= 0)) throw ApiError.badRequest("Invalid classId");
   if (classId !== undefined) await validateClassScope(classId, undefined, req);
