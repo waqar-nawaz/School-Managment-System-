@@ -329,7 +329,9 @@ export class UsersComponent implements OnInit {
     this.canCreate = this.perms.hasPermission('users:create') || this.perms.hasPermission('users:manage');
     this.canUpdate = this.perms.hasPermission('users:update') || this.perms.hasPermission('users:manage');
     this.canDelete = this.perms.hasPermission('users:delete') || this.perms.hasPermission('users:manage');
-    this.isSuperAdmin = this.perms.hasPermission('*') || perms.role === 'super_admin';
+    // NOTE: only super_admin (not admin) sees the branch dropdown — admin's branchId is
+    // forced server-side anyway, so showing them the dropdown is misleading UX.
+    this.isSuperAdmin = perms.role === 'super_admin';
   }
 
   ngOnInit(): void {

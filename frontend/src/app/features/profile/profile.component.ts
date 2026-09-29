@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
 import { CommonModule } from '@angular/common';
+import { Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -119,7 +120,8 @@ export class ProfileComponent implements OnInit {
   constructor(
     readonly auth: AuthService,
     private readonly api: ApiService,
-    private readonly toasts: ToastService
+    private readonly toasts: ToastService,
+    private readonly router: Router
   ) {}
 
   ngOnInit(): void {
@@ -140,8 +142,12 @@ export class ProfileComponent implements OnInit {
     this.api.post('/auth/change-password', this.pwForm).subscribe({
       next: () => {
         this.busy = false;
-        this.toasts.success('Password changed');
-        this.pwForm = { currentPassword: '', newPassword: '', confirmPassword: '' };
+        // Backend revokes ALL refresh tokens (including this session's) — the access token
+        // is still valid for ~15 min, but a surprise logout later is bad UX. Force a clean
+        // sign-in now so the user knows their session was reset.
+        this.toasts.success('Password changed. Please sign in again.');
+        this.auth.logout();
+        this.router.navigate(['/auth/login']);
       },
       error: () => {
         this.busy = false;

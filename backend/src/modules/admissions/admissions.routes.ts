@@ -5,7 +5,9 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { AdmissionApplication, User } from "../../models";
+import { AdmissionApplication, User, Student, Parent, StudentGuardian, Enrolment, SchoolClass, Section, AcademicYear, Branch } from "../../models";
+import { sequelize } from "../../database/sequelize";
+import { createUser } from "../users/users.service";
 import { createCrudController } from "../../utils/crudFactory";
 import { ADMISSION_STATUS } from "../../utils/constants";
 import { writeAuditLog } from "../../services/audit.service";
@@ -80,6 +82,9 @@ const base = createCrudController<AdmissionApplication>({
     if (!current) throw ApiError.notFound("Application not found");
     delete body.applicationNo;
     delete body.branchId;
+    // Force clients to use PATCH /:id/status (which enforces the state machine).
+    // PUT must not allow free-form status transitions.
+    delete body.status;
     return validateApplication(body, req, current);
   },
 });
@@ -185,81 +190,174 @@ router.post(
       throw ApiError.badRequest(`Cannot register an application that is ${app.status}`);
     }
 
-    // Build student payload from the application — match the shape /students expects.
+    // Build student payload from the application.
     const [firstName, ...rest] = String(app.studentName || "").trim().split(/\s+/);
     const lastName = rest.join(" ");
-    const studentPayload: any = {
-      firstName: firstName || app.studentName,
-      lastName,
-      admissionNo: app.applicationNo,
-      email: app.email,
-      phone: app.phone,
-      gender: app.gender,
-      dateOfBirth: app.dateOfBirth,
-      guardianName: `${firstName || app.studentName}'s Guardian`,
-      guardianPhone: app.phone,
-      address: app.address,
-      admissionDate: new Date().toLocaleDateString("en-CA"),
-      currentClassId: req.body.currentClassId ?? null,
-      currentSectionId: req.body.currentSectionId ?? null,
-      academicYearId: req.body.academicYearId ?? null,
-      rollNo: req.body.rollNo,
-    };
+    const branchId = Number(req.user?.branchId);
+    if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
 
-    // Call the internal /students POST handler by invoking the controller directly.
-    // We can't import the handler easily here, so we issue a fetch-style internal call
-    // via the express app. Simpler: forward to /students with a sub-request.
-    // For now, we just create the student inline (duplicated minimal logic) — TODO: extract to service.
-    const { Student, User } = await import("../../models");
-    const { sequelize } = await import("../../database/sequelize");
-    const { createUser } = await import("../users/users.service");
+    const currentClassId = req.body.currentClassId != null ? Number(req.body.currentClassId) : null;
+    const currentSectionId = req.body.currentSectionId != null ? Number(req.body.currentSectionId) : null;
+    const academicYearId = req.body.academicYearId != null ? Number(req.body.academicYearId) : null;
+    const rollNo = req.body.rollNo != null ? String(req.body.rollNo) : null;
+
+    // Validate class/section ownership + capacity (mirror of /students POST validation).
+    if (currentClassId) {
+      const schoolClass = await SchoolClass.findOne({ where: { id: currentClassId, branchId } });
+      if (!schoolClass || !schoolClass.isActive) {
+        throw ApiError.badRequest("Selected class is inactive or outside your branch");
+      }
+      if (currentSectionId) {
+        const section = await Section.findOne({ where: { id: currentSectionId, branchId } });
+        if (!section || !section.isActive || Number(section.classId) !== Number(currentClassId)) {
+          throw ApiError.badRequest("Selected section does not belong to the selected class");
+        }
+        // Capacity check (excluding this student, who doesn't exist yet — so no exclusion needed).
+        if (Number(section.capacity) > 0) {
+          const activeCount = await Enrolment.count({
+            where: { sectionId: currentSectionId, branchId, status: "active" },
+          });
+          if (activeCount >= Number(section.capacity)) {
+            throw ApiError.badRequest(`Section ${section.name} is full (capacity ${section.capacity})`);
+          }
+        }
+      }
+    }
 
     const result = await sequelize.transaction(async (transaction) => {
-      const branchId = Number(req.user?.branchId);
-      if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
-
-      const admissionNo = String(studentPayload.admissionNo || `STU-${Date.now()}`).trim();
+      const admissionNo = String(app.applicationNo || `STU-${Date.now()}`).trim();
       const dup = await Student.findOne({ where: { admissionNo }, transaction });
       if (dup) throw ApiError.conflict("Admission number already exists");
 
       const slug = admissionNo.toLowerCase().replace(/[^a-z0-9]+/g, "") || "student";
       const unique = `${Date.now().toString(36)}${Math.floor(Math.random() * 10000)}`;
-      let email = studentPayload.email ? String(studentPayload.email).trim().toLowerCase() : `${slug}.${unique}@school.local`;
+      let email = app.email ? String(app.email).trim().toLowerCase() : `${slug}.${unique}@school.local`;
       let username = email.split("@")[0];
       if (await User.findOne({ where: { email }, transaction })) email = `${slug}.${unique}@school.local`;
       if (await User.findOne({ where: { username }, transaction })) username = `${username}_${unique}`;
 
+      // Create Student User account.
       const user = await createUser({
         username, email,
-        firstName: studentPayload.firstName,
-        lastName: studentPayload.lastName,
+        firstName: firstName || app.studentName,
+        lastName,
         role: "student",
-        gender: studentPayload.gender,
-        phone: studentPayload.guardianPhone,
+        gender: app.gender,
+        phone: app.phone,
         branchId,
-        sendWelcome: !!studentPayload.email,
+        sendWelcome: !!app.email,
         generatedBy: req.user!.id,
         transaction,
       });
 
+      // Create the Student record.
       const student = await Student.create({
         admissionNo,
-        firstName: studentPayload.firstName,
-        lastName: studentPayload.lastName,
-        dateOfBirth: studentPayload.dateOfBirth,
-        gender: studentPayload.gender,
-        guardianName: studentPayload.guardianName || `${studentPayload.firstName}'s Guardian`,
-        guardianPhone: studentPayload.guardianPhone,
-        address: studentPayload.address,
-        email: studentPayload.email,
-        admissionDate: studentPayload.admissionDate,
-        admissionStatus: "new",
+        firstName: firstName || app.studentName,
+        lastName,
+        dateOfBirth: app.dateOfBirth,
+        gender: app.gender,
+        guardianName: `${firstName || app.studentName}'s Guardian`,
+        guardianPhone: app.phone,
+        address: app.address,
+        email: app.email,
+        admissionDate: new Date().toLocaleDateString("en-CA"),
+        admissionStatus: "admitted",
         isActive: true,
-        currentClassId: studentPayload.currentClassId ?? null,
-        currentSectionId: studentPayload.currentSectionId ?? null,
+        currentClassId: currentClassId ?? null,
+        currentSectionId: currentSectionId ?? null,
         branchId,
         userId: user.id,
       }, { transaction });
+
+      // Create Parent User + Parent profile + StudentGuardian link (so the parent portal works).
+      if (app.phone || app.email) {
+        const parentEmail = app.email ? String(app.email).trim().toLowerCase() : `${slug}.parent.${unique}@school.local`;
+        let parentUsername = parentEmail.split("@")[0];
+        if (await User.findOne({ where: { email: parentEmail }, transaction })) {
+          // Skip duplicate parent creation if a User with the same email already exists; just link.
+          const existingUser = await User.findOne({ where: { email: parentEmail }, transaction });
+          if (existingUser) {
+            const existingParent = await Parent.findOne({ where: { userId: existingUser.id }, transaction });
+            if (existingParent) {
+              await StudentGuardian.findOrCreate({
+                where: { studentId: student.id, guardianId: existingParent.id },
+                defaults: { studentId: student.id, guardianId: existingParent.id, relation: "guardian", branchId },
+                transaction,
+              });
+            }
+          }
+        } else {
+          if (await User.findOne({ where: { username: parentUsername }, transaction })) {
+            parentUsername = `${parentUsername}_${unique}`;
+          }
+          const parentUser = await createUser({
+            username: parentUsername,
+            email: parentEmail,
+            firstName: firstName || app.studentName,
+            lastName: "Guardian",
+            role: "parent",
+            phone: app.phone,
+            branchId,
+            sendWelcome: !!app.email,
+            generatedBy: req.user!.id,
+            transaction,
+          });
+          const parent = await Parent.create({
+            fullName: `${firstName || app.studentName}'s Guardian`,
+            phone: app.phone,
+            email: parentEmail,
+            branchId,
+            relation: "guardian",
+            userId: parentUser.id,
+          }, { transaction });
+          await StudentGuardian.create({
+            studentId: student.id,
+            guardianId: parent.id,
+            relation: "guardian",
+            branchId,
+          }, { transaction });
+        }
+      }
+
+      // Create Enrolment (if class provided) — mirror of /students POST logic.
+      if (currentClassId) {
+        let resolvedAcademicYearId = academicYearId;
+        if (!resolvedAcademicYearId) {
+          // Auto-bootstrap / pick the current academic year for this branch.
+          const year = await AcademicYear.findOne({
+            where: { branchId, isCurrent: true },
+            transaction,
+          }) || await AcademicYear.findOne({
+            where: { branchId },
+            order: [["createdAt", "DESC"]],
+            transaction,
+          });
+          if (!year) {
+            // Boot-strap a default academic year so the enrolment is not orphaned.
+            const newYear = await AcademicYear.create({
+              name: `AY-${new Date().getFullYear()}`,
+              startDate: new Date(new Date().getFullYear(), 0, 1),
+              endDate: new Date(new Date().getFullYear(), 11, 31),
+              isCurrent: true,
+              branchId,
+            }, { transaction });
+            resolvedAcademicYearId = newYear.id;
+          } else {
+            resolvedAcademicYearId = year.id;
+          }
+        }
+        await Enrolment.create({
+          studentId: student.id,
+          academicYearId: resolvedAcademicYearId,
+          classId: currentClassId,
+          sectionId: currentSectionId ?? null,
+          rollNo,
+          enrolledOn: new Date(),
+          status: "active",
+          branchId,
+        }, { transaction });
+      }
 
       // Transition the application to 'admitted'.
       await app.update({ status: "admitted", reviewedBy: req.user!.id }, { transaction });
@@ -272,7 +370,7 @@ router.post(
         role: req.user!.role,
         branchId,
         ip: req.ip,
-        newData: { admissionNo, fromApplication: app.id },
+        newData: { admissionNo, fromApplication: app.id, classId: currentClassId, sectionId: currentSectionId },
       });
 
       return { student, application: app };

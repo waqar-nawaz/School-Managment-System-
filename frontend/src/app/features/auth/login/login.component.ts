@@ -101,8 +101,9 @@ export class LoginComponent implements OnInit {
         this.busy = false;
         this.toasts.success('Welcome back');
         // Return to the originally-requested URL if it exists, else the dashboard.
-        const target = this.returnUrl && this.returnUrl !== '/auth/login' ? [this.returnUrl] : ['/dashboard'];
-        this.router.navigate(target);
+        // Use navigateByUrl (not navigate) so query params in returnUrl are preserved.
+        const target = this.returnUrl && this.returnUrl !== '/auth/login' ? this.returnUrl : '/dashboard';
+        this.router.navigateByUrl(target);
       },
       error: (err) => {
         this.busy = false;

@@ -21,7 +21,9 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src ./src
 
-RUN mkdir -p /app/uploads && addgroup -S app && adduser -S app -G app
+RUN addgroup -S app && adduser -S app -G app \
+    && mkdir -p /app/uploads \
+    && chown -R app:app /app
 USER app
 
 EXPOSE 3000

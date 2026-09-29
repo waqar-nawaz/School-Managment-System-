@@ -5,10 +5,11 @@ import { Branch } from "./Branch";
 
 @Table({ tableName: "book_copies" })
 export class BookCopy extends BaseModel {
+  @Unique("uq_book_copy_branch_accession")
   @ForeignKey(() => Branch)
-  @Column({ type: DataType.BIGINT.UNSIGNED })
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   branchId!: number;
-  @Unique
+  @Unique("uq_book_copy_branch_accession")
   @Column({ type: DataType.STRING(30), allowNull: false })
   accessionNo!: string;
 

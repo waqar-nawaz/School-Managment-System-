@@ -52,8 +52,10 @@ router.get("/", authorize("students:read"), asyncHandler(async (req, res) => {
 
 router.get("/inactive", authorize("students:read"), asyncHandler(async (req, res) => {
   if (req.user?.role === "parent") throw ApiError.forbidden("Parents cannot access inactive students");
+  // For super_admin (branchId=null), don't filter by branchId — show all branches.
+  const branchFilter = req.user?.branchId != null ? { branchId: req.user.branchId } : {};
   const rows = await Student.findAll({
-    where: { branchId: req.user?.branchId, isActive: false },
+    where: { ...branchFilter, isActive: false },
     include: [{ association: "enrolments" }],
     order: [["admissionNo", "ASC"]],
   });
@@ -288,23 +290,40 @@ router.put("/:id", authorize("students:update"), asyncHandler(async (req, res) =
     }
   }
 
-  await student.update(patch);
+  await sequelize.transaction(async (transaction) => {
+    await student.update(patch, { transaction });
 
-  if (newClassId) {
-    const academicYear =
-      (await AcademicYear.findOne({ where: { isCurrent: true, branchId: req.user?.branchId } })) ||
-      (await AcademicYear.findOne({ where: { branchId: req.user?.branchId }, order: [["startDate", "DESC"]] }));
-    if (academicYear) {
-      const [enrolment] = await Enrolment.findOrCreate({
-        where: { studentId: student.id, academicYearId: academicYear.id },
-        defaults: {
-          studentId: student.id, academicYearId: academicYear.id, classId: newClassId,
-          sectionId: newSectionId ?? null, enrolledOn: new Date(), status: "active",
-        },
-      });
-      await enrolment.update({ classId: newClassId, sectionId: newSectionId ?? null, status: "active" });
+    if (newClassId) {
+      const academicYear =
+        (await AcademicYear.findOne({ where: { isCurrent: true, branchId: req.user?.branchId }, transaction })) ||
+        (await AcademicYear.findOne({ where: { branchId: req.user?.branchId }, order: [["startDate", "DESC"]], transaction }));
+      if (academicYear) {
+        const [enrolment] = await Enrolment.findOrCreate({
+          where: { studentId: student.id, academicYearId: academicYear.id },
+          defaults: {
+            studentId: student.id, academicYearId: academicYear.id, classId: newClassId,
+            sectionId: newSectionId ?? null, enrolledOn: new Date(), status: "active",
+          },
+          transaction,
+        });
+        await enrolment.update({ classId: newClassId, sectionId: newSectionId ?? null, status: "active" }, { transaction });
+      }
     }
-  }
+
+    // If isActive is being toggled, mirror the seat-release/restore logic from
+    // DELETE /:id and PATCH /:id/reactivate so capacity checks stay consistent.
+    if (patch.isActive === false && student.isActive === true) {
+      await Enrolment.update(
+        { status: "withdrawn" },
+        { where: { studentId: student.id, status: "active" }, transaction }
+      );
+    } else if (patch.isActive === true && student.isActive === false) {
+      await Enrolment.update(
+        { status: "active" },
+        { where: { studentId: student.id, status: "withdrawn" }, transaction }
+      );
+    }
+  });
 
   ApiResponse.success(res, 200, "Student updated", student);
 }));

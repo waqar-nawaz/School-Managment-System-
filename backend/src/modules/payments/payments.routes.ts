@@ -34,10 +34,15 @@ const base = createCrudController<Payment>({
 router.get("/", authorize("payments:read"), (req, res, next) => base.list(req, res).catch(next));
 // IMPORTANT: GET /receipts/:paymentId MUST come before GET /:id, otherwise Express matches "receipts" as an id param.
 router.get("/receipts/:paymentId", authorize("payments:read"), asyncHandler(async (req, res) => {
+  const callerBranch = req.user!.branchId;
+  const where: any = { paymentId: req.params.paymentId };
+  // Branch-scope the lookup to prevent cross-tenant receipt access (IDOR).
+  if (callerBranch != null) where.branchId = callerBranch;
   const receipt = await Receipt.findOne({
-    where: { paymentId: req.params.paymentId },
+    where,
     include: [{ association: "payment" }, { association: "invoice" }],
   });
+  if (!receipt) throw ApiError.notFound("Receipt not found");
   ApiResponse.success(res, 200, "Receipt", receipt);
 }));
 router.get("/:id", authorize("payments:read"), (req, res, next) => base.getOne(req, res).catch(next));
@@ -45,7 +50,7 @@ router.get("/:id", authorize("payments:read"), (req, res, next) => base.getOne(r
 // Use POST /:id/refund with approve=true to void a payment.
 // router.delete("/:id", authorize("payments:delete"), (req, res, next) => base.remove(req, res).catch(next));
 
-router.post("/:id/refund", authorize("payments:create"), asyncHandler(async (req, res) => {
+router.post("/:id/refund", authorize("refunds:create"), asyncHandler(async (req, res) => {
   const amount = Number(req.body.amount ?? 0);
   if (!(amount > 0)) throw ApiError.badRequest("Refund amount must be positive");
   const callerBranch = req.user!.branchId;
@@ -82,14 +87,19 @@ router.post("/:id/refund", authorize("payments:create"), asyncHandler(async (req
     }, { transaction: t });
 
     if (req.body.approve) {
-      await payment.update({ status: amount >= Number(payment.amount) ? "refunded" : "reversed" }, { transaction: t });
+      // Sum ALL processed refunds (including this one) so a sequence of partial refunds
+      // correctly marks the payment as 'refunded' once the total reaches the payment amount.
+      const totalRefunded = Number(prior || 0) + amount;
+      await payment.update({ status: totalRefunded >= Number(payment.amount) ? "refunded" : "reversed" }, { transaction: t });
       const invoice = await Invoice.findByPk(payment.invoiceId, { transaction: t, lock: t.LOCK.UPDATE });
-      if (invoice) {
+      if (invoice && invoice.status !== "cancelled") {
         const amountPaid = Math.max(0, Number(invoice.amountPaid) - amount);
-        await invoice.update({
-          amountPaid,
-          status: amountPaid >= Number(invoice.totalDue) ? "paid" : amountPaid > 0 ? "partial" : "pending",
-        }, { transaction: t });
+        const isOverdue = new Date(invoice.dueDate) < new Date();
+        const nextStatus = amountPaid >= Number(invoice.totalDue) ? "paid"
+          : amountPaid > 0 ? "partial"
+          : isOverdue ? "overdue"
+          : "pending";
+        await invoice.update({ amountPaid, status: nextStatus }, { transaction: t });
       }
     }
 
@@ -134,12 +144,19 @@ router.patch("/:id/refunds/:refundId/approve", authorize("refunds:approve"), asy
     }
 
     await refund.update({ status: "processed", approvedBy: req.user!.id, refundedOn: new Date() }, { transaction: t });
+    // Sum ALL processed refunds for this payment (including this approval) so the payment status
+    // is correctly 'refunded' when the cumulative total reaches the payment amount.
+    const totalProcessed = await Refund.sum("amount", {
+      where: { paymentId: payment.id, status: "processed" },
+      transaction: t,
+    });
     await payment.update({
-      status: Number(refund.amount) >= Number(payment.amount) ? "refunded" : "reversed",
+      status: Number(totalProcessed || 0) >= Number(payment.amount) ? "refunded" : "reversed",
     }, { transaction: t });
 
     const invoice = await Invoice.findByPk(payment.invoiceId, { transaction: t, lock: t.LOCK.UPDATE });
-    if (invoice) {
+    // Guard: never overwrite a 'cancelled' invoice status (terminal state).
+    if (invoice && invoice.status !== "cancelled") {
       const amountPaid = Math.max(0, Number(invoice.amountPaid) - Number(refund.amount));
       const isOverdue = new Date(invoice.dueDate) < new Date();
       const nextStatus = amountPaid >= Number(invoice.totalDue) ? "paid"

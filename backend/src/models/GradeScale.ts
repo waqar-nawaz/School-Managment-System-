@@ -4,8 +4,9 @@ import { Branch } from "./Branch";
 
 @Table({ tableName: "grade_scales" })
 export class GradeScale extends BaseModel {
+  @Unique("uq_grade_scale_branch_grade")
   @ForeignKey(() => Branch)
-  @Column({ type: DataType.BIGINT.UNSIGNED })
+  @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   branchId!: number;
   @Column({ type: DataType.STRING(50), allowNull: false })
   name!: string;
@@ -16,7 +17,7 @@ export class GradeScale extends BaseModel {
   @Column({ type: DataType.FLOAT, allowNull: false })
   maxPercentage!: number;
 
-  @Unique
+  @Unique("uq_grade_scale_branch_grade")
   @Column({ type: DataType.STRING(10), allowNull: false })
   grade!: string;
 

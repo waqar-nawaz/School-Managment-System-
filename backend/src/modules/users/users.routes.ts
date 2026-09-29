@@ -70,6 +70,10 @@ router.get("/:id", authorize("users:read"), asyncHandler(async (req, res) => {
 
 router.post("/", authorize("users:create"), validate(createUserSchema), asyncHandler(async (req, res) => {
   const body = { ...req.body };
+  // Privilege escalation guard: only super_admin can create super_admin users.
+  if (body.role === "super_admin" && req.user!.role !== "super_admin") {
+    throw ApiError.forbidden("Only super_admin can assign the super_admin role");
+  }
   if (req.user!.role !== "super_admin") {
     body.branchId = req.user!.branchId;
   } else if (body.branchId != null) {
@@ -87,6 +91,15 @@ router.put("/:id", authorize("users:update"), validate(updateUserSchema), asyncH
   if (!user) throw ApiError.notFound("User not found");
   if (user.username === "superadmin" && req.user!.role !== "super_admin") {
     throw ApiError.forbidden("Cannot modify the superadmin account");
+  }
+  // Privilege escalation guards:
+  // 1. Only super_admin can promote a user to super_admin.
+  // 2. Only super_admin can demote an existing super_admin.
+  if (req.body.role === "super_admin" && user.role !== "super_admin" && req.user!.role !== "super_admin") {
+    throw ApiError.forbidden("Only super_admin can assign the super_admin role");
+  }
+  if (user.role === "super_admin" && req.body.role !== undefined && req.body.role !== "super_admin" && req.user!.role !== "super_admin") {
+    throw ApiError.forbidden("Only super_admin can demote a super_admin");
   }
   const body = { ...req.body };
   if (req.user!.role !== "super_admin") {
@@ -149,6 +162,14 @@ router.delete("/:id", authorize("users:delete"), asyncHandler(async (req, res) =
   if (!user) throw ApiError.notFound("User not found");
   if (user.username === "superadmin") throw ApiError.forbidden("Cannot delete the superadmin account");
 
+  // Capture user details BEFORE delete for the audit log.
+  const userSnapshot = {
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    branchId: user.branchId,
+  };
+
   try {
     await sequelize.transaction(async (t) => {
       await RefreshToken.destroy({ where: { userId: user.id }, transaction: t });
@@ -161,6 +182,16 @@ router.delete("/:id", authorize("users:delete"), asyncHandler(async (req, res) =
       await AuditLog.update({ userId: null }, { where: { userId: user.id }, transaction: t });
       await user.destroy({ transaction: t });
     });
+    await writeAuditLog({
+      action: "delete",
+      entity: "user",
+      entityId: user.id,
+      userId: req.user!.id,
+      role: req.user!.role,
+      branchId: userSnapshot.branchId,
+      oldData: userSnapshot,
+      newData: { softDeleted: false },
+    });
     ApiResponse.success(res, 200, "User deleted", null);
   } catch (err) {
     if ((err as { name?: string }).name !== "SequelizeForeignKeyConstraintError") throw err;
@@ -168,6 +199,16 @@ router.delete("/:id", authorize("users:delete"), asyncHandler(async (req, res) =
       isActive: false, emailVerified: false,
       username: `deleted_${user.id}_${user.username}`.slice(0, 120),
       email: `deleted_${user.id}_${user.email}`.slice(0, 180),
+    });
+    await writeAuditLog({
+      action: "delete",
+      entity: "user",
+      entityId: user.id,
+      userId: req.user!.id,
+      role: req.user!.role,
+      branchId: userSnapshot.branchId,
+      oldData: userSnapshot,
+      newData: { softDeleted: true },
     });
     ApiResponse.success(res, 200, "User has linked records, so the account was deactivated instead.", null);
   }

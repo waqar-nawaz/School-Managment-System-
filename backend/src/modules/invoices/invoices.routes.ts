@@ -166,6 +166,10 @@ router.patch("/:id/status", authorize("invoices:update"), asyncHandler(async (re
   if (nextStatus === "paid" && Number(invoice.amountPaid) < Number(invoice.totalDue)) {
     throw ApiError.badRequest("Invoice cannot be marked paid before the full amount is received");
   }
+  // partial implies a payment was made; reject if amountPaid is still 0 (semantic invariant).
+  if (nextStatus === "partial" && Number(invoice.amountPaid) <= 0) {
+    throw ApiError.badRequest("Cannot mark invoice as partial — no payment recorded");
+  }
   await invoice.update({ status: nextStatus });
   await writeAuditLog({
     action: "update",

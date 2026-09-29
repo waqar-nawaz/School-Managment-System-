@@ -171,6 +171,16 @@ export async function changePassword(userId: number, current: string, next: stri
     { revoked: true, revokedAt: new Date() },
     { where: { userId, revoked: false } }
   );
+  // Audit log so password changes by the user themselves leave a forensic trail.
+  await writeAuditLog({
+    action: "update",
+    entity: "user",
+    entityId: userId,
+    userId,
+    role: user.role,
+    branchId: user.branchId,
+    newData: { event: "password_changed" },
+  });
 }
 
 export async function forgotPassword(

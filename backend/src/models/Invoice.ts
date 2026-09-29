@@ -56,4 +56,9 @@ export class Invoice extends BaseModel {
 
   @Column({ type: DataType.JSON })
   lineItems!: Record<string, unknown>[];
+
+  // Notes field — editable via PUT (ALLOWED_METADATA). Was missing entirely, so PUT
+  // silently dropped the user's notes input.
+  @Column({ type: DataType.TEXT })
+  notes!: string;
 }
