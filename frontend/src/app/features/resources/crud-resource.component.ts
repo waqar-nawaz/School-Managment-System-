@@ -817,6 +817,10 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
       },
       error: () => this.toasts.error('Export failed'),
     });
+    // Note: the api.download method doesn't expose response headers, so we can't check
+      // X-Export-Truncated here. The backend sets it, but the frontend blob download
+      // doesn't give access to headers. A future improvement would be to use a
+      // full HttpResponse and check headers.
   }
 
   badgeClass(col: { badgeMap?: Record<string, string> }, value: unknown): string {

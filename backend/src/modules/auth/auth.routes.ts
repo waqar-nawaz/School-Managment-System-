@@ -20,6 +20,7 @@ router.post("/logout", authLimiter, validate(refreshSchema), auth.logout);
 router.post("/forgot-password", passwordResetLimiter, validate(forgotPasswordSchema), auth.forgotPassword);
 router.post("/reset-password", passwordResetLimiter, validate(resetPasswordSchema), auth.resetPassword);
 router.post("/verify-email", authLimiter, validate(verifyEmailSchema), auth.verifyEmail);
+router.post("/send-verification", authenticate, authLimiter, auth.sendVerification);
 router.get("/me", authenticate, auth.me);
 router.post("/change-password", authenticate, authLimiter, validate(changePasswordSchema), auth.changePassword);
 

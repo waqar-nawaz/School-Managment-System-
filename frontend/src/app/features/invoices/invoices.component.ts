@@ -192,6 +192,8 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
       <app-confirm-dialog
         [title]="confirmDialog.title"
         [message]="confirmDialog.message"
+        [confirmLabel]="confirmDialog.confirmLabel || 'Confirm'"
+        [danger]="confirmDialog.danger || false"
         (confirm)="confirmDialog.onConfirm()"
         (close)="confirmDialog = null"
       />

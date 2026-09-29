@@ -256,8 +256,8 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   'fee-types': {
     key: 'fee-types', label: 'Fee Types', api: '/fee-types',
-    columns: [nameCol('name'), nameCol('category'), { key: 'amount', label: 'Amount', type: 'money' }, nameCol('billingCycle', 'Cycle'), boolCol('isActive', 'Active')],
-    fields: fields([{ key: 'name', label: 'Fee name', required: true }, { key: 'category', label: 'Category', type: 'select', options: STATUS_OPTIONS(['tuition', 'transport', 'hostel', 'misc']) }, { key: 'amount', label: 'Amount', type: 'number', required: true }, { key: 'billingCycle', label: 'Billing cycle', type: 'select', options: STATUS_OPTIONS(['term', 'monthly', 'yearly', 'one-time']) }, { key: 'isMandatory', label: 'Mandatory', type: 'bool' }, { key: 'isActive', label: 'Active', type: 'bool' }]),
+    columns: [nameCol('name'), nameCol('category'), { key: 'amount', label: 'Amount', type: 'money' }, { key: 'installments', label: 'Installments', type: 'number' }, nameCol('billingCycle', 'Cycle'), boolCol('isActive', 'Active')],
+    fields: fields([{ key: 'name', label: 'Fee name', required: true }, { key: 'category', label: 'Category', type: 'select', options: STATUS_OPTIONS(['tuition', 'transport', 'hostel', 'misc']) }, { key: 'amount', label: 'Amount', type: 'number', required: true }, { key: 'billingCycle', label: 'Billing cycle', type: 'select', options: STATUS_OPTIONS(['term', 'monthly', 'yearly', 'one-time']) }, { key: 'installments', label: 'Installments', type: 'number', hint: 'Number of installments (default: 1)' }, { key: 'isMandatory', label: 'Mandatory', type: 'bool' }, { key: 'isActive', label: 'Active', type: 'bool' }]),
   },
   expenses: {
     key: 'expenses', label: 'Expenses', api: '/expenses',

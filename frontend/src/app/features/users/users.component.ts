@@ -39,6 +39,11 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           <option value="">All roles</option>
           @for (r of ROLES; track r) { <option [value]="r">{{ r }}</option> }
         </select>
+        <select class="form-control" style="max-width:140px" [(ngModel)]="activeFilter" (ngModelChange)="onFilterChange()">
+          <option value="">All status</option>
+          <option value="true">Active</option>
+          <option value="false">Disabled</option>
+        </select>
       </div>
       <div class="table-responsive">
         <table class="table">
@@ -128,6 +133,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                 @if (f.submitted && username.invalid) {
                   <div class="field-error">Username is required</div>
                 }
+                @if (fieldErrors['username']) { <div class="field-error">{{ fieldErrors['username'] }}</div> }
               </div>
               <div class="form-group">
                 <label>Email *</label>
@@ -135,6 +141,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                 @if (f.submitted && email.invalid) {
                   <div class="field-error">Enter a valid email address</div>
                 }
+                @if (fieldErrors['email']) { <div class="field-error">{{ fieldErrors['email'] }}</div> }
               </div>
               <div class="form-group">
                 <label>First name *</label>
@@ -142,6 +149,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                 @if (f.submitted && firstName.invalid) {
                   <div class="field-error">First name is required</div>
                 }
+                @if (fieldErrors['firstName']) { <div class="field-error">{{ fieldErrors['firstName'] }}</div> }
               </div>
               <div class="form-group">
                 <label>Last name *</label>
@@ -149,6 +157,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                 @if (f.submitted && lastName.invalid) {
                   <div class="field-error">Last name is required</div>
                 }
+                @if (fieldErrors['lastName']) { <div class="field-error">{{ fieldErrors['lastName'] }}</div> }
               </div>
               @if (!editing) {
                 <div class="form-group">
@@ -300,6 +309,7 @@ export class UsersComponent implements OnInit {
   pageSize = 15;
   search = '';
   roleFilter = '';
+  activeFilter = '';
   showForm = false;
   editing: boolean | null = null;
   form: Record<string, any> = {};
@@ -351,7 +361,10 @@ export class UsersComponent implements OnInit {
   }
 
   load(): void {
-    this.api.get<User[]>('/users', { page: this.page, limit: this.pageSize, q: this.search, ...(this.roleFilter ? { role: this.roleFilter } : {}) }).subscribe({
+    const params: Record<string, unknown> = { page: this.page, limit: this.pageSize, q: this.search };
+    if (this.roleFilter) params['role'] = this.roleFilter;
+    if (this.activeFilter) params['isActive'] = this.activeFilter;
+    this.api.get<User[]>('/users', params).subscribe({
       next: (res) => {
         this.users = res?.data ?? [];
         this.total = res?.meta?.total ?? this.users.length;

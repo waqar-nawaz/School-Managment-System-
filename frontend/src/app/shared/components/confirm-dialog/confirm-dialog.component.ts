@@ -17,7 +17,9 @@ import { IconComponent } from '../icon/icon.component';
         <p style="color:var(--neutral-500)">{{ message }}</p>
         <div class="modal-actions">
           <button class="btn btn-ghost" (click)="close.emit()"><app-icon name="x" [size]="14" /> Cancel</button>
-          <button class="btn btn-danger" (click)="confirm.emit()"><app-icon name="check" [size]="14" /> Confirm</button>
+          <button [class]="danger ? 'btn btn-danger' : 'btn btn-primary'" (click)="confirm.emit()">
+            <app-icon name="check" [size]="14" /> {{ confirmLabel }}
+          </button>
         </div>
       </div>
     </div>
@@ -26,6 +28,8 @@ import { IconComponent } from '../icon/icon.component';
 export class ConfirmDialogComponent {
   @Input() title = 'Are you sure?';
   @Input() message = 'This action cannot be undone.';
+  @Input() confirmLabel = 'Confirm';
+  @Input() danger = false;
   @Output() confirm = new EventEmitter<void>();
   @Output() close = new EventEmitter<void>();
 }

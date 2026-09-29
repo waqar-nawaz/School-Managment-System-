@@ -198,4 +198,37 @@ router.get("/:id/refunds", authorize("payments:read"), asyncHandler(async (req, 
   ApiResponse.success(res, 200, "Refunds", refunds);
 }));
 
+// Reject a pending refund. Transitions status from 'pending' to 'rejected'.
+// Requires refunds:approve (same financial control as approve).
+router.patch("/:id/refunds/:refundId/reject", authorize("refunds:approve"), asyncHandler(async (req, res) => {
+  const callerBranch = req.user!.branchId;
+  const payment = await Payment.findByPk(req.params.id);
+  if (!payment) throw ApiError.notFound("Payment not found");
+  if (callerBranch != null && Number(payment.branchId) !== Number(callerBranch)) {
+    throw ApiError.forbidden("Payment does not belong to your branch");
+  }
+  const refund = await Refund.findByPk(req.params.refundId);
+  if (!refund) throw ApiError.notFound("Refund not found");
+  if (Number(refund.paymentId) !== Number(payment.id)) {
+    throw ApiError.badRequest("Refund does not belong to this payment");
+  }
+  if (refund.status !== "pending") {
+    throw ApiError.badRequest(`Refund is already ${refund.status}`);
+  }
+  const reason = String(req.body.reason ?? "").trim();
+  await refund.update({ status: "rejected", approvedBy: req.user!.id, reason: reason || refund.reason });
+  await writeAuditLog({
+    action: "update",
+    entity: "refund",
+    entityId: refund.id,
+    userId: req.user!.id,
+    role: req.user!.role,
+    branchId: payment.branchId,
+    ip: req.ip,
+    oldData: { status: "pending" },
+    newData: { status: "rejected", reason },
+  });
+  ApiResponse.success(res, 200, "Refund rejected", refund);
+}));
+
 export default router;

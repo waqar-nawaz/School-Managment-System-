@@ -28,6 +28,11 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
           <option value="academics">academics</option>
           <option value="finance">finance</option>
           <option value="transport">transport</option>
+          <option value="library">library</option>
+          <option value="hostel">hostel</option>
+          <option value="communication">communication</option>
+          <option value="services">services</option>
+          <option value="administration">administration</option>
         </select>
         <button class="btn btn-ghost" (click)="saveAll()" [disabled]="saving">
           <app-icon name="check" [size]="15" /> {{ saving ? 'Saving…' : 'Save all' }}
@@ -35,17 +40,18 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
       </div>
       <div class="table-responsive">
         <table class="table">
-          <thead><tr><th style="width:300px">Key</th><th>Value</th><th style="width:90px">Public</th><th style="width:70px"></th></tr></thead>
+          <thead><tr><th style="width:260px">Key</th><th>Value</th><th style="width:200px">Description</th><th style="width:80px">Public</th><th style="width:60px"></th></tr></thead>
           <tbody>
             @for (row of rows; track row.key) {
               <tr>
                 <td><code>{{ row.key }}</code></td>
                 <td><input class="form-control" [(ngModel)]="row.value" /></td>
+                <td><input class="form-control" [(ngModel)]="row.description" /></td>
                 <td><input type="checkbox" class="form-checkbox" [(ngModel)]="row.isPublic" /></td>
                 <td><button class="btn btn-sm btn-ghost-danger" (click)="remove(row)"><app-icon name="trash" [size]="14" /></button></td>
               </tr>
             } @empty {
-              <tr><td colspan="4" class="empty-cell">No settings in this scope.</td></tr>
+              <tr><td colspan="5" class="empty-cell">No settings in this scope.</td></tr>
             }
           </tbody>
         </table>
@@ -93,7 +99,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/c
 })
 export class SettingsComponent implements OnInit {
   scope = 'system';
-  rows: Array<{ key: string; value: string; isPublic: boolean }> = [];
+  rows: Array<{ key: string; value: string; isPublic: boolean; description: string }> = [];
   saving = false;
   showAddForm = false;
   newKey = '';
@@ -109,21 +115,20 @@ export class SettingsComponent implements OnInit {
   }
 
   load(): void {
-    // Backend returns { key: { value, isPublic } | string } per entry.
-    // Preserve the isPublic flag so saving doesn't flip everything to private.
     this.api.get<Record<string, unknown>>('/settings', { scope: this.scope }).subscribe({
       next: (res) => {
         const map = res?.data ?? {};
         this.rows = Object.entries(map).map(([key, raw]) => {
           if (raw && typeof raw === 'object') {
-            const v = raw as { value?: unknown; isPublic?: unknown };
+            const v = raw as { value?: unknown; isPublic?: unknown; description?: unknown };
             return {
               key,
               value: v.value != null ? String(v.value) : '',
               isPublic: Boolean(v.isPublic),
+              description: v.description != null ? String(v.description) : '',
             };
           }
-          return { key, value: raw != null ? String(raw) : '', isPublic: false };
+          return { key, value: raw != null ? String(raw) : '', isPublic: false, description: '' };
         });
       },
       error: () => {},
@@ -143,7 +148,7 @@ export class SettingsComponent implements OnInit {
       this.toasts.error('Key already exists in this scope');
       return;
     }
-    this.rows.push({ key, value: '', isPublic: false });
+    this.rows.push({ key, value: '', isPublic: false, description: '' });
     this.showAddForm = false;
     this.newKey = '';
   }
@@ -167,7 +172,7 @@ export class SettingsComponent implements OnInit {
   }
 
   saveAll(): void {
-    const payload = this.rows.map((r) => ({ scope: this.scope, key: r.key, value: r.value, isPublic: r.isPublic }));
+    const payload = this.rows.map((r) => ({ scope: this.scope, key: r.key, value: r.value, isPublic: r.isPublic, description: r.description }));
     if (!payload.length) return;
     this.saving = true;
     this.api.post('/settings/bulk', payload).subscribe({
