@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
+import { PermissionService } from '../../core/services/permission.service';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
 // Mirror of backend INVOICE_TRANSITIONS (invoices.routes.ts).
@@ -26,7 +27,7 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
         <p class="page-subtitle">Billing and receipts</p>
       </div>
       <div class="page-actions">
-        <button class="btn btn-primary" (click)="openGenerate()"><app-icon name="plus" [size]="15" /> Generate invoice</button>
+        @if (canGenerate) { <button class="btn btn-primary" (click)="openGenerate()"><app-icon name="plus" [size]="15" /> Generate invoice</button> }
       </div>
     </div>
 
@@ -62,7 +63,7 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
                 <td>{{ inv.dueDate | date: 'MMM d, y' }}</td>
                 <td>
                   <span class="badge badge-{{ badgeOf(inv.status) }}">{{ inv.status }}</span>
-                  @if (nextStatuses(inv.status).length) {
+                  @if (canChangeStatus && nextStatuses(inv.status).length) {
                     <select class="form-control form-control-sm" style="display:inline-block;width:auto;margin-left:6px" (change)="transition(inv, $event)">
                       <option value="">Change…</option>
                       @for (s of nextStatuses(inv.status); track s) { <option [value]="s">{{ s }}</option> }
@@ -70,13 +71,13 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
                   }
                 </td>
                 <td style="text-align:right">
-                  @if (inv.status !== 'paid' && inv.status !== 'cancelled') {
+                  @if (canPay && inv.status !== 'paid' && inv.status !== 'cancelled') {
                     <button class="btn btn-sm btn-primary" (click)="openPay(inv)"><app-icon name="credit-card" [size]="14" /> Pay</button>
                   }
                 </td>
               </tr>
             } @empty {
-              <tr><td colspan="9" class="empty-cell">{{ loading ? 'Loading…' : 'No invoices.' }}</td></tr>
+              <tr><td colspan="9" class="empty-cell">{{ loading ? 'Loading…' : 'No invoices found.' }}</td></tr>
             }
           </tbody>
         </table>
@@ -221,8 +222,14 @@ export class InvoicesComponent implements OnInit {
 
   constructor(
     private readonly api: ApiService,
-    private readonly toasts: ToastService
+    private readonly toasts: ToastService,
+    private readonly perms: PermissionService
   ) {}
+
+  // Buttons follow the user's real permissions (a parent can view invoices but not record payments).
+  get canGenerate(): boolean { return this.perms.hasPermission('invoices:create'); }
+  get canPay(): boolean { return this.perms.hasPermission('payments:create'); }
+  get canChangeStatus(): boolean { return this.perms.hasPermission('invoices:update'); }
 
   ngOnInit(): void {
     this.load();

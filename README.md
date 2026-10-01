@@ -105,3 +105,11 @@ make backup  # mysqldump into ./backups/ (gzip)
 ## Roles & permissions
 
 `backend/src/config/permissions.ts` defines the role → permission matrix; the frontend mirrors it in `src/app/config/frontend-permissions.ts`. Menu items in `src/app/config/menu.ts` are permission-gated and drive the sidebar. Each role – super_admin, admin, principal, teacher, parent, student, accountant, librarian, transport_manager, hostel_warden, receptionist – has granular `resource:action` access.
+
+## Notes from the full code review
+
+- **Database:** the code defaults to PostgreSQL (`render.yaml`, `DB_DIALECT`); MySQL also works but was not part of the review tests.
+- **First login:** `superadmin` / the password from `SEED_ADMIN_PASSWORD` (dev default `Admin@123`). Change it immediately in production.
+- **Roles & Permissions:** the screen under *Administration -> Roles* edits what each role may do. Changes apply immediately; custom roles are supported.
+- **Resource definitions** (generic CRUD endpoints) now live in `backend/src/modules/resources/definitions/*.ts`, one file per domain.
+- **Uploads** are served from `/uploads`; on hosts with ephemeral disks (e.g. Render free tier) files disappear on redeploy, so mount a persistent disk or move to object storage.

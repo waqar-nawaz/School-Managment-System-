@@ -43,6 +43,21 @@ export class ErrorInterceptor implements HttpInterceptor {
         }
 
         const message = this.extractMessage(err);
+
+        // A deactivated account keeps a valid token but every call returns 403: sign out cleanly.
+        if (err.status === 403 && /account is disabled/i.test(message) && this.storage.accessToken) {
+          this.toasts.error('Your account has been disabled. Please contact the administrator.');
+          this.auth.logout();
+          return throwError(() => err);
+        }
+        if (err.status === 0) {
+          this.toasts.error('Cannot reach the server. Check your internet connection and try again.');
+          return throwError(() => err);
+        }
+        if (err.status === 429) {
+          this.toasts.error('Too many requests. Please wait a moment and try again.');
+          return throwError(() => err);
+        }
         if (err.status !== 401) this.toasts.error(message);
         return throwError(() => err);
       })

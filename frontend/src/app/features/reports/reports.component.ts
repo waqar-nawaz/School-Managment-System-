@@ -53,6 +53,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           <div class="mini-card"><span class="stat-label">Invoiced</span><span class="stat-value">{{ money(fees?.invoiced) }}</span></div>
           <div class="mini-card"><span class="stat-label">Collected</span><span class="stat-value">{{ money(fees?.collected) }}</span></div>
           <div class="mini-card"><span class="stat-label">Refunded</span><span class="stat-value">{{ money(fees?.refunded) }}</span></div>
+          <div class="mini-card"><span class="stat-label">Net received</span><span class="stat-value stat-ok">{{ money(fees?.net ?? ((fees?.collected ?? 0) - (fees?.refunded ?? 0))) }}</span></div>
           <div class="mini-card"><span class="stat-label">Outstanding</span><span class="stat-value stat-warn">{{ money(fees?.outstanding) }}</span></div>
           <div class="mini-card"><span class="stat-label">Spent</span><span class="stat-value">{{ money(fees?.spent) }}</span></div>
         </div>
@@ -60,11 +61,13 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
       @if (active === 'exam') {
         <h3 class="card-title">Exam performance</h3>
         <div class="form-row" style="gap:8px">
-          <input type="number" class="form-control" style="max-width:160px" placeholder="Exam ID" [(ngModel)]="examId" />
-          <button class="btn btn-primary" (click)="loadExam()"><app-icon name="bar-chart" [size]="15" /> Run</button>
+          <select class="form-control" style="max-width:320px" [(ngModel)]="examId" (ngModelChange)="loadExam()">
+            <option [ngValue]="null">Choose an exam…</option>
+            @for (e of exams; track e.id) { <option [ngValue]="e.id">{{ e.name || e.title || ('Exam #' + e.id) }}</option> }
+          </select>
         </div>
-        @if (!examId || examId <= 0) {
-          <p class="form-hint" style="margin-top:0.75rem">Enter a valid exam ID and click Run.</p>
+        @if (!examId) {
+          <p class="form-hint" style="margin-top:0.75rem">{{ exams.length ? 'Choose an exam to see its results.' : 'No exams found yet. Create an exam first.' }}</p>
         }
         @if (perf) {
           <div class="stat-grid stat-grid-sm">
@@ -104,6 +107,7 @@ export class ReportsComponent implements OnInit {
   perf: any = null;
   snap: any = null;
   examId: number | null = null;
+  exams: any[] = [];
   dateFrom = '';
   dateTo = '';
   loading = false;
@@ -116,6 +120,9 @@ export class ReportsComponent implements OnInit {
 
   switchTo(key: string): void {
     this.active = key;
+    if (key === 'exam' && !this.exams.length) {
+      this.api.get<any[]>('/exams', { limit: 200 }).subscribe({ next: (r) => (this.exams = r?.data ?? []), error: () => {} });
+    }
     if (key !== 'exam') this.loadActive();
   }
 

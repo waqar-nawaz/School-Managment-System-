@@ -132,19 +132,27 @@ const ADMISSION_TRANSITIONS: Record<string, string[]> = {
                 <input type="date" class="form-control" name="dateOfBirth" [(ngModel)]="form.dateOfBirth" />
               </div>
               <div class="form-group">
-                <label>Email</label>
+                <label>Parent / guardian email</label>
                 <input type="email" class="form-control" name="email" [(ngModel)]="form.email" />
               </div>
               <div class="form-group">
-                <label>Phone</label>
+                <label>Parent / guardian phone</label>
                 <input type="tel" class="form-control" name="phone" [(ngModel)]="form.phone" autocomplete="tel" />
               </div>
               <div class="form-group">
                 <label>Applied for class *</label>
-                <input class="form-control" name="appliedClass" [(ngModel)]="form.appliedClass" placeholder="e.g. Grade 5" required #appliedClass="ngModel" />
-                @if (f.submitted && appliedClass.invalid) {
-                  <div class="field-error">Applied class is required</div>
+                @if (classes.length) {
+                  <select class="form-control" name="appliedClass" [(ngModel)]="form.appliedClass" required>
+                    <option [ngValue]="undefined" disabled>Select a class…</option>
+                    @for (c of classes; track c.id) { <option [value]="c.name">{{ c.name }}</option> }
+                  </select>
+                } @else {
+                  <input class="form-control" name="appliedClass" [(ngModel)]="form.appliedClass" placeholder="e.g. Grade 5" required />
                 }
+                @if (f.submitted && f.controls['appliedClass'].invalid) {
+                  <div class="field-error">Please choose the class applied for</div>
+                }
+                <div class="field-hint">Used as the default class when the student is registered.</div>
               </div>
               <div class="form-group">
                 <label>Status</label>
@@ -172,6 +180,44 @@ const ADMISSION_TRANSITIONS: Record<string, string[]> = {
       </div>
     }
 
+    @if (reg) {
+      <div class="modal-backdrop">
+        <div class="modal">
+          <div class="modal-head">
+            <div class="modal-title">Register {{ reg.app.studentName }} as a student</div>
+            <button type="button" class="modal-close" (click)="reg = null" aria-label="Close"><app-icon name="x" [size]="16" /></button>
+          </div>
+          <p class="page-subtitle" style="margin:0 0 1rem">
+            This creates the student record, a parent-portal login for the guardian
+            ({{ reg.app.email || reg.app.phone || 'no contact given' }}) and the class enrolment, then marks the application as admitted.
+          </p>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Class *</label>
+              <select class="form-control" name="regClass" [(ngModel)]="reg.classId" (ngModelChange)="reg.sectionId = null">
+                <option [ngValue]="null" disabled>Select class…</option>
+                @for (c of classes; track c.id) { <option [ngValue]="c.id">{{ c.name }}</option> }
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Section</label>
+              <select class="form-control" name="regSection" [(ngModel)]="reg.sectionId" [disabled]="!reg.classId">
+                <option [ngValue]="null">No section yet</option>
+                @for (sec of sectionsOf(reg.classId); track sec.id) { <option [ngValue]="sec.id">Section {{ sec.name }}{{ sec.capacity ? ' (capacity ' + sec.capacity + ')' : '' }}</option> }
+              </select>
+            </div>
+          </div>
+          @if (reg.error) { <div class="field-error" style="margin-top:.5rem">{{ reg.error }}</div> }
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" (click)="reg = null">Cancel</button>
+            <button type="button" class="btn btn-primary" [disabled]="reg.busy || !reg.classId" (click)="confirmRegister()">
+              <app-icon name="user-check" [size]="14" /> {{ reg.busy ? 'Registering…' : 'Register student' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
     @if (confirmDialog) {
       <app-confirm-dialog
         [title]="confirmDialog.title"
@@ -191,6 +237,9 @@ export class AdmissionsComponent implements OnInit {
   showForm = false;
   saving = false;
   form: Record<string, any> = {};
+  classes: any[] = [];
+  sections: any[] = [];
+  reg: { app: any; classId: number | null; sectionId: number | null; busy: boolean; error: string } | null = null;
   confirmDialog: { title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void } | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -202,6 +251,12 @@ export class AdmissionsComponent implements OnInit {
   ngOnInit(): void {
     this.load();
     this.loadPipeline();
+    this.api.get<any[]>('/classes', { limit: 200 }).subscribe({ next: (r) => (this.classes = r?.data ?? []), error: () => {} });
+    this.api.get<any[]>('/sections', { limit: 500 }).subscribe({ next: (r) => (this.sections = r?.data ?? []), error: () => {} });
+  }
+
+  sectionsOf(classId: number | null): any[] {
+    return classId ? this.sections.filter((x) => Number(x.classId) === Number(classId)) : [];
   }
 
   clearSearch(): void {
@@ -265,30 +320,29 @@ export class AdmissionsComponent implements OnInit {
     });
   }
 
-  /** Create a student record from this application — atomic single-call flow. */
+  /** Open the register dialog (class/section are chosen here instead of being silently skipped). */
   registerStudent(app: any): void {
-    if (!app?.id || app.status === 'admitted' || app.status === 'rejected' || app.status === 'withdrawn') return;
-    // Confirm before the irreversible register operation (creates Student + transitions to admitted).
-    this.confirmDialog = {
-      title: 'Register student',
-      message: `Register "${app.studentName}" as a student? This creates a student account and marks the application as admitted. Cannot be undone.`,
-      confirmLabel: 'Register student',
-      onConfirm: () => {
-        this.confirmDialog = null;
-        this.doRegisterStudent(app);
-      },
-    };
+    if (!app?.id || ['admitted', 'rejected', 'withdrawn'].includes(app.status)) return;
+    const guess = this.classes.find((c) => String(c.name).trim().toLowerCase() === String(app.appliedClass ?? '').trim().toLowerCase());
+    this.reg = { app, classId: guess ? Number(guess.id) : null, sectionId: null, busy: false, error: '' };
   }
 
-  private doRegisterStudent(app: any): void {
-    this.api.post(`/admissions/${app.id}/register`, {}).subscribe({
+  confirmRegister(): void {
+    const r = this.reg;
+    if (!r || !r.classId) return;
+    r.busy = true;
+    r.error = '';
+    this.api.post(`/admissions/${r.app.id}/register`, { currentClassId: r.classId, currentSectionId: r.sectionId }).subscribe({
       next: () => {
-        this.toasts.success(`${app.studentName} admitted as a student`);
+        this.toasts.success(`${r.app.studentName} admitted as a student`);
+        this.reg = null;
         this.load();
         this.loadPipeline();
       },
       error: (err) => {
-        this.toasts.error(err?.error?.message || 'Could not register student from application');
+        // Keep the dialog open so the user can pick another section if this one is full.
+        r.busy = false;
+        r.error = err?.error?.message || 'Could not register student from application';
       },
     });
   }

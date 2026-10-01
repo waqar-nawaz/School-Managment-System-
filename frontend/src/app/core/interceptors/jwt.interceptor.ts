@@ -2,6 +2,7 @@ import { HttpEvent, HttpHandler, HttpInterceptor, HttpRequest } from '@angular/c
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { StorageService } from '../services/storage.service';
+import { environment } from '../../../environments/environment';
 
 @Injectable()
 export class JwtInterceptor implements HttpInterceptor {
@@ -9,7 +10,9 @@ export class JwtInterceptor implements HttpInterceptor {
 
   intercept(req: HttpRequest<unknown>, next: HttpHandler): Observable<HttpEvent<unknown>> {
     const token = this.storage.accessToken;
-    if (token && !req.url.includes('/auth/login') && !req.url.includes('/auth/refresh')) {
+    // Only send the token to our own API (never to third-party URLs).
+    const isApi = req.url.startsWith(environment.apiUrl) || req.url.startsWith('/');
+    if (token && isApi && !req.url.includes('/auth/login') && !req.url.includes('/auth/refresh')) {
       req = req.clone({
         setHeaders: { Authorization: `Bearer ${token}` },
       });

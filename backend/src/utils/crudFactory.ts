@@ -124,6 +124,9 @@ export function createCrudController<M extends Model = Model>(
       } as any);
     }
 
+    // ?ids=1,2,3 -> bulk lookup by primary key (lets the UI show names instead of raw ids).
+    if (typeof f.ids === "string" && /^\d+(,\d+){0,199}$/.test(f.ids)) where.id = f.ids.split(",").map(Number);
+
     const userBranchId = (req as any).user?.branchId;
     if (userBranchId != null && modelAttrs().branchId) where.branchId = userBranchId;
     if (and.length) (where as any)[Op.and] = and;

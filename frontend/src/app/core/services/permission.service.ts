@@ -10,13 +10,20 @@ export class PermissionService {
     return this.auth.user?.role ?? null;
   }
 
+  /**
+   * Uses the permission list the server sent with the user (so the Roles & Permissions screen and
+   * custom roles really drive the menus). The bundled map is only a fallback for older responses.
+   */
   hasPermission(permission: string): boolean {
-    const role = this.role;
-    if (!role) return false;
-    const perms = ROLE_PERMISSIONS[role];
+    const user = this.auth.user;
+    if (!user) return false;
+    const perms = user.permissions ?? ROLE_PERMISSIONS[user.role];
     if (!perms) return false;
-    if (perms.includes('*') || perms.includes(permission)) return true;
-    return false;
+    return perms.includes('*') || perms.includes(permission);
+  }
+
+  hasAny(...permissions: string[]): boolean {
+    return permissions.some((p) => this.hasPermission(p));
   }
 
   isRole(...roles: string[]): boolean {

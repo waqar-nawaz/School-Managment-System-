@@ -122,7 +122,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   sections: {
     key: 'sections', label: 'Sections', api: '/sections',
-    columns: [nameCol('name', 'Section'), { key: 'classId', label: 'Class ID', type: 'number' }, { key: 'capacity', label: 'Capacity', type: 'number' }, boolCol('isActive', 'Active')],
+    columns: [nameCol('name', 'Section'), { key: 'classId', label: 'Class', type: 'number' }, { key: 'capacity', label: 'Capacity', type: 'number' }, boolCol('isActive', 'Active')],
     fields: fields([refField('classId', 'Class', '/classes', 'name', undefined, true), { key: 'name', label: 'Section (A/B)', required: true }, { key: 'capacity', label: 'Capacity', type: 'number' }]),
   },
   subjects: {
