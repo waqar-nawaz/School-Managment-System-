@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { hashPassword } from "../../utils/password.util";
 import {
   User, Role, Permission, Branch, AcademicYear, Term, SchoolClass, Section,
@@ -7,7 +8,7 @@ import { logger } from "../../config/logger";
 
 const ROLES = [
   "super_admin", "admin", "principal", "teacher", "parent", "student",
-  "accountant", "librarian", "transport_manager", "hostel_warden", "receptionist",
+  "accountant", "librarian", "transport_manager", "hostel_warden", "receptionist", "staff",
 ];
 
 const PERMISSIONS = [
@@ -39,6 +40,17 @@ const PERMISSIONS = [
   "admissions:create", "admissions:update", "visitors:create",
 ];
 
+/** Seed password: env override -> random in production -> documented default only in dev. */
+function seedAdminPassword(): { password: string; generated: boolean } {
+  const fromEnv = process.env.SEED_ADMIN_PASSWORD;
+  if (fromEnv) return { password: fromEnv, generated: false };
+  if (process.env.NODE_ENV === "production") {
+    // Never ship a well-known default credential to production.
+    return { password: crypto.randomBytes(12).toString("base64url") + "#1aA", generated: true };
+  }
+  return { password: "Admin@123", generated: false };
+}
+
 export async function runSeeders(): Promise<void> {
   const isSeeded = await Settings.findOne({ where: { scope: "system", key: "seeded" } });
   if (isSeeded?.value === "true") {
@@ -50,7 +62,7 @@ export async function runSeeders(): Promise<void> {
 
   // Roles
   for (const r of ROLES) {
-    await Role.upsert({ name: r, label: r.replace("_", " "), isSystem: true });
+    await Role.upsert({ name: r, label: r.replace(/_/g, " "), isSystem: true });
   }
 
   // Permissions
@@ -58,34 +70,41 @@ export async function runSeeders(): Promise<void> {
     await Permission.upsert({ key: p, label: p, category: p.split(":")[0] });
   }
 
-  // Default branches
-  const [branch] = await Branch.upsert({
-    name: "Default Campus",
-    code: "MAIN",
-    city: "City",
-    country: "US",
-    isActive: true,
+  // Default branch. findOrCreate (not upsert) so we always get a real row + id on every dialect.
+  const [branch] = await Branch.findOrCreate({
+    where: { name: "Default Campus" },
+    defaults: { name: "Default Campus", code: "MAIN", city: "City", country: "US", isActive: true } as any,
   });
+  const branchId = branch.id;
 
-  // Academic year + terms
+  // Academic year + terms (branch scoped, otherwise branch-bound users never see them)
   const yearName = `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
   const [year] = await AcademicYear.findOrCreate({
-    where: { name: yearName },
-    defaults: { name: yearName, startDate: new Date(), endDate: new Date(new Date().getFullYear() + 1, 5, 30), isCurrent: true },
+    where: { name: yearName, branchId },
+    defaults: {
+      name: yearName, branchId, startDate: new Date(),
+      endDate: new Date(new Date().getFullYear() + 1, 5, 30), isCurrent: true,
+    } as any,
   });
   for (let t = 0; t < 3; t++) {
     await Term.findOrCreate({
       where: { academicYearId: year.id, name: `Term ${t + 1}` },
-      defaults: { academicYearId: year.id, name: `Term ${t + 1}`, isCurrent: t === 0 },
+      defaults: { academicYearId: year.id, branchId, name: `Term ${t + 1}`, isCurrent: t === 0 } as any,
     });
   }
 
   // Classes + sections
   const classNames = ["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10"];
   for (const name of classNames) {
-    const [klass] = await SchoolClass.findOrCreate({ where: { name }, defaults: { name, branchId: branch.id, isActive: true, capacity: 40 } });
+    const [klass] = await SchoolClass.findOrCreate({
+      where: { name, branchId },
+      defaults: { name, branchId, isActive: true, capacity: 40 } as any,
+    });
     for (const sec of ["A", "B"]) {
-      await Section.findOrCreate({ where: { classId: klass.id, name: sec }, defaults: { classId: klass.id, name: sec, capacity: 20 } });
+      await Section.findOrCreate({
+        where: { classId: klass.id, name: sec },
+        defaults: { classId: klass.id, branchId, name: sec, capacity: 20 } as any,
+      });
     }
   }
 
@@ -93,36 +112,40 @@ export async function runSeeders(): Promise<void> {
   const subjects = ["Mathematics", "English", "Physics", "Chemistry", "Biology", "History", "Geography", "Computer Science", "Physical Education", "Art"];
   for (let i = 0; i < subjects.length; i++) {
     await Subject.findOrCreate({
-      where: { name: subjects[i] },
-      defaults: { name: subjects[i], code: `SUB${String(i + 1).padStart(2, "0")}`, maxMarks: 100, passMarks: 35 },
+      where: { name: subjects[i], branchId },
+      defaults: { name: subjects[i], branchId, code: `SUB${String(i + 1).padStart(2, "0")}`, maxMarks: 100, passMarks: 35 } as any,
     });
   }
 
   // Grade scale
-  const scale = [
+  const scale: Array<[string, number, number, string]> = [
     ["A+", 90, 100, "DISTINCTION"], ["A", 80, 89, "EXCELLENT"], ["B+", 70, 79, "VERY GOOD"],
     ["B", 60, 69, "GOOD"], ["C", 50, 59, "AVERAGE"], ["D", 40, 49, "PASS"], ["F", 0, 39, "FAIL"],
   ];
   for (const [grade, from, to, result] of scale) {
-    await GradeScale.upsert({
-      name: `Grade ${grade}`,
-      grade: grade as string,
-      minPercentage: from as number,
-      maxPercentage: to as number,
-      result: result as string,
+    await GradeScale.findOrCreate({
+      where: { grade, branchId },
+      defaults: { branchId, name: `Grade ${grade}`, grade, minPercentage: from, maxPercentage: to, result } as any,
     });
   }
 
   // Fee types
-  await FeeType.bulkCreate([
-    { name: "Tuition Fee", category: "tuition", amount: 2500, installments: 1, billingCycle: "term", isMandatory: true },
-    { name: "Transport Fee", category: "transport", amount: 800, installments: 1, billingCycle: "term", isMandatory: false },
-    { name: "Hostel Fee", category: "hostel", amount: 1500, installments: 1, billingCycle: "term", isMandatory: false },
-    { name: "Library Fee", category: "misc", amount: 200, installments: 1, billingCycle: "term", isMandatory: false },
-  ], { ignoreDuplicates: true });
+  const feeTypes = [
+    { name: "Tuition Fee", category: "tuition", amount: 2500, isMandatory: true },
+    { name: "Transport Fee", category: "transport", amount: 800, isMandatory: false },
+    { name: "Hostel Fee", category: "hostel", amount: 1500, isMandatory: false },
+    { name: "Library Fee", category: "misc", amount: 200, isMandatory: false },
+  ];
+  for (const f of feeTypes) {
+    await FeeType.findOrCreate({
+      where: { name: f.name, branchId },
+      defaults: { ...f, branchId, installments: 1, billingCycle: "term" } as any,
+    });
+  }
 
   // Super admin account
-  const admin = await User.findOrCreate({
+  const { password, generated } = seedAdminPassword();
+  const [admin, created] = await User.findOrCreate({
     where: { email: "admin@school.local" },
     defaults: {
       username: "superadmin",
@@ -130,11 +153,11 @@ export async function runSeeders(): Promise<void> {
       firstName: "Super",
       lastName: "Admin",
       role: "super_admin",
-      passwordHash: await hashPassword("Admin@123"),
+      passwordHash: await hashPassword(password),
       emailVerified: true,
       isActive: true,
-      branchId: branch.id,
-    },
+      branchId,
+    } as any,
   });
 
   // Lock-in the seed markers
@@ -142,5 +165,12 @@ export async function runSeeders(): Promise<void> {
   await Settings.upsert({ scope: "system", key: "schoolName", value: "Enterprise School", isPublic: true });
   await Settings.upsert({ scope: "system", key: "contactEmail", value: "office@school.local", isPublic: true });
 
-  logger.info(`Seeders: done. Super admin -> admin@school.local / Admin@123 (id=${admin[0].id})`);
+  if (created && generated) {
+    // Shown once, only when we had to invent a password (production without SEED_ADMIN_PASSWORD).
+    logger.warn(`Seeders: super admin created (admin@school.local). One-time generated password: ${password} — change it immediately.`);
+  } else if (created) {
+    logger.info(`Seeders: done. Super admin -> admin@school.local (id=${admin.id})${process.env.SEED_ADMIN_PASSWORD ? "" : " / Admin@123 (dev default)"}`);
+  } else {
+    logger.info("Seeders: done. Super admin already existed, password untouched.");
+  }
 }

@@ -1,7 +1,6 @@
 import { z } from "zod";
-import { USER_ROLES } from "../../utils/constants";
-
-const roleEnum = z.enum(USER_ROLES as unknown as [string, ...string[]]);
+// Any role that exists in the roles table (built-in or custom); existence is checked in the service.
+const roleEnum = z.string().regex(/^[a-z][a-z0-9_]{1,48}$/, "Invalid role");
 
 // Accepts numbers, numeric strings, "" and null (BIGINT ids often arrive as strings).
 const nullableId = z.preprocess(

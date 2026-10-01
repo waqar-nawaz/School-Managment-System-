@@ -188,7 +188,10 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
       await Attendance.bulkCreate(cleaned, {
         transaction: t,
         updateOnDuplicate: ["status", "lateMinutes", "reason", "takenBy", "classId", "sectionId", "updatedAt"],
-      });
+        // Postgres needs the conflict target: without it ON CONFLICT uses the primary key and a
+        // second save of the same day fails with a duplicate (studentId, date) error.
+        ...(Attendance.sequelize!.getDialect() === "postgres" ? { upsertKeys: ["studentId", "date"] } : {}),
+      } as any);
     }
     await t.commit();
   } catch (e) {

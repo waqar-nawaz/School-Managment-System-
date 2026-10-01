@@ -4,6 +4,12 @@ import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
 import * as authService from "./auth.service";
 import { User } from "../../models";
+import { getPermissionsForRole } from "../../services/rbac.service";
+
+/** Safe user fields + the role's live permission list (drives menus/guards in the UI). */
+async function withPermissions(user: User) {
+  return { ...sanitize(user), permissions: await getPermissionsForRole(user.role) };
+}
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { user, accessToken, refreshToken } = await authService.login(
@@ -12,7 +18,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     req.get("user-agent")
   );
   ApiResponse.success(res, 200, "Logged in", {
-    user: sanitize(user),
+    user: await withPermissions(user),
     accessToken,
     refreshToken,
   });
@@ -24,7 +30,7 @@ export const refresh = asyncHandler(async (req: Request, res: Response) => {
     req.ip
   );
   ApiResponse.success(res, 200, "Tokens refreshed", {
-    user: sanitize(user),
+    user: await withPermissions(user),
     accessToken,
     refreshToken,
   });
@@ -100,7 +106,7 @@ export const sendVerification = asyncHandler(async (req: Request, res: Response)
 export const me = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findByPk(req.user!.id);
   if (!user) throw ApiError.notFound("User not found");
-  ApiResponse.success(res, 200, "Profile", sanitize(user));
+  ApiResponse.success(res, 200, "Profile", await withPermissions(user));
 });
 
 // Positive projection sanitizer — only return safe fields, never the negative strip.

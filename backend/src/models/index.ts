@@ -229,12 +229,12 @@ export function defineAssociations(): void {
   Invoice.belongsTo(Student, { as: "student", foreignKey: "studentId" });
   Invoice.belongsTo(Term, { foreignKey: "termId" });
   Invoice.hasMany(Payment, { as: "payments", foreignKey: "invoiceId" });
-  Payment.belongsTo(Invoice, { foreignKey: "invoiceId" });
-  Payment.belongsTo(Student, { foreignKey: "studentId" });
-  Receipt.belongsTo(Payment, { foreignKey: "paymentId" });
-  Receipt.belongsTo(Invoice, { foreignKey: "invoiceId" });
-  Refund.belongsTo(Invoice, { foreignKey: "invoiceId" });
-  Refund.belongsTo(Payment, { foreignKey: "paymentId" });
+  Payment.belongsTo(Invoice, { as: "invoice", foreignKey: "invoiceId" });
+  Payment.belongsTo(Student, { as: "student", foreignKey: "studentId" });
+  Receipt.belongsTo(Payment, { as: "payment", foreignKey: "paymentId" });
+  Receipt.belongsTo(Invoice, { as: "invoice", foreignKey: "invoiceId" });
+  Refund.belongsTo(Invoice, { as: "invoice", foreignKey: "invoiceId" });
+  Refund.belongsTo(Payment, { as: "payment", foreignKey: "paymentId" });
 
   PayrollItem.hasMany(Payslip, { as: "payslips", foreignKey: "payrollItemId" });
   Payslip.belongsTo(PayrollItem, { foreignKey: "payrollItemId" });
@@ -243,9 +243,9 @@ export function defineAssociations(): void {
 
   // Library
   Book.hasMany(BookCopy, { as: "bookCopies", foreignKey: "bookId" });
-  BookCopy.belongsTo(Book, { foreignKey: "bookId" });
+  BookCopy.belongsTo(Book, { as: "book", foreignKey: "bookId" });
   BookCopy.hasMany(BookIssue, { as: "issues", foreignKey: "bookCopyId" });
-  BookIssue.belongsTo(BookCopy, { foreignKey: "bookCopyId" });
+  BookIssue.belongsTo(BookCopy, { as: "bookCopy", foreignKey: "bookCopyId" });
   BookIssue.belongsTo(User, { as: "borrower", foreignKey: "userId" });
   BookIssue.hasMany(BookFine, { as: "fines", foreignKey: "bookIssueId" });
   BookFine.belongsTo(BookIssue, { foreignKey: "bookIssueId" });

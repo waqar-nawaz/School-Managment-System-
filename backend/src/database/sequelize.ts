@@ -145,15 +145,30 @@ async function ensureColumns(): Promise<void> {
     /* legacy data cleanup must never prevent the application from starting */
   }
 
+  // Backfill enrolments created before they carried a branch (capacity checks, rosters and
+  // the /enrolments list all filter on enrolments.branchId).
+  try {
+    const q = (x: string) => qi.quoteIdentifier(x);
+    await sequelize.query(
+      `UPDATE ${q("enrolments")} SET ${q("branchId")} = (SELECT s.${q("branchId")} FROM ${q("students")} s WHERE s.${q("id")} = ${q("enrolments")}.${q("studentId")}) WHERE ${q("branchId")} IS NULL`
+    );
+  } catch (err) {
+    logger.warn(`Could not backfill enrolments.branchId: ${(err as Error).message}`);
+  }
+
   // Patch ENUM columns where we added new values (idempotent, dialect-aware).
   // Sequelize.sync({alter:false}) does NOT alter existing column types, so we
   // changeColumn manually. Safe to run on every boot.
   try {
     if (env.db.dialect === "mysql") {
-      await sequelize.query(
-        "ALTER TABLE admission_applications MODIFY status ENUM('enquiry','applied','shortlisted','admitted','rejected','waitlisted','withdrawn') NOT NULL DEFAULT 'enquiry'"
-      );
-      logger.info("Patched admission_applications.status ENUM to include 'withdrawn'");
+      // Only alter when the value is actually missing (an ALTER on every boot locks the table).
+      const desc = await qi.describeTable("admission_applications").catch(() => null);
+      if (desc && desc.status && !String(desc.status.type).toLowerCase().includes("withdrawn")) {
+        await sequelize.query(
+          "ALTER TABLE admission_applications MODIFY status ENUM('enquiry','applied','shortlisted','admitted','rejected','waitlisted','withdrawn') NOT NULL DEFAULT 'enquiry'"
+        );
+        logger.info("Patched admission_applications.status ENUM to include 'withdrawn'");
+      }
     } else if (env.db.dialect === "postgres") {
       // Postgres requires the new value to be added to the existing type before it can be used.
       await sequelize.query(`ALTER TYPE enum_admission_applications_status ADD VALUE IF NOT EXISTS 'withdrawn'`).catch(() => {});

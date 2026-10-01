@@ -3,8 +3,6 @@ import { authenticate } from "../../middlewares/authenticate";
 import { authorize } from "../../middlewares/authorize";
 import { createCrudController, CrudOptions } from "../../utils/crudFactory";
 import { asyncHandler } from "../../utils/asyncHandler";
-import { parsePagination } from "../../utils/pagination";
-import { likeOp } from "../../utils/search";
 import { RESOURCES, ResourceDefinition } from "./resourceDefinitions";
 import { writeAuditLog } from "../../services/audit.service";
 
@@ -20,6 +18,8 @@ function buildRouter(def: ResourceDefinition): Router {
     beforeRemove: def.beforeRemove,
     afterCreate: def.afterCreate,
     scopeWhere: def.scopeWhere,
+    hideAttributes: def.hideAttributes,
+    sensitiveColumns: def.sensitiveColumns,
     includes: def.includes,
     decorate: def.decorate,
   } as CrudOptions);
@@ -32,7 +32,8 @@ function buildRouter(def: ResourceDefinition): Router {
   router.get("/count", authorize(`${perm}:read`), (req, res, next) =>
     ctrl.count(req, res).catch(next)
   );
-  router.get("/export", authorize(`reports:export`), exportCsv(def));
+  // Needs BOTH the export right and read access to this very resource.
+  router.get("/export", authorize(`reports:export`), authorize(`${perm}:read`), exportCsv(def, ctrl));
   router.get("/:id", authorize(`${perm}:read`), (req, res, next) =>
     ctrl.getOne(req, res).catch(next)
   );
@@ -52,57 +53,41 @@ function buildRouter(def: ResourceDefinition): Router {
   return router;
 }
 
-function exportCsv(def: ResourceDefinition) {
-  return asyncHandler(async (req: Request, res: Response) => {
-    const p = parsePagination(req, 5000);
-    const where: Record<string, unknown> = {};
-    if (p.search) {
-      const { Op } = await import("sequelize");
-      (where as any)[Op.or] = def.searchable.map((col) => ({
-        [col]: { [likeOp]: `%${p.search}%` },
-      }));
-    }
-    const attrs = (def.model as any).rawAttributes || {};
-    const userBranchId = req.user?.branchId;
-    if (userBranchId != null && attrs.branchId) (where as any).branchId = userBranchId;
+/** Neutralise spreadsheet formulas (=, +, -, @) so opened CSVs can't run code in Excel. */
+function csvCell(v: unknown): string {
+  let s = v == null ? "" : v instanceof Date ? v.toISOString() : typeof v === "object" ? JSON.stringify(v) : String(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  s = s.replace(/"/g, '""');
+  return /[",\n\r]/.test(s) ? `"${s}"` : s;
+}
 
-    // Always exclude sensitive columns from CSV exports.
-    const SENSITIVE = new Set([
-      "passwordHash", "passwordChangedAt", "secret", "tokenHash",
-      "lastLoginIp", "deletedAt", "userAgent",
+function exportCsv(def: ResourceDefinition, ctrl: ReturnType<typeof createCrudController>) {
+  return asyncHandler(async (req: Request, res: Response) => {
+    // Same filters, search, branch scope and row-level scope as the list screen.
+    const where = await ctrl.buildWhere(req);
+    const hidden = new Set([
+      "passwordHash", "passwordChangedAt", "secret", "tokenHash", "lastLoginIp", "deletedAt", "userAgent",
+      ...ctrl.hiddenColumns(req),
     ]);
-    const rows = await def.model.findAll({ where, limit: 5000, raw: true });
-    if (!rows.length) {
-      res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename="${def.path}-${Date.now()}.csv"`
-      );
-      res.send("");
-      return;
-    }
-    const allHeaders = Object.keys(rows[0] as Record<string, unknown>);
-    const headers = allHeaders.filter((h) => !SENSITIVE.has(h));
-    const escape = (v: unknown) => {
-      const s = v == null ? "" : String(v).replace(/"/g, '""');
-      return /[",\n]/.test(s) ? `"${s}"` : s;
-    };
-    const csv = [
-      headers.join(","),
-      ...rows.map((r: any) => headers.map((h) => escape(r[h])).join(",")),
-    ].join("\r\n");
+    const attrs = Object.keys((def.model as any).rawAttributes || {}).filter((a) => !hidden.has(a));
+    const rows = await def.model.findAll({ where, limit: 5000, raw: true, attributes: attrs });
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${def.path}-${Date.now()}.csv"`
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${def.path}-${Date.now()}.csv"`);
+    if (!rows.length) {
+      res.send(attrs.join(","));
+      return;
+    }
+    const csv = [
+      attrs.join(","),
+      ...rows.map((r: any) => attrs.map((h) => csvCell(r[h])).join(",")),
+    ].join("\r\n");
     // Report truncation so clients know the export is incomplete.
     if (rows.length === 5000) {
       res.setHeader("X-Export-Truncated", "true");
       res.setHeader("X-Export-Max-Rows", "5000");
     }
-    res.send(csv);
+    res.send("\uFEFF" + csv); // BOM so Excel reads UTF-8 (Urdu names) correctly
 
     await writeAuditLog({
       action: "export",

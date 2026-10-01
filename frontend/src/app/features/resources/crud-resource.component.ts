@@ -124,7 +124,7 @@ const NO_EXPORT = new Set([
                         @case ('money') { <span>{{ money(row[col.key]) }}</span> }
                         @case ('bool') { @if (row[col.key]) {<span class="badge badge-success">Yes</span>} @else {<span class="badge">No</span>} }
                         @case ('badge') { <span class="badge badge-{{ badgeClass(col, row[col.key]) }}">{{ display(col, row[col.key]) }}</span> }
-                        @default { <span>{{ display(col, row[col.key]) }}</span> }
+                        @default { <span>{{ cell(col, row) }}</span> }
                       }
                     </td>
                   }
@@ -312,6 +312,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.openMenuId = null;
     this.fieldErrors = {};
     this.refOptions = {};
+    this.refNames = {};
     this.refSearch = {};
     this.refSelectedLabel = {};
     this.refOpenKey = null;
@@ -499,9 +500,47 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         next: (res) => {
           this.rows = (res?.data as Row[]) ?? [];
           this.total = res?.meta?.total ?? this.rows.length;
+          this.resolveRefNames();
         },
         error: () => {},
       });
+  }
+
+  /** column key -> (id -> readable name) for foreign-key columns, so tables show names not ids. */
+  refNames: Record<string, Record<string, string>> = {};
+
+  private resolveRefNames(): void {
+    const cfg = this.config;
+    if (!cfg) return;
+    const version = this.resourceKey;
+    for (const col of cfg.columns) {
+      const field = cfg.fields.find((f) => f.key === col.key && f.type === 'ref' && f.ref);
+      if (!field?.ref) continue;
+      const known = this.refNames[col.key] ?? {};
+      const ids = Array.from(new Set(this.rows.map((r) => r[col.key]).filter((v) => v != null && v !== '').map(String)))
+        .filter((id) => !(id in known))
+        .slice(0, 200);
+      if (!ids.length) continue;
+      const { api, labelKey, secondaryKey } = field.ref;
+      this.api.get<Record<string, unknown>[]>(api, { ids: ids.join(','), limit: 200 }).subscribe({
+        next: (res) => {
+          if (version !== this.resourceKey) return;
+          const map = { ...(this.refNames[col.key] ?? {}) };
+          for (const r of (res?.data as Record<string, unknown>[]) ?? []) {
+            map[String(r['id'])] =
+              [r[labelKey], secondaryKey ? r[secondaryKey] : null].filter(Boolean).join(' — ') || `#${r['id']}`;
+          }
+          this.refNames = { ...this.refNames, [col.key]: map };
+        },
+        error: () => {},
+      });
+    }
+  }
+
+  cell(col: { key: string; badgeMap?: Record<string, string> }, row: Row): string {
+    const raw = row[col.key];
+    const name = raw != null ? this.refNames[col.key]?.[String(raw)] : undefined;
+    return name ?? this.display(col, raw);
   }
 
   openCreate(): void {

@@ -12,8 +12,20 @@ import { writeAuditLog } from "../../services/audit.service";
 
 const router = Router();
 
+// Scopes that hold internal state (password-reset / e-mail-verify tokens use "reset:<id>" and
+// "verify:<id>", role overrides use "rbac"). They must never be readable or writable through
+// this generic settings API - an admin could otherwise forge a reset token for any account.
+const RESERVED_SCOPES = new Set(["rbac"]);
+const SCOPE_RE = /^[a-z][a-z0-9_-]{0,59}$/i;
+function assertUserScope(scope: string): string {
+  if (!SCOPE_RE.test(scope) || RESERVED_SCOPES.has(scope.toLowerCase())) {
+    throw ApiError.badRequest("Invalid or reserved settings scope");
+  }
+  return scope;
+}
+
 const upsertSchema = z.object({
-  scope: z.string().min(1).max(60).optional().default("system"),
+  scope: z.string().min(1).max(60).regex(SCOPE_RE, "Invalid scope").refine((v) => !RESERVED_SCOPES.has(v.toLowerCase()), "Reserved scope").optional().default("system"),
   key: z.string().min(1).max(120),
   value: z.string().max(10000),
   description: z.string().max(1000).optional(),
@@ -24,7 +36,7 @@ const upsertSchema = z.object({
 router.get(
   "/public",
   asyncHandler(async (_req, res) => {
-    const rows = await Settings.findAll({ where: { isPublic: true } });
+    const rows = await Settings.findAll({ where: { isPublic: true, scope: "system" } });
     const map: Record<string, string> = {};
     for (const r of rows) map[r.key] = r.value;
     ApiResponse.success(res, 200, "Public settings", map);
@@ -37,7 +49,7 @@ router.get(
   "/",
   authorize("settings:manage"),
   asyncHandler(async (req, res) => {
-    const scope = (req.query.scope as string) || "system";
+    const scope = assertUserScope((req.query.scope as string) || "system");
     const rows = await Settings.findAll({ where: { scope } });
     // Return shape: { [key]: { value, isPublic } } so the frontend can preserve the isPublic flag
     // across load → edit → save cycles. Previously this returned a flat string map, which silently
@@ -112,6 +124,7 @@ router.delete(
     const { scope, key } = req.query as { scope?: string; key?: string };
     if (!key) throw ApiError.badRequest("key query param required");
     if (!scope) throw ApiError.badRequest("scope query param required");
+    assertUserScope(scope);
     await Settings.destroy({ where: { key, scope } });
     await writeAuditLog({
       action: "delete",

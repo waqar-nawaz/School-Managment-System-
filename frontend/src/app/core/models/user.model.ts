@@ -13,6 +13,8 @@ export interface User {
   emailVerified: boolean;
   lastLoginAt?: string;
   branchId?: number | null;
+  /** Live permission list for the user's role (from the server; supports custom roles). */
+  permissions?: string[];
 }
 
 export interface AuthTokens {

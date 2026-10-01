@@ -10,6 +10,7 @@ export const USER_ROLES = [
   "transport_manager",
   "hostel_warden",
   "receptionist",
+  "staff",
 ] as const;
 
 export type UserRole = (typeof USER_ROLES)[number];

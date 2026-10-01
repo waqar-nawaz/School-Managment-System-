@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { AuthGuard } from './core/guards/auth.guard';
 import { PermissionGuard } from './core/guards/permission.guard';
+import { ResourceGuard } from './core/guards/resource.guard';
 
 export const routes: Routes = [
   {
@@ -76,6 +77,13 @@ export const routes: Routes = [
           import('./features/reports/reports.component').then((m) => m.ReportsComponent),
       },
       {
+        path: 'roles',
+        data: { permission: 'roles:read' },
+        canActivate: [PermissionGuard],
+        loadComponent: () =>
+          import('./features/roles/role-permissions.component').then((m) => m.RolePermissionsComponent),
+      },
+      {
         path: 'settings',
         data: { permission: 'settings:manage' },
         canActivate: [PermissionGuard],
@@ -100,10 +108,11 @@ export const routes: Routes = [
       // Generic config-driven CRUD for every registered resource (see resources.config.ts).
       {
         path: ':resource',
+        canActivate: [ResourceGuard],
         loadComponent: () =>
           import('./features/resources/crud-resource.component').then((m) => m.CrudResourceComponent),
       },
     ],
   },
-  { path: '**', redirectTo: 'auth/login' },
+  { path: '**', redirectTo: 'not-found' },
 ];

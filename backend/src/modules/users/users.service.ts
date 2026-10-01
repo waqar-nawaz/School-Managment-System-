@@ -1,5 +1,6 @@
-import { User, Parent, Teacher, Staff } from "../../models";
+import { User, Parent, Teacher, Staff, Role } from "../../models";
 import { Transaction } from "sequelize";
+import { sequelize } from "../../database/sequelize";
 import { hashPassword, generateRandomPassword } from "../../utils/password.util";
 import { ApiError } from "../../utils/ApiError";
 import { sendWelcomeEmail } from "../../services/email.service";
@@ -20,11 +21,55 @@ export interface CreateUserInput {
   transaction?: Transaction;
 }
 
+/**
+ * Make sure a user has the role-specific profile row (parent / teacher / staff).
+ * Idempotent: safe to call again after a role change or from any flow that creates users.
+ */
+export async function ensureRoleProfile(user: User, transaction?: Transaction): Promise<void> {
+  const fullName = `${user.firstName} ${user.lastName}`.trim();
+  if (user.role === "parent") {
+    const exists = await Parent.findOne({ where: { userId: user.id }, transaction });
+    if (!exists) {
+      await Parent.create({
+        fullName: fullName || "Guardian", phone: user.phone ?? null, email: user.email,
+        branchId: user.branchId ?? null, relation: "guardian", userId: user.id,
+      } as any, { transaction });
+    }
+  } else if (user.role === "teacher") {
+    const exists = await Teacher.findOne({ where: { userId: user.id }, transaction });
+    if (!exists) {
+      await Teacher.create({
+        staffNo: `TCH-${Date.now().toString(36).toUpperCase()}${user.id}`,
+        firstName: user.firstName, lastName: user.lastName, email: user.email,
+        phone: user.phone ?? null, branchId: user.branchId ?? null, isActive: true, userId: user.id,
+      } as any, { transaction });
+    }
+  } else if (user.role === "staff") {
+    const exists = await Staff.findOne({ where: { userId: user.id }, transaction });
+    if (!exists) {
+      await Staff.create({
+        staffNo: `STF-${Date.now().toString(36).toUpperCase()}${user.id}`,
+        firstName: user.firstName, lastName: user.lastName, email: user.email,
+        phone: user.phone ?? null, branchId: user.branchId ?? null, isActive: true, userId: user.id,
+      } as any, { transaction });
+    }
+  }
+}
+
 export async function createUser(input: CreateUserInput): Promise<User> {
-  const emailTaken = await User.findOne({ where: { email: input.email }, transaction: input.transaction });
+  // Run user + profile creation atomically: no half-created users if the profile insert fails.
+  if (!input.transaction) {
+    return sequelize.transaction((t) => createUser({ ...input, transaction: t }));
+  }
+  const t = input.transaction;
+
+  const roleRow = await Role.findOne({ where: { name: input.role }, transaction: t });
+  if (!roleRow) throw ApiError.badRequest(`Unknown role "${input.role}"`);
+
+  const emailTaken = await User.findOne({ where: { email: input.email }, transaction: t });
   if (emailTaken) throw ApiError.conflict("Email already registered");
 
-  const usernameTaken = await User.findOne({ where: { username: input.username }, transaction: input.transaction });
+  const usernameTaken = await User.findOne({ where: { username: input.username }, transaction: t });
   if (usernameTaken) throw ApiError.conflict("Username already taken");
 
   const tempPassword = input.password ?? generateRandomPassword();
@@ -39,46 +84,13 @@ export async function createUser(input: CreateUserInput): Promise<User> {
     branchId: input.branchId ?? null,
     passwordHash: await hashPassword(tempPassword),
     passwordChangedAt: new Date(),
-  }, { transaction: input.transaction });
+  }, { transaction: t });
 
   // Auto-create the linked profile record so role-scoped lookups (Parent.findOne, etc.) work.
-  // Without this, the parent/teacher/staff portal flow breaks immediately because the role-specific
-  // record is required by assertStudentAccess and other helpers.
-  if (input.role === "parent") {
-    await Parent.create({
-      fullName: `${input.firstName} ${input.lastName}`.trim() || "Guardian",
-      phone: input.phone ?? null,
-      email: input.email,
-      branchId: input.branchId ?? null,
-      relation: "guardian",
-      userId: user.id,
-    }, { transaction: input.transaction });
-  } else if (input.role === "teacher") {
-    await Teacher.create({
-      staffNo: `TCH-${Date.now().toString(36).toUpperCase()}`,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      email: input.email,
-      phone: input.phone ?? null,
-      branchId: input.branchId ?? null,
-      isActive: true,
-      userId: user.id,
-    }, { transaction: input.transaction });
-  } else if (input.role === "staff") {
-    await Staff.create({
-      staffNo: `STF-${Date.now().toString(36).toUpperCase()}`,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      email: input.email,
-      phone: input.phone ?? null,
-      branchId: input.branchId ?? null,
-      isActive: true,
-      userId: user.id,
-    }, { transaction: input.transaction });
-  }
+  await ensureRoleProfile(user, t);
 
   if (input.sendWelcome) {
-    await sendWelcomeEmail(input.email, `${input.firstName} ${input.lastName}`, tempPassword).catch(() => {});
+    sendWelcomeEmail(input.email, `${input.firstName} ${input.lastName}`, tempPassword).catch(() => {});
   }
 
   await writeAuditLog({

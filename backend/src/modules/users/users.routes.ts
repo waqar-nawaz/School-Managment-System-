@@ -7,7 +7,7 @@ import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
 import {
-  User, RefreshToken, Notification, Message, Student, Teacher, Staff, Parent, AuditLog, Branch,
+  User, RefreshToken, Notification, Message, Student, Teacher, Staff, Parent, AuditLog, Branch, Role,
 } from "../../models";
 import { sequelize } from "../../database/sequelize";
 import { sanitize } from "../auth/auth.controller";
@@ -17,7 +17,8 @@ import {
   updateUserStatusSchema,
   adminResetPasswordSchema,
 } from "./users.validation";
-import { createUser, adminResetPassword } from "./users.service";
+import { createUser, adminResetPassword, ensureRoleProfile } from "./users.service";
+import { invalidateActiveCache } from "../../middlewares/authenticate";
 import { writeAuditLog } from "../../services/audit.service";
 import { likeOp } from "../../utils/search";
 
@@ -110,7 +111,21 @@ router.put("/:id", authorize("users:update"), validate(updateUserSchema), asyncH
     const branch = await Branch.findByPk(body.branchId);
     if (!branch || !branch.isActive) throw ApiError.badRequest("Selected branch is not active");
   }
+  if (body.role !== undefined && body.role !== user.role) {
+    if (!(await Role.findOne({ where: { name: body.role } }))) throw ApiError.badRequest(`Unknown role "${body.role}"`);
+    if (user.id === req.user!.id) throw ApiError.badRequest("You cannot change your own role");
+  }
+  if (body.isActive === false && user.id === req.user!.id) {
+    throw ApiError.badRequest("You cannot deactivate your own account");
+  }
+  const roleChanged = body.role !== undefined && body.role !== user.role;
   await user.update(body);
+  if (roleChanged) await ensureRoleProfile(user);
+  if (body.isActive === false) {
+    // Same as PATCH /status: kill sessions right away.
+    await RefreshToken.update({ revoked: true, revokedAt: new Date() }, { where: { userId: user.id, revoked: false } });
+  }
+  if (body.isActive !== undefined) invalidateActiveCache(user.id);
   await writeAuditLog({
     action: "update", entity: "user", entityId: user.id, userId: req.user!.id,
     role: req.user!.role, newData: body, branchId: user.branchId,
@@ -124,7 +139,11 @@ router.patch("/:id/status", authorize("users:update"), validate(updateUserStatus
   if (user.username === "superadmin" && req.user!.role !== "super_admin") {
     throw ApiError.forbidden("Cannot modify the superadmin account");
   }
+  if (user.id === req.user!.id && !req.body.isActive) {
+    throw ApiError.badRequest("You cannot deactivate your own account");
+  }
   await user.update({ isActive: req.body.isActive });
+  invalidateActiveCache(user.id);
   // When deactivating, revoke all refresh tokens so existing JWTs stop working
   // immediately (within the 60s active-cache window in authenticate.ts).
   if (!req.body.isActive) {

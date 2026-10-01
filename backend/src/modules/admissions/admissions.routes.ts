@@ -196,9 +196,14 @@ router.post(
     const branchId = Number(req.user?.branchId);
     if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
 
-    const currentClassId = req.body.currentClassId != null ? Number(req.body.currentClassId) : null;
-    const currentSectionId = req.body.currentSectionId != null ? Number(req.body.currentSectionId) : null;
-    const academicYearId = req.body.academicYearId != null ? Number(req.body.academicYearId) : null;
+    let currentClassId = req.body.currentClassId != null && req.body.currentClassId !== "" ? Number(req.body.currentClassId) : null;
+    if (!currentClassId && app.appliedClass) {
+      // No class picked: fall back to the class the family applied for (matched by name in this branch).
+      const applied = await SchoolClass.findOne({ where: { branchId, isActive: true, name: { [Op.like]: String(app.appliedClass).trim() } as any } });
+      if (applied) currentClassId = Number(applied.id);
+    }
+    const currentSectionId = req.body.currentSectionId != null && req.body.currentSectionId !== "" ? Number(req.body.currentSectionId) : null;
+    const academicYearId = req.body.academicYearId != null && req.body.academicYearId !== "" ? Number(req.body.academicYearId) : null;
     const rollNo = req.body.rollNo != null ? String(req.body.rollNo) : null;
 
     // Validate class/section ownership + capacity (mirror of /students POST validation).
@@ -231,10 +236,11 @@ router.post(
 
       const slug = admissionNo.toLowerCase().replace(/[^a-z0-9]+/g, "") || "student";
       const unique = `${Date.now().toString(36)}${Math.floor(Math.random() * 10000)}`;
-      let email = app.email ? String(app.email).trim().toLowerCase() : `${slug}.${unique}@school.local`;
-      let username = email.split("@")[0];
-      if (await User.findOne({ where: { email }, transaction })) email = `${slug}.${unique}@school.local`;
-      if (await User.findOne({ where: { username }, transaction })) username = `${username}_${unique}`;
+      // The application's email/phone are the family's contact details, so they go to the guardian's
+      // (parent portal) login. The child's own login gets a unique placeholder address.
+      const email = `${slug}.${unique}@school.local`;
+      let username = `${slug}_${unique}`.slice(0, 60);
+      if (await User.findOne({ where: { username }, transaction })) username = `${username}${Math.floor(Math.random() * 1000)}`;
 
       // Create Student User account.
       const user = await createUser({
@@ -245,7 +251,7 @@ router.post(
         gender: app.gender,
         phone: app.phone,
         branchId,
-        sendWelcome: !!app.email,
+        sendWelcome: false,
         generatedBy: req.user!.id,
         transaction,
       });
@@ -270,54 +276,39 @@ router.post(
         userId: user.id,
       }, { transaction });
 
-      // Create Parent User + Parent profile + StudentGuardian link (so the parent portal works).
+      // Guardian: reuse an existing parent (same phone/email in this branch, e.g. siblings) or
+      // create one. createUser() already creates the Parent profile, so we only fill it in.
       if (app.phone || app.email) {
-        const parentEmail = app.email ? String(app.email).trim().toLowerCase() : `${slug}.parent.${unique}@school.local`;
-        let parentUsername = parentEmail.split("@")[0];
-        if (await User.findOne({ where: { email: parentEmail }, transaction })) {
-          // Skip duplicate parent creation if a User with the same email already exists; just link.
-          const existingUser = await User.findOne({ where: { email: parentEmail }, transaction });
-          if (existingUser) {
-            const existingParent = await Parent.findOne({ where: { userId: existingUser.id }, transaction });
-            if (existingParent) {
-              await StudentGuardian.findOrCreate({
-                where: { studentId: student.id, guardianId: existingParent.id },
-                defaults: { studentId: student.id, guardianId: existingParent.id, relation: "guardian", branchId },
-                transaction,
-              });
-            }
-          }
-        } else {
-          if (await User.findOne({ where: { username: parentUsername }, transaction })) {
-            parentUsername = `${parentUsername}_${unique}`;
-          }
-          const parentUser = await createUser({
-            username: parentUsername,
-            email: parentEmail,
-            firstName: firstName || app.studentName,
-            lastName: "Guardian",
-            role: "parent",
-            phone: app.phone,
-            branchId,
-            sendWelcome: !!app.email,
-            generatedBy: req.user!.id,
-            transaction,
-          });
-          const parent = await Parent.create({
-            fullName: `${firstName || app.studentName}'s Guardian`,
-            phone: app.phone,
-            email: parentEmail,
-            branchId,
-            relation: "guardian",
-            userId: parentUser.id,
-          }, { transaction });
-          await StudentGuardian.create({
-            studentId: student.id,
-            guardianId: parent.id,
-            relation: "guardian",
-            branchId,
-          }, { transaction });
+        const guardianEmail = app.email ? String(app.email).trim().toLowerCase() : "";
+        let parent: Parent | null = null;
+        if (app.phone) parent = await Parent.findOne({ where: { phone: app.phone, branchId }, transaction });
+        if (!parent && guardianEmail) {
+          const existingUser = await User.findOne({ where: { email: guardianEmail }, transaction });
+          if (existingUser) parent = await Parent.findOne({ where: { userId: existingUser.id }, transaction });
         }
+        if (!parent) {
+          const emailFree = guardianEmail && !(await User.findOne({ where: { email: guardianEmail }, transaction }));
+          const parentEmail = emailFree ? guardianEmail : `${slug}.parent.${unique}@school.local`;
+          let parentUsername = `${(guardianEmail ? guardianEmail.split("@")[0] : `parent_${slug}`).replace(/[^a-z0-9_.-]/g, "").slice(0, 40) || "parent"}`;
+          if (parentUsername.length < 3 || (await User.findOne({ where: { username: parentUsername }, transaction }))) {
+            parentUsername = `${parentUsername.padEnd(3, "p")}_${unique}`;
+          }
+          const guardianName = `${firstName || app.studentName}'s Guardian`;
+          const parentUser = await createUser({
+            username: parentUsername, email: parentEmail,
+            firstName: guardianName, lastName: "", role: "parent",
+            phone: app.phone, branchId, sendWelcome: !!emailFree,
+            generatedBy: req.user!.id, transaction,
+          });
+          parent = await Parent.findOne({ where: { userId: parentUser.id }, transaction });
+          if (!parent) throw ApiError.internal("Parent profile was not created");
+          await parent.update({ fullName: guardianName, phone: app.phone, email: emailFree ? parentEmail : null, relation: "guardian" } as any, { transaction });
+        }
+        await StudentGuardian.findOrCreate({
+          where: { studentId: student.id, parentId: parent.id },
+          defaults: { studentId: student.id, parentId: parent.id, relation: "guardian", isPrimary: true } as any,
+          transaction,
+        });
       }
 
       // Create Enrolment (if class provided) — mirror of /students POST logic.
