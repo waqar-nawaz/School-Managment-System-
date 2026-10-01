@@ -7,6 +7,7 @@ import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
 import { Invoice, FeeType, Student, Enrolment, Term, Payment, Receipt, StudentGuardian, Parent } from "../../models";
 import { createCrudController } from "../../utils/crudFactory";
+import { studentScope } from "../../utils/access";
 import { writeAuditLog } from "../../services/audit.service";
 import { v4 as uuidv4 } from "uuid";
 
@@ -19,6 +20,8 @@ const base = createCrudController<Invoice>({
   defaultSort: [["issueDate", "DESC"]],
   includes: [{ association: "payments" }, { association: "student" }],
   allowedFilters: ["status", "studentId", "termId", "branchId", "issueDate", "dueDate"],
+  // Parents see their children's invoices, students their own. Staff are only branch-scoped.
+  scopeWhere: (req) => studentScope(req, "studentId"),
 });
 
 router.get("/", authorize("invoices:read"), (req, res, next) => base.list(req, res).catch(next));
@@ -107,6 +110,9 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
     const feeWhere: any = { id: { [Op.in]: feeTypeIds }, isActive: true };
     if (callerBranch != null) feeWhere.branchId = callerBranch;
     const fees = await FeeType.findAll({ where: feeWhere });
+    if (fees.length !== new Set(feeTypeIds.map(Number)).size) {
+      throw ApiError.badRequest("One or more selected fee types are inactive or don't exist in your branch");
+    }
     for (const f of fees) lineItems.push({ name: f.name, amount: Number(f.amount) });
   }
   if (Array.isArray(customItems)) {
@@ -167,6 +173,9 @@ router.patch("/:id/status", authorize("invoices:update"), asyncHandler(async (re
   const allowed = INVOICE_TRANSITIONS[invoice.status] ?? [];
   if (!allowed.includes(nextStatus)) {
     throw ApiError.badRequest(`Cannot transition invoice from '${invoice.status}' to '${nextStatus}'`);
+  }
+  if (nextStatus === "cancelled" && Number(invoice.amountPaid) > 0) {
+    throw ApiError.badRequest("This invoice has payments. Refund them first, then cancel the invoice.");
   }
   if (nextStatus === "paid" && Number(invoice.amountPaid) < Number(invoice.totalDue)) {
     throw ApiError.badRequest("Invoice cannot be marked paid before the full amount is received");

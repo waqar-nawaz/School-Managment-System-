@@ -7,6 +7,8 @@ import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
 import { Payment, Receipt, Refund, Invoice } from "../../models";
 import { createCrudController } from "../../utils/crudFactory";
+import { studentScope } from "../../utils/access";
+import { getPermissionsForRole } from "../../services/rbac.service";
 import { writeAuditLog } from "../../services/audit.service";
 import { v4 as uuidv4 } from "uuid";
 
@@ -18,6 +20,7 @@ const base = createCrudController<Payment>({
   searchable: ["receiptNo", "method", "status", "reference"],
   defaultSort: [["paidOn", "DESC"]],
   allowedFilters: ["status", "method", "studentId", "invoiceId", "branchId", "paidOn"],
+  scopeWhere: (req) => studentScope(req, "studentId"),
   includes: [
     { association: "invoice", attributes: ["id", "invoiceNo", "totalDue", "amountPaid", "status"] },
     { association: "student", attributes: ["id", "firstName", "lastName", "admissionNo"] },
@@ -31,6 +34,16 @@ const base = createCrudController<Payment>({
   },
 });
 
+/**
+ * A payment stays "successful" while only PARTLY refunded (so further partial refunds stay possible
+ * and reports keep counting the money that was actually received); it becomes "refunded" once the
+ * processed refunds cover the full amount.
+ */
+async function syncPaymentStatus(payment: Payment, transaction: any): Promise<void> {
+  const processed = await Refund.sum("amount", { where: { paymentId: payment.id, status: "processed" }, transaction });
+  await payment.update({ status: Number(processed || 0) >= Number(payment.amount) ? "refunded" : "successful" }, { transaction });
+}
+
 router.get("/", authorize("payments:read"), (req, res, next) => base.list(req, res).catch(next));
 // IMPORTANT: GET /receipts/:paymentId MUST come before GET /:id, otherwise Express matches "receipts" as an id param.
 router.get("/receipts/:paymentId", authorize("payments:read"), asyncHandler(async (req, res) => {
@@ -38,6 +51,9 @@ router.get("/receipts/:paymentId", authorize("payments:read"), asyncHandler(asyn
   const where: any = { paymentId: req.params.paymentId };
   // Branch-scope the lookup to prevent cross-tenant receipt access (IDOR).
   if (callerBranch != null) where.branchId = callerBranch;
+  // Parents/students may only open receipts of their own payments.
+  const own = await Payment.findOne({ where: { id: Number(req.params.paymentId), ...(await studentScope(req, "studentId")) }, attributes: ["id"] });
+  if (!own) throw ApiError.notFound("Receipt not found");
   const receipt = await Receipt.findOne({
     where,
     include: [{ association: "payment" }, { association: "invoice" }],
@@ -54,6 +70,13 @@ router.post("/:id/refund", authorize("refunds:create"), asyncHandler(async (req,
   const amount = Number(req.body.amount ?? 0);
   if (!(amount > 0)) throw ApiError.badRequest("Refund amount must be positive");
   const callerBranch = req.user!.branchId;
+  // Creating a refund and approving it are separate controls: approve:true needs refunds:approve.
+  if (req.body.approve) {
+    const perms = await getPermissionsForRole(req.user!.role);
+    if (!perms.includes("*") && !perms.includes("refunds:approve")) {
+      throw ApiError.forbidden("Missing permission: refunds:approve (submit the refund without approve to send it for approval)");
+    }
+  }
 
   // Lock the Payment row inside the transaction before computing prior refunds.
   // This closes the race condition where two concurrent refunds both read prior=0
@@ -87,10 +110,7 @@ router.post("/:id/refund", authorize("refunds:create"), asyncHandler(async (req,
     }, { transaction: t });
 
     if (req.body.approve) {
-      // Sum ALL processed refunds (including this one) so a sequence of partial refunds
-      // correctly marks the payment as 'refunded' once the total reaches the payment amount.
-      const totalRefunded = Number(prior || 0) + amount;
-      await payment.update({ status: totalRefunded >= Number(payment.amount) ? "refunded" : "reversed" }, { transaction: t });
+      await syncPaymentStatus(payment, t);
       const invoice = await Invoice.findByPk(payment.invoiceId, { transaction: t, lock: t.LOCK.UPDATE });
       if (invoice && invoice.status !== "cancelled") {
         const amountPaid = Math.max(0, Number(invoice.amountPaid) - amount);
@@ -144,15 +164,7 @@ router.patch("/:id/refunds/:refundId/approve", authorize("refunds:approve"), asy
     }
 
     await refund.update({ status: "processed", approvedBy: req.user!.id, refundedOn: new Date() }, { transaction: t });
-    // Sum ALL processed refunds for this payment (including this approval) so the payment status
-    // is correctly 'refunded' when the cumulative total reaches the payment amount.
-    const totalProcessed = await Refund.sum("amount", {
-      where: { paymentId: payment.id, status: "processed" },
-      transaction: t,
-    });
-    await payment.update({
-      status: Number(totalProcessed || 0) >= Number(payment.amount) ? "refunded" : "reversed",
-    }, { transaction: t });
+    await syncPaymentStatus(payment, t);
 
     const invoice = await Invoice.findByPk(payment.invoiceId, { transaction: t, lock: t.LOCK.UPDATE });
     // Guard: never overwrite a 'cancelled' invoice status (terminal state).
@@ -194,6 +206,9 @@ router.get("/:id/refunds", authorize("payments:read"), asyncHandler(async (req, 
   const callerBranch = req.user!.branchId;
   const where: any = { paymentId };
   if (callerBranch != null) where.branchId = callerBranch;
+  if (!(await Payment.findOne({ where: { id: paymentId, ...(await studentScope(req, "studentId")) }, attributes: ["id"] }))) {
+    throw ApiError.notFound("Payment not found");
+  }
   const refunds = await Refund.findAll({ where, order: [["refundedOn", "DESC"]] });
   ApiResponse.success(res, 200, "Refunds", refunds);
 }));

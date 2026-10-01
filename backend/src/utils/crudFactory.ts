@@ -20,7 +20,10 @@ export interface CrudOptions<M extends Model = Model> {
   decorate?: (row: any) => Record<string, unknown>;
   /** Additional fixed filters applied to list/count queries. */
   defaultWhere?: WhereOptions;
-  scopeWhere?: (req: Request) => WhereOptions;
+  /** Row-level access rule (e.g. parents only see their own children). May be async. */
+  scopeWhere?: (req: Request) => WhereOptions | Promise<WhereOptions>;
+  /** Columns to hide from the response for this request (e.g. medicalInfo for non-staff). */
+  hideAttributes?: (req: Request) => string[];
   /** Allow-list of columns clients may filter on via filter[field]=value. */
   allowedFilters?: string[];
   /** Sensitive columns excluded from CSV exports and list responses. */
@@ -36,6 +39,10 @@ export interface CrudHandlers {
   update: (req: Request, res: Response) => Promise<void>;
   remove: (req: Request, res: Response) => Promise<void>;
   count: (req: Request, res: Response) => Promise<void>;
+  /** Same filters/scope/search as list(); reused by CSV export so exports can't bypass access rules. */
+  buildWhere: (req: Request) => Promise<WhereOptions>;
+  /** Attributes that must never be exposed for this resource. */
+  hiddenColumns: (req: Request) => string[];
 }
 
 export function createCrudController<M extends Model = Model>(
@@ -45,58 +52,96 @@ export function createCrudController<M extends Model = Model>(
   const detailIncludes = opts.detailIncludes ?? includes;
   const present = (row: any) => (opts.decorate ? opts.decorate(row) : row);
 
-  const buildWhere = (req: Request): WhereOptions => {
+  const modelAttrs = (): Record<string, unknown> => (model as any).rawAttributes || {};
+  const NEVER_EXPOSE = new Set(["passwordHash", "tokenHash", "token"]);
+  const hiddenColumns = (req: Request): string[] => [
+    ...NEVER_EXPOSE, ...(opts.sensitiveColumns ?? []), ...(opts.hideAttributes ? opts.hideAttributes(req) : []),
+  ].filter((c) => c in modelAttrs());
+  const attributesFor = (req: Request) => {
+    const hidden = hiddenColumns(req);
+    return hidden.length ? { exclude: hidden } : undefined;
+  };
+  // Only real, non-sensitive columns may be filtered/sorted on.
+  const filterable = (): Set<string> => {
+    const base = opts.allowedFilters ?? Object.keys(modelAttrs());
+    return new Set(base.filter((c) => !NEVER_EXPOSE.has(c) && !(opts.sensitiveColumns ?? []).includes(c)));
+  };
+  const isPrimitive = (v: unknown) => ["string", "number", "boolean"].includes(typeof v);
+  const cleanFilterValue = (v: unknown): unknown => {
+    if (isPrimitive(v)) return v;
+    if (Array.isArray(v) && v.length <= 100 && v.every(isPrimitive)) return v;
+    return undefined; // objects would let clients smuggle query operators
+  };
+  const safeOrder = (sort: Array<[string, "ASC" | "DESC"]>): Order | null => {
+    const attrs = modelAttrs();
+    const ok = sort.filter(([k]) => k in attrs && !NEVER_EXPOSE.has(k) && !(opts.sensitiveColumns ?? []).includes(k));
+    return ok.length ? (ok as Order) : null;
+  };
+  const scopeOf = async (req: Request): Promise<WhereOptions | null> =>
+    opts.scopeWhere ? await opts.scopeWhere(req) : null;
+  /** id lookup that ANDs the id with the scope (never lets the scope overwrite the id). */
+  const lookupById = async (req: Request, id: number) => {
+    const attrs = modelAttrs();
+    const userBranchId = (req as any).user?.branchId;
+    const and: WhereOptions[] = [{ id } as any];
+    const scope = await scopeOf(req);
+    if (scope) and.push(scope);
+    if (userBranchId != null && attrs.branchId) and.push({ branchId: userBranchId } as any);
+    return { [Op.and]: and } as WhereOptions;
+  };
+
+  const buildWhere = async (req: Request): Promise<WhereOptions> => {
     // Merge defaultWhere using Op.and so client filters cannot override it.
-    // Previously `defaultWhere: { isActive: true }` was bypassable via `?filter[isActive]=false`.
+    const and: WhereOptions[] = [];
+    if (opts.defaultWhere) and.push(opts.defaultWhere);
+    const scope = await scopeOf(req);
+    if (scope) and.push(scope);
     const where: Record<string, unknown> = {};
-    if (opts.defaultWhere) (where as any)[Op.and] = [opts.defaultWhere];
-    if (opts.scopeWhere) (where as any)[Op.and] = [...((where as any)[Op.and] ?? []), opts.scopeWhere(req)];
     const f = req.query as Record<string, unknown>;
 
-    // Allow-list filtering: clients may only filter on declared columns.
-    // Prevents enumeration of arbitrary columns like passwordHash, role, userId, etc.
-    const allowList = new Set(opts.allowedFilters ?? []);
+    const allow = filterable();
     const nested = f["filter"];
+    const apply = (field: string, val: unknown) => {
+      if (!allow.has(field)) return;
+      const clean = cleanFilterValue(val);
+      if (clean !== undefined) where[field] = clean;
+    };
     if (nested && typeof nested === "object") {
-      for (const [field, val] of Object.entries(nested as Record<string, unknown>)) {
-        if (allowList.size > 0 && !allowList.has(field)) continue;
-        where[field] = val;
-      }
+      for (const [field, val] of Object.entries(nested as Record<string, unknown>)) apply(field, val);
     }
     for (const key of Object.keys(f)) {
       if (!key.startsWith("filter[")) continue;
-      const field = key.slice(7, -1);
-      if (allowList.size > 0 && !allowList.has(field)) continue;
-      where[field] = f[key];
+      apply(key.slice(7, -1), f[key]);
     }
 
     if (opts.toSearchWhere) {
       const q = f.q ? String(f.q) : undefined;
       const base = q ? opts.toSearchWhere(q) : undefined;
-      if (base) Object.assign(where, base);
+      if (base) and.push(base);
     } else if (f.q && searchable.length) {
-      (where as any)[Op.or] = searchable.map((col) => ({
-        [col]: { [likeOp]: `%${String(f.q)}%` },
-      }));
+      and.push({
+        [Op.or]: searchable.map((col) => ({ [col]: { [likeOp]: `%${String(f.q)}%` } })),
+      } as any);
     }
 
     const userBranchId = (req as any).user?.branchId;
-    const attrs = (model as any).rawAttributes || {};
-    if (userBranchId != null && attrs.branchId) (where as any).branchId = userBranchId;
+    if (userBranchId != null && modelAttrs().branchId) where.branchId = userBranchId;
+    if (and.length) (where as any)[Op.and] = and;
     return where as WhereOptions;
   };
 
   return {
     list: async (req, res) => {
       const p = parsePagination(req);
-      const where = buildWhere(req);
+      const where = await buildWhere(req);
       const { count, rows } = await model.findAndCountAll({
         where,
         limit: p.limit,
         offset: p.offset,
-        order: (p.sort.length ? p.sort : defaultSort) as Order,
+        order: (safeOrder(p.sort) ?? defaultSort) as Order,
         distinct: true,
         include: includes as any,
+        attributes: attributesFor(req),
       });
       const meta: PaginationMeta = buildPaginationMeta(p.page, p.limit, count);
       ApiResponse.success(res, 200, "List fetched", rows.map(present), meta);
@@ -105,12 +150,9 @@ export function createCrudController<M extends Model = Model>(
     getOne: async (req, res) => {
       const id = Number(req.params.id);
       if (!Number.isInteger(id)) throw ApiError.badRequest("Invalid id");
-      const lookup: any = { id };
-      Object.assign(lookup, opts.scopeWhere ? opts.scopeWhere(req) : {});
-      const userBranchId = (req as any).user?.branchId;
-      const attrs = (model as any).rawAttributes || {};
-      if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
-      const row = await model.findOne({ where: lookup, include: detailIncludes as any });
+      const row = await model.findOne({
+        where: await lookupById(req, id), include: detailIncludes as any, attributes: attributesFor(req),
+      });
       if (!row) throw ApiError.notFound(`${model.name} not found`);
       ApiResponse.success(res, 200, "Fetched", present(row));
     },
@@ -146,10 +188,7 @@ export function createCrudController<M extends Model = Model>(
       if (!Number.isInteger(id)) throw ApiError.badRequest("Invalid id");
       const attrs = (model as any).rawAttributes || {};
       const userBranchId = (req as any).user?.branchId;
-      const lookup: any = { id };
-      Object.assign(lookup, opts.scopeWhere ? opts.scopeWhere(req) : {});
-      if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
-      const row = await model.findOne({ where: lookup }) as Model | null;
+      const row = await model.findOne({ where: await lookupById(req, id) }) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
       let body: any;
       try {
@@ -176,12 +215,7 @@ export function createCrudController<M extends Model = Model>(
     remove: async (req, res) => {
       const id = Number(req.params.id);
       if (!Number.isInteger(id)) throw ApiError.badRequest("Invalid id");
-      const attrs = (model as any).rawAttributes || {};
-      const userBranchId = (req as any).user?.branchId;
-      const lookup: any = { id };
-      Object.assign(lookup, opts.scopeWhere ? opts.scopeWhere(req) : {});
-      if (userBranchId != null && attrs.branchId) lookup.branchId = userBranchId;
-      const row = await model.findOne({ where: lookup }) as Model | null;
+      const row = await model.findOne({ where: await lookupById(req, id) }) as Model | null;
       if (!row) throw ApiError.notFound(`${model.name} not found`);
       if (opts.beforeRemove) {
         try {
@@ -196,9 +230,11 @@ export function createCrudController<M extends Model = Model>(
     },
 
     count: async (req, res) => {
-      const where = buildWhere(req);
+      const where = await buildWhere(req);
       const total = await model.count({ where });
       ApiResponse.success(res, 200, "Count", { total });
     },
+    buildWhere,
+    hiddenColumns,
   };
 }

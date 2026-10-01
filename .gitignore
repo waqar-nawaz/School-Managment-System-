@@ -36,3 +36,6 @@ coverage/
 
 # Docker
 db-data/
+# user uploads must never be committed
+backend/uploads/*
+!backend/uploads/.gitkeep

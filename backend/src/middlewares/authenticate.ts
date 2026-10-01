@@ -21,6 +21,11 @@ interface CachedActiveCheck {
 const activeCache = new Map<number, CachedActiveCheck>();
 const CACHE_TTL_MS = 60_000;
 
+/** Drop the cached active flag so (de)activation takes effect on the very next request. */
+export function invalidateActiveCache(userId: number): void {
+  activeCache.delete(userId);
+}
+
 async function isUserActive(userId: number): Promise<boolean> {
   const now = Date.now();
   const cached = activeCache.get(userId);

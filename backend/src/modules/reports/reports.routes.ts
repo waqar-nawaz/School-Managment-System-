@@ -13,6 +13,11 @@ import {
 const router = Router();
 router.use(authenticate);
 
+// Money that actually came in: fully/partly refunded payments were still received, and the refunds
+// are subtracted separately. (Counting only "successful" payments AND subtracting refunds removed
+// every fully refunded rupee twice.)
+const RECEIVED_STATUSES = ["successful", "refunded", "reversed"];
+
 const yearStart = () => new Date(new Date().getFullYear(), 0, 1);
 
 /** Coerce a query date to a valid Date (or the fallback). */
@@ -106,7 +111,7 @@ router.get(
       issueDate: { [Op.between]: [from, to] },
       status: { [Op.ne]: "cancelled" },
     };
-    const paymentWhere: any = { paidOn: { [Op.between]: [from, to] }, status: "successful" };
+    const paymentWhere: any = { paidOn: { [Op.between]: [from, to] }, status: { [Op.in]: RECEIVED_STATUSES } };
     if (branchId) {
       // Now that Invoice has branchId, filter directly rather than via student IDs.
       invoiceWhere.branchId = branchId;
@@ -115,7 +120,7 @@ router.get(
 
     const invoiced = await Invoice.sum("totalDue", { where: invoiceWhere }) || 0;
     const collected = await Payment.sum("amount", { where: paymentWhere }) || 0;
-    // Subtract processed refunds from collected so the report reflects net cash collected.
+    // Refunds are reported separately; net = collected - refunded.
     const refundWhere: any = { refundedOn: { [Op.between]: [from, to] }, status: "processed" };
     if (branchId) refundWhere.branchId = branchId;
     const refunded = await Refund.sum("amount", { where: refundWhere }) || 0;
@@ -140,7 +145,7 @@ router.get(
     );
 
     ApiResponse.success(res, 200, "Fees report", {
-      invoiced, collected, refunded, outstanding, spent,
+      invoiced, collected, refunded, net: collected - refunded, outstanding, spent,
     });
   })
 );
@@ -188,12 +193,12 @@ router.get(
       Teacher.count({ where: teacherWhere }),
       Staff.count({ where: staffWhere }),
       (async () => {
-        const where: any = { status: "successful" };
+        const where: any = { status: { [Op.in]: RECEIVED_STATUSES } };
         if (branchId) {
           where.branchId = branchId;
         }
         const collected = (await Payment.sum("amount", { where })) || 0;
-        // Subtract processed refunds so a refunded payment doesn't count as collected.
+        // Net of processed refunds.
         const refundWhere: any = { status: "processed" };
         if (branchId) refundWhere.branchId = branchId;
         const refunded = (await Refund.sum("amount", { where: refundWhere })) || 0;

@@ -10,6 +10,7 @@ export interface PermissionMap {
  * accountant, librarian, transport_manager, hostel_warden, receptionist
  */
 export const ROLE_PERMISSIONS: PermissionMap = {
+  
   super_admin: ["*"],
   admin: ["*"],
 
@@ -69,6 +70,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "notices:read", "events:read", "announcements:read", "report-cards:read",
     "library:read", "book-issues:read",
     "leaves:read", "leaves:create", "leaves:update",
+    "notifications:read",
   ],
 
   parent: [
@@ -78,14 +80,15 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "exam-results:read",
     "report-cards:read",
     "fees:read", "fee-types:read",
-    "invoices:read", "payments:read", "payments:create",
+    "invoices:read", "payments:read",
     "homework:read", "assignments:read",
     "notices:read", "announcements:read",
     "messages:read", "messages:create", "messages:send",
-    "leaves:read", "leaves:create",
+    "leaves:read", "leaves:create", "leaves:update",
     "complaints:read", "complaints:create",
     "timetable:read", "events:read",
-    "certificates:read", "book-issues:read",
+    "certificates:read", "library:read", "book-issues:read",
+    "notifications:read",
   ],
 
   student: [
@@ -98,8 +101,9 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "notices:read", "announcements:read",
     "messages:read", "messages:create", "messages:send",
     "timetable:read", "events:read",
-    "library:read", "book-issues:read", "book-issues:create",
+    "library:read", "book-issues:read",
     "leaves:read", "leaves:create", "leaves:update",
+    "notifications:read",
   ],
 
   accountant: [
@@ -114,6 +118,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "payroll:read", "payroll:create", "payroll:update",
     "payslips:read", "payslips:create",
     "reports:read", "reports:export",
+    "notifications:read",
   ],
 
   librarian: [
@@ -121,8 +126,9 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "students:read",
     "library:read", "library:create", "library:update", "library:delete",
     "book-issues:read", "book-issues:create", "book-issues:update",
-    "book-fines:read", "book-fines:create",
+    "book-fines:read", "book-fines:create", "book-fines:update",
     "notices:read", "events:read",
+    "notifications:read",
   ],
 
   transport_manager: [
@@ -134,6 +140,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "driver-assignments:read", "driver-assignments:create",
     "student-transport:read", "student-transport:create", "student-transport:update",
     "notices:read",
+    "notifications:read",
   ],
 
   hostel_warden: [
@@ -145,6 +152,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "beds:read", "beds:create", "beds:update",
     "hostel-allocations:read", "hostel-allocations:create", "hostel-allocations:update",
     "notices:read",
+    "notifications:read",
   ],
 
   receptionist: [
@@ -156,6 +164,16 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "certificates:read", "certificates:create",
     "messages:read", "messages:create", "messages:send",
     "notices:read", "events:read",
+    "notifications:read",
+  ],
+
+  // Generic support staff: read-only school info + own leaves/messages.
+  staff: [
+    "dashboard:read",
+    "notices:read", "events:read", "announcements:read", "timetable:read",
+    "leaves:read", "leaves:create", "leaves:update",
+    "messages:read", "messages:create", "messages:send",
+    "notifications:read",
   ],
 };
 

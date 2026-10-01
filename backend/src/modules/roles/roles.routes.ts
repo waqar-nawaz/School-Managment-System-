@@ -7,8 +7,8 @@ import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
 import { parsePagination, buildPaginationMeta } from "../../utils/pagination";
 import { likeOp } from "../../utils/search";
-import { Role, Permission, RolePermission, User } from "../../models";
-import { ROLE_PERMISSIONS } from "../../config/permissions";
+import { Role, Permission, RolePermission, User, Settings } from "../../models";
+import { getPermissionsForRole, markRoleCustomised, invalidateRbac } from "../../services/rbac.service";
 import { sequelize } from "../../database/sequelize";
 import { writeAuditLog } from "../../services/audit.service";
 
@@ -20,7 +20,11 @@ router.get(
   "/matrix",
   authorize("roles:read"),
   asyncHandler(async (_req, res) => {
-    ApiResponse.success(res, 200, "Permission matrix", ROLE_PERMISSIONS);
+    // Effective matrix (defaults + anything customised in the UI).
+    const roles = await Role.findAll({ attributes: ["name"] });
+    const matrix: Record<string, string[]> = {};
+    for (const r of roles) matrix[r.name] = await getPermissionsForRole(r.name);
+    ApiResponse.success(res, 200, "Permission matrix", matrix);
   })
 );
 
@@ -30,8 +34,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const role = await Role.findOne({ where: { name: req.params.role } });
     if (!role) return ApiResponse.error(res, 404, "Role not found");
-    const perms = await RolePermission.findAll({ where: { roleId: role.name } });
-    ApiResponse.success(res, 200, "Role permissions", perms.map((p) => p.permissionKey));
+    ApiResponse.success(res, 200, "Role permissions", await getPermissionsForRole(role.name));
   })
 );
 
@@ -46,7 +49,18 @@ router.put(
     if (isSystem && req.user?.role !== "super_admin") {
       throw ApiError.forbidden("System role permissions can only be changed by super_admin");
     }
-    const keys = Array.isArray(req.body) ? (req.body as string[]) : [];
+    if (role.name === "super_admin") throw ApiError.forbidden("super_admin always has full access");
+    const raw = Array.isArray(req.body) ? req.body : Array.isArray(req.body?.permissions) ? req.body.permissions : [];
+    const keys = Array.from(new Set((raw as unknown[]).filter((k): k is string => typeof k === "string" && k.length > 0 && k.length <= 120)));
+    // Permission keys are a FK - make sure every key exists (built-in keys like "academic:read"
+    // are not all in the seeded list).
+    for (const k of keys) {
+      if (k === "*") continue;
+      await Permission.findOrCreate({ where: { key: k }, defaults: { key: k, label: k, category: k.split(":")[0] } as any });
+    }
+    if (keys.includes("*")) {
+      await Permission.findOrCreate({ where: { key: "*" }, defaults: { key: "*", label: "All permissions", category: "system" } as any });
+    }
     // Wrap destroy + bulkCreate in a transaction so we don't end up with a role that has
     // zero permissions if the bulk create fails midway.
     await sequelize.transaction(async (t) => {
@@ -58,6 +72,7 @@ router.put(
         );
       }
     });
+    await markRoleCustomised(role.name);
     await writeAuditLog({
       action: "update",
       entity: "role_permission",
@@ -101,6 +116,10 @@ router.post(
   asyncHandler(async (req, res) => {
     const { name, label, description } = req.body as Record<string, string>;
     if (!name) return ApiResponse.error(res, 400, "name is required");
+    if (!/^[a-z][a-z0-9_]{1,48}$/.test(name)) {
+      throw ApiError.badRequest("Role name must be lowercase letters, numbers or underscores (e.g. exam_officer)");
+    }
+    if (await Role.findOne({ where: { name } })) throw ApiError.conflict("A role with this name already exists");
     const role = await Role.create({ name, label: label ?? name, description });
     ApiResponse.success(res, 201, "Role created", role);
   })
@@ -138,8 +157,10 @@ router.delete(
     }
     await sequelize.transaction(async (t) => {
       await RolePermission.destroy({ where: { roleId: role.name }, transaction: t });
+      await Settings.destroy({ where: { scope: "rbac", key: role.name }, transaction: t });
       await role.destroy({ transaction: t });
     });
+    invalidateRbac();
     await writeAuditLog({
       action: "delete",
       entity: "role",
