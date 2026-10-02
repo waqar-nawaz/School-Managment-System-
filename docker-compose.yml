@@ -1,23 +1,21 @@
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: sms_mysql
+  postgres:
+    image: postgres:16-alpine
+    container_name: sms_postgres
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-school_db}
-      MYSQL_USER: ${MYSQL_USER:-school_user}
-      # NOTE: defaults are for first-boot convenience ONLY — override via .env in any shared deployment.
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-school_pass}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-school_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # NOTE: default is for first-boot convenience ONLY - set a strong password in .env for any shared deployment.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       TZ: UTC
     ports:
       # Bind to loopback so the DB is not reachable from the network.
-      - "127.0.0.1:3306:3306"
+      - "127.0.0.1:5432:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
-      - ./database/init:/docker-entrypoint-initdb.d:ro
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-root_secret}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-school_db}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -45,19 +43,18 @@ services:
     container_name: sms_backend
     restart: unless-stopped
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 3000
-      DB_DIALECT: mysql
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_NAME: ${MYSQL_DATABASE:-school_db}
-      DB_USER: ${MYSQL_USER:-school_user}
-      DB_PASS: ${MYSQL_PASSWORD:-school_pass}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-school_db}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASS: ${POSTGRES_PASSWORD:-postgres}
       JWT_SECRET: ${JWT_SECRET:-change_this_jwt_secret_in_production}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change_this_refresh_secret_in_production}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
@@ -67,6 +64,7 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       RUN_SEEDERS: ${RUN_SEEDERS:-true}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
     ports:
       - "3000:3000"
     volumes:
@@ -94,5 +92,5 @@ services:
       - "80:80"
 
 volumes:
-  mysql_data:
+  postgres_data:
   redis_data:

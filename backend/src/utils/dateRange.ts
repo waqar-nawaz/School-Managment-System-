@@ -1,7 +1,7 @@
 /**
  * Given a `YYYY-MM` month string, return the inclusive start and exclusive end
  * (first day of the next month) as `YYYY-MM-DD`. Works on DATEONLY columns in
- * both MySQL and PostgreSQL (string comparison, no LIKE on dates).
+ * PostgreSQL (string comparison, no LIKE on dates).
  */
 export function monthRange(month: string): { start: string; end: string } {
   const safe = /^\d{4}-\d{2}$/.test(month) ? month : new Date().toISOString().slice(0, 7);

@@ -8,7 +8,7 @@ Enterprise-grade School Management System.
 |------------|----------------------------------------------|
 | Frontend   | Angular 17 (standalone components, SCSS)      |
 | Backend    | Node.js + Express (TypeScript, clean architecture) |
-| Database   | MySQL 8 (Sequelize ORM)                       |
+| Database   | PostgreSQL 16 (Sequelize ORM)                 |
 | Cache      | Redis (optional: rate-limit store, sessions)  |
 | Runtime    | Node 20 (Alpine) via Docker                   |
 | Reverse proxy | Nginx (frontend container also proxies `/api` to backend) |
@@ -24,7 +24,7 @@ Nginx (frontend container, serves static Angular build)
    ▼
 Express API (backend container, port 3000)
    │
-   ├── Sequelize ORM ────► MySQL 8 (mysql container)
+   ├── Sequelize ORM ────► PostgreSQL 16 (postgres container)
    └── Redis (redis container)
 ```
 
@@ -53,7 +53,7 @@ school-management-system/
 │       ├── layouts/                    # auth + admin shell layouts
 │       └── features/                   # lazy-loaded feature modules
 ├── database/
-│   └── init/                           # SQL run on first MySQL boot
+│   └── scripts/                        # backup helpers (pg_dump)
 └── docs/                               # this documentation
 ```
 
@@ -61,7 +61,7 @@ school-management-system/
 
 ```
 Route (HTTP) ──► Validation ──► Middleware (auth/RBAC) ──► Controller
-    ──► Service (business rules) ──► Model / Repository ──► MySQL
+    ──► Service (business rules) ──► Model / Repository ──► PostgreSQL
     ──► ApiResponse / ApiError (single response envelope)
 ```
 

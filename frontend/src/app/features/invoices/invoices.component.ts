@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
+import { currencyCode, formatMoney } from '../../core/utils/currency';
 import { PermissionService } from '../../core/services/permission.service';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
@@ -289,7 +290,7 @@ export class InvoicesComponent implements OnInit {
   }
 
   money(v: unknown): string {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'PKR' }).format(Number(v ?? 0));
+    return formatMoney(v);
   }
 
   balanceOf(inv: any): number {
@@ -354,7 +355,7 @@ export class InvoicesComponent implements OnInit {
       method: 'cash',
       reference: '',
       paidOn: new Date().toLocaleDateString('en-CA'),
-      currency: 'PKR',
+      currency: currencyCode(),
       notes: '',
     };
   }
