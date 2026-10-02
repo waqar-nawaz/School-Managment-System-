@@ -4,8 +4,8 @@ A full-stack, containerized enterprise school management system.
 
 - **Frontend:** Angular 17 (standalone components, SCSS, config-driven UI)
 - **Backend:** Node.js 20 + Express + TypeScript + Sequelize (`sequelize-typescript`) + Zod
-- **Database:** MySQL 8 · **Cache/Queue:** Redis 7 (optional)
-- **Infra:** Docker Compose (mysql, redis, backend, frontend/nginx)
+- **Database:** PostgreSQL 16 · **Cache/Queue:** Redis 7 (optional)
+- **Infra:** Docker Compose (postgres, redis, backend, frontend/nginx)
 
 ## Features
 
@@ -31,7 +31,7 @@ A full-stack, containerized enterprise school management system.
 
 ```bash
 cp .env.example .env
-docker compose up --build    # starts MySQL, Redis, backend, frontend
+docker compose up --build    # starts PostgreSQL, Redis, backend, frontend
 ```
 
 Then open <http://localhost>. The backend seeds defaults on first boot incl. a super admin:
@@ -99,7 +99,7 @@ make up      # docker compose up --build -d
 make down    # stop and remove containers
 make logs    # follow logs
 make seed    # run backend seeders
-make backup  # mysqldump into ./backups/ (gzip)
+make backup  # pg_dump into ./backups/ (gzip)
 ```
 
 ## Roles & permissions
@@ -108,7 +108,7 @@ make backup  # mysqldump into ./backups/ (gzip)
 
 ## Notes from the full code review
 
-- **Database:** the code defaults to PostgreSQL (`render.yaml`, `DB_DIALECT`); MySQL also works but was not part of the review tests.
+- **Database:** PostgreSQL is the only supported database (MySQL support was removed). The schema is created automatically on first boot.
 - **First login:** `superadmin` / the password from `SEED_ADMIN_PASSWORD` (dev default `Admin@123`). Change it immediately in production.
 - **Roles & Permissions:** the screen under *Administration -> Roles* edits what each role may do. Changes apply immediately; custom roles are supported.
 - **Resource definitions** (generic CRUD endpoints) now live in `backend/src/modules/resources/definitions/*.ts`, one file per domain.

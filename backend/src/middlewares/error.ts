@@ -47,7 +47,7 @@ export const errorHandler = (
     }
     if (name === "SequelizeDatabaseError") {
       logger.error(`${req.method} ${req.originalUrl} -> DB error: ${(err as any).parent?.message ?? (err as Error).message}`);
-      const detail = (err as any).parent?.sqlMessage || (err as any).parent?.message;
+      const detail = (err as any).parent?.detail || (err as any).parent?.message;
       return ApiResponse.error(res, 400, process.env.NODE_ENV !== "production" && detail ? detail : "The request could not be saved. Please check your input and try again.");
     }
   }

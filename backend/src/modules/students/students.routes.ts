@@ -9,6 +9,7 @@ import { ApiError } from "../../utils/ApiError";
 import { Student, Parent, StudentGuardian, Enrolment, AcademicYear, User, Attendance, Invoice, SchoolClass, Section } from "../../models";
 import { createCrudController } from "../../utils/crudFactory";
 import { createUser } from "../users/users.service";
+import { exportCsv } from "../../utils/csvExport";
 import { assertStudentAccess, ownStudentIds, canSeeMedical } from "../../utils/access";
 import { RefreshToken } from "../../models";
 import { invalidateActiveCache } from "../../middlewares/authenticate";
@@ -85,6 +86,9 @@ router.get("/", authorize("students:read"), asyncHandler(async (req, res) => {
   }
   return base.list(req, res);
 }));
+
+// Same filters/scope/hidden columns as the list screen; needs the export right AND student access.
+router.get("/export", authorize("reports:export"), authorize("students:read"), exportCsv(Student, "students", base));
 
 router.get("/inactive", authorize("students:update"), asyncHandler(async (req, res) => {
   // For super_admin (branchId=null), don't filter by branchId — show all branches.

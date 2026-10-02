@@ -11,6 +11,7 @@ import env from "./config";
 import { logger } from "./config/logger";
 import { swaggerSpec } from "./config/swagger";
 import { apiLimiter } from "./middlewares/rateLimiter";
+import { authenticate } from "./middlewares/authenticate";
 import { notFoundHandler, errorHandler } from "./middlewares/error";
 import routes from "./routes";
 
@@ -31,8 +32,11 @@ app.use(morgan(env.nodeEnv === "development" ? "dev" : "combined", { stream: { w
 // - Content-Disposition: attachment  -> force download, no inline rendering
 // - Cache-Control: private, max-age=1d  -> don't cache in shared proxies
 const uploadsDir = path.join(process.cwd(), "uploads");
+// Files are private to signed-in users (previously anyone with the link could open them).
+// Fetch them with the Authorization header (e.g. the app's api.download), not a bare <a href>.
 app.use(
   "/uploads",
+  authenticate,
   express.static(uploadsDir, {
     maxAge: "1d",
     setHeaders: (res) => {

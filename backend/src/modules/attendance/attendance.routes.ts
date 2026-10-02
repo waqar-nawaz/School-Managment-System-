@@ -5,7 +5,7 @@ import { authorize, allowRoles } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { Attendance, Enrolment, Student, SchoolClass, Section, StudentGuardian, Parent } from "../../models";
+import { Attendance, Enrolment, Student, SchoolClass, Section, StudentGuardian, Parent, Teacher, Period } from "../../models";
 import { ATTENDANCE_STATUS } from "../../utils/constants";
 import { monthRange } from "../../utils/dateRange";
 import { writeAuditLog } from "../../services/audit.service";
@@ -104,6 +104,25 @@ router.get("/register", authorize("attendance:read"), allowRoles("super_admin","
   ApiResponse.success(res, 200, "Attendance register", { date, classId, sectionId, register });
 }));
 
+
+/**
+ * A teacher may only take attendance for classes they are timetabled for. If nobody has been
+ * timetabled for that class yet we allow it (otherwise a school without a timetable could never
+ * mark attendance). Admin/principal and other roles are unaffected.
+ */
+async function assertTeacherMayMark(req: any, classId: number, sectionId?: number | null): Promise<void> {
+  if (req.user?.role !== "teacher") return;
+  const teacher = await Teacher.findOne({ where: { userId: req.user.id }, attributes: ["id"] });
+  if (!teacher) throw ApiError.forbidden("Teacher profile not found");
+  const forClass: any = { classId, ...(req.user.branchId != null ? { branchId: req.user.branchId } : {}) };
+  const anyPeriod = await Period.count({ where: forClass });
+  if (anyPeriod === 0) return;
+  const mine = await Period.count({
+    where: { ...forClass, teacherId: teacher.id, ...(sectionId ? { sectionId: { [Op.or]: [sectionId, null] } } : {}) } as any,
+  });
+  if (mine === 0) throw ApiError.forbidden("You can only take attendance for classes you teach");
+}
+
 /** Bulk mark/save attendance for a class on a date. */
 router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncHandler(async (req, res) => {
   const date = dateFromQuery(req);
@@ -116,6 +135,7 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
   if (!Number.isInteger(Number(classId)) || Number(classId) <= 0) throw ApiError.badRequest("classId required");
   if (sectionId !== undefined && (!Number.isInteger(Number(sectionId)) || Number(sectionId) <= 0)) throw ApiError.badRequest("Invalid sectionId");
   await validateClassScope(Number(classId), sectionId !== undefined ? Number(sectionId) : undefined, req);
+  await assertTeacherMayMark(req, Number(classId), sectionId !== undefined ? Number(sectionId) : null);
 
   // Derive branchId from the class so super_admin (whose req.user.branchId is null) doesn't
   // accidentally save attendance with branchId=null and then clobber an existing branchId
@@ -188,9 +208,9 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
       await Attendance.bulkCreate(cleaned, {
         transaction: t,
         updateOnDuplicate: ["status", "lateMinutes", "reason", "takenBy", "classId", "sectionId", "updatedAt"],
-        // Postgres needs the conflict target: without it ON CONFLICT uses the primary key and a
-        // second save of the same day fails with a duplicate (studentId, date) error.
-        ...(Attendance.sequelize!.getDialect() === "postgres" ? { upsertKeys: ["studentId", "date"] } : {}),
+        // Conflict target for ON CONFLICT: without it Postgres uses the primary key and a second
+        // save of the same day fails with a duplicate (studentId, date) error.
+        upsertKeys: ["studentId", "date"],
       } as any);
     }
     await t.commit();

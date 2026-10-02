@@ -2,6 +2,8 @@ import { Component, HostListener, signal } from '@angular/core';
 import { RouterOutlet, Router, RouterLink, RouterLinkActive, NavigationEnd, NavigationStart } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { MENU } from '../../config/menu';
+import { ApiService } from '../../core/services/api.service';
+import { setCurrencyCode } from '../../core/utils/currency';
 import { PermissionService } from '../../core/services/permission.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
@@ -242,8 +244,14 @@ export class AdminLayoutComponent {
     public readonly theme: ThemeService,
     private readonly perms: PermissionService,
     private readonly auth: AuthService,
-    private readonly router: Router
+    private readonly router: Router,
+    private readonly api: ApiService
   ) {
+    // School-wide currency (public setting "currency"); falls back to the environment default.
+    this.api.get<Record<string, string>>('/settings/public').subscribe({
+      next: (r) => setCurrencyCode(r?.data?.['currency']),
+      error: () => {},
+    });
     for (const item of MENU) {
       if (item.permission && !this.perms.hasPermission(item.permission)) continue;
       let group = this.groups.find((g) => g.name === (item.group ?? 'Other'));

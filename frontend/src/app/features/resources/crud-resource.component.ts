@@ -2,6 +2,7 @@ import { Component, HostListener, Input, OnDestroy, OnInit } from '@angular/core
 import { ActivatedRoute } from '@angular/router';
 import { Subject } from 'rxjs';
 import { switchMap, tap, takeUntil, debounceTime } from 'rxjs/operators';
+import { currencyCode } from '../../core/utils/currency';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { PermissionService } from '../../core/services/permission.service';
@@ -884,7 +885,6 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   }
 
   private currency(): string {
-    const s = localStorage.getItem('sms_currency');
-    return s && s.length === 3 ? s : 'PKR';
+    return currencyCode();
   }
 }

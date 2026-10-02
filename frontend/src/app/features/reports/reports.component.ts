@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { formatMoney } from '../../core/utils/currency';
 import { ApiService } from '../../core/services/api.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 
@@ -159,7 +160,7 @@ export class ReportsComponent implements OnInit {
   }
 
   money(v: unknown): string {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'PKR' }).format(Number(v ?? 0));
+    return formatMoney(v);
   }
 
   round(n: unknown): string {

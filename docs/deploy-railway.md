@@ -1,15 +1,14 @@
 # Deploy to Railway
 
-Railway actually **does** provide managed MySQL (unlike Render), so this is the simplest
-live deployment path. The API and the built Angular SPA ship in a single Docker image.
+Railway provides managed PostgreSQL, so this is a simple live deployment path. The API and the built Angular SPA ship in a single Docker image.
 
 ## What's already in the repo
 
 - Root `Dockerfile` — builds the Angular app, builds the backend, runs one container that
   serves both `/api/*` and the SPA (same origin, no CORS/proxy config).
 - `railway.json` — start command, health check at `/health`.
-- `backend/src/config/index.ts` reads Railway's `MYSQLHOST / MYSQLPORT / MYSQLDATABASE /
-  MYSQLUSER / MYSQLPASSWORD` variables automatically (no env setup needed).
+- `backend/src/config/index.ts` reads Railway's `DATABASE_URL` (or `PGHOST / PGPORT / PGDATABASE /
+  PGUSER / PGPASSWORD`) automatically - no extra database env setup needed.
 
 ## Steps
 
@@ -21,9 +20,9 @@ live deployment path. The API and the built Angular SPA ship in a single Docker 
    - In **Variables**, add `NODE_ENV=production`.
 
 3. Add the database:
-   - Click the project's `+` / **Plugin** -> **MySQL** -> **Add MySQL**.
-   - Railway injects `MYSQLHOST/MYSQLPORT/MYSQLDATABASE/MYSQLUSER/MYSQLPASSWORD` into the
-     service automatically. Nothing else to configure.
+   - Click the project's `+` / **Database** -> **Add PostgreSQL**.
+   - Railway injects `DATABASE_URL` (and the `PG*` variables) into the service automatically.
+     If the service cannot see it, add a variable reference `DATABASE_URL=${{Postgres.DATABASE_URL}}`.
 
 4. **Deploy**. First boot runs `sequelize.sync()` (creates ~70 tables) and seeds defaults.
 

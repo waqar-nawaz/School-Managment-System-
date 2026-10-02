@@ -33,21 +33,13 @@ export const sequelize = env.db.url
       username: env.db.user,
       password: env.db.pass,
       dialectOptions,
-      define:
-        env.db.dialect === "mysql"
-          ? {
-              charset: "utf8mb4",
-              collate: "utf8mb4_unicode_ci",
-              underscored: false,
-              freezeTableName: false,
-            }
-          : { underscored: false, freezeTableName: false },
+      define: { underscored: false, freezeTableName: false },
       ...commonOptions,
     });
 
 /**
  * Add columns introduced after the first release, without a destructive
- * `sync({ alter: true })`. Safe to run on every boot across dialects.
+ * `sync({ alter: true })`. Safe to run on every boot.
  */
 async function ensureColumns(): Promise<void> {
   const qi = sequelize.getQueryInterface();
@@ -145,6 +137,11 @@ async function ensureColumns(): Promise<void> {
     /* legacy data cleanup must never prevent the application from starting */
   }
 
+}
+
+/** Data/enum fixes that need the tables to exist, so they run AFTER sync(). Idempotent. */
+async function postSyncPatches(): Promise<void> {
+  const qi = sequelize.getQueryInterface();
   // Backfill enrolments created before they carried a branch (capacity checks, rosters and
   // the /enrolments list all filter on enrolments.branchId).
   try {
@@ -156,23 +153,10 @@ async function ensureColumns(): Promise<void> {
     logger.warn(`Could not backfill enrolments.branchId: ${(err as Error).message}`);
   }
 
-  // Patch ENUM columns where we added new values (idempotent, dialect-aware).
-  // Sequelize.sync({alter:false}) does NOT alter existing column types, so we
-  // changeColumn manually. Safe to run on every boot.
+  // Postgres requires a new ENUM value to be added to the existing type before it can be used
+  // (sync() does not alter existing column types). Idempotent, safe on every boot.
   try {
-    if (env.db.dialect === "mysql") {
-      // Only alter when the value is actually missing (an ALTER on every boot locks the table).
-      const desc = await qi.describeTable("admission_applications").catch(() => null);
-      if (desc && desc.status && !String(desc.status.type).toLowerCase().includes("withdrawn")) {
-        await sequelize.query(
-          "ALTER TABLE admission_applications MODIFY status ENUM('enquiry','applied','shortlisted','admitted','rejected','waitlisted','withdrawn') NOT NULL DEFAULT 'enquiry'"
-        );
-        logger.info("Patched admission_applications.status ENUM to include 'withdrawn'");
-      }
-    } else if (env.db.dialect === "postgres") {
-      // Postgres requires the new value to be added to the existing type before it can be used.
-      await sequelize.query(`ALTER TYPE enum_admission_applications_status ADD VALUE IF NOT EXISTS 'withdrawn'`).catch(() => {});
-    }
+    await sequelize.query(`ALTER TYPE enum_admission_applications_status ADD VALUE IF NOT EXISTS 'withdrawn'`);
   } catch (err) {
     logger.warn(`Could not patch admission_applications.status ENUM: ${(err as Error).message}`);
   }
@@ -197,7 +181,7 @@ async function ensureBranchScopedNameIndexes(): Promise<void> {
       // PostgreSQL may represent an old @Unique constraint as a unique
       // constraint-backed index, which QueryInterface.removeIndex cannot
       // reliably remove. Handle those legacy constraints explicitly.
-      if (env.db.dialect === "postgres") {
+      {
         await sequelize.query(`
           DO $$
           DECLARE
@@ -257,6 +241,7 @@ export async function connectDatabase(): Promise<void> {
   await ensureColumns();
 
   await sequelize.sync({ alter: false });
+  await postSyncPatches();
   await ensureBranchScopedNameIndexes();
 }
 

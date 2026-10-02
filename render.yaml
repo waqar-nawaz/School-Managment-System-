@@ -37,8 +37,6 @@ services:
         fromDatabase:
           name: sms-db
           property: connectionString
-      - key: DB_DIALECT
-        value: postgres
       # --- Optional ---
       - key: REDIS_HOST
         value: ""

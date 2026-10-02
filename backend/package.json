@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "seed": "ts-node src/database/seeders/index.ts",
     "lint": "eslint \"src/**/*.ts\"",
-    "prepare:prod": "npm run build && npm run seed"
+    "prepare:prod": "npm run build && npm run seed",
+    "smoke": "node scripts/smoke.mjs"
   },
   "keywords": [
     "school",
@@ -33,7 +34,6 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
-    "mysql2": "^3.11.0",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.14",
     "pg": "^8.23.0",
