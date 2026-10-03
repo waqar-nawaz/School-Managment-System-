@@ -17,6 +17,8 @@ function buildRouter(def: ResourceDefinition): Router {
     beforeUpdate: def.beforeUpdate,
     beforeRemove: def.beforeRemove,
     afterCreate: def.afterCreate,
+    afterUpdate: def.afterUpdate,
+    afterRemove: def.afterRemove,
     scopeWhere: def.scopeWhere,
     hideAttributes: def.hideAttributes,
     sensitiveColumns: def.sensitiveColumns,

@@ -54,7 +54,7 @@ const BADGE_COMMON: Record<string, string> = {
   requested: 'info', lost: 'danger', successful: 'success', failed: 'danger',
   refunded: 'info', reversed: 'warning', enrolled: 'success', admitted: 'success',
   shortlisted: 'info', waitlisted: 'warning', withdrawn: 'danger',
-  checked_out: 'info', transferred: 'warning',
+  checked_out: 'info', transferred: 'warning', full: 'danger',
 };
 
 const STATUS_OPTIONS = (list: string[]) => list.map((v) => ({ label: v.replace(/_/g, ' '), value: v }));
@@ -335,32 +335,18 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   hostels: {
     key: 'hostels', label: 'Hostels', api: '/hostels',
-    columns: [nameCol('name'), nameCol('gender'), { key: 'roomCount', label: 'Rooms', type: 'number' }, { key: 'capacity', label: 'Beds', type: 'number' }, { key: 'occupiedBeds', label: 'Occupied', type: 'number' }, { key: 'availableBeds', label: 'Available', type: 'number' }, nameCol('wardenName', 'Warden'), boolCol('isActive', 'Active')],
-    fields: fields([{ key: 'name', label: 'Hostel name', required: true }, { key: 'gender', label: 'Type', type: 'select', options: STATUS_OPTIONS(['boys', 'girls', 'coed']) }, { key: 'wardenName', label: 'Warden' }, { key: 'address', label: 'Address', type: 'textarea' }]),
+    columns: [nameCol('name'), nameCol('gender'), { key: 'roomCount', label: 'Rooms', type: 'number' }, { key: 'totalBeds', label: 'Beds', type: 'number' }, { key: 'occupancy', label: 'Occupied / Beds', type: 'text' }, { key: 'availableBeds', label: 'Free', type: 'number' }, nameCol('wardenName', 'Warden'), boolCol('isActive', 'Active')],
+    fields: fields([{ key: 'name', label: 'Hostel name', required: true }, { key: 'gender', label: 'Type', type: 'select', options: STATUS_OPTIONS(['boys', 'girls', 'coed']) }, { key: 'wardenName', label: 'Warden' }, { key: 'address', label: 'Address', type: 'textarea' }, { key: 'isActive', label: 'Active', type: 'bool', hint: 'Turn off to retire a hostel (not possible while students live in it).' }]),
   },
   rooms: {
     key: 'rooms', label: 'Rooms', api: '/rooms',
     columns: [{ key: 'hostelName', label: 'Hostel', type: 'text' }, { key: 'roomLabel', label: 'Room', type: 'text' }, { key: 'capacity', label: 'Bed Capacity', type: 'number' }, { key: 'bedCount', label: 'Beds', type: 'number' }, { key: 'availableBeds', label: 'Available', type: 'number' }, statusCol()],
-    fields: fields([refField('hostelId', 'Hostel', '/hostels', 'name', undefined, true), { key: 'roomNo', label: 'Room number', required: true }, { key: 'capacity', label: 'Bed capacity', type: 'number', required: true }, { key: 'floor', label: 'Floor' }]),
+    fields: fields([refField('hostelId', 'Hostel', '/hostels', 'name', undefined, true), { key: 'roomNo', label: 'Room number', required: true }, { key: 'capacity', label: 'Bed capacity', type: 'number', required: true }, { key: 'floor', label: 'Floor' }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available', 'maintenance']), hint: '“Full” is set automatically when every bed is taken.' }]),
   },
   beds: {
     key: 'beds', label: 'Beds', api: '/beds',
     columns: [{ key: 'hostelName', label: 'Hostel', type: 'text' }, { key: 'roomNo', label: 'Room', type: 'text' }, nameCol('bedNo', 'Bed'), statusCol()],
-    fields: fields([refField('roomId', 'Room', '/rooms', 'roomLabel', undefined, true), { key: 'bedNo', label: 'Bed number', required: true }]),
-  },
-  'hostel-allocations': {
-    key: 'hostel-allocations', label: 'Hostel Allocations', api: '/hostel-allocations',
-    columns: [{ key: 'studentName', label: 'Student', type: 'text' }, { key: 'hostelName', label: 'Hostel', type: 'text' }, { key: 'roomNo', label: 'Room', type: 'text' }, { key: 'bedNo', label: 'Bed', type: 'text' }, { key: 'checkIn', label: 'Check-in', type: 'date' }, statusCol()],
-    fields: fields([
-      refField('studentId', 'Student', '/students', 'firstName', 'admissionNo', true),
-      refField('hostelId', 'Hostel', '/hostels', 'name', undefined, true),
-      refField('roomId', 'Room', '/rooms', 'roomLabel', undefined, true),
-      refField('bedId', 'Bed', '/beds', 'bedLabel', undefined, true),
-      { key: 'checkIn', label: 'Check-in', type: 'dateonly', required: true },
-      { key: 'checkOut', label: 'Check-out', type: 'dateonly' },
-      { key: 'monthlyFee', label: 'Monthly fee', type: 'number' },
-      { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['active', 'checked_out', 'transferred']), required: true },
-    ]),
+    fields: fields([refField('roomId', 'Room', '/rooms', 'roomLabel', undefined, true), { key: 'bedNo', label: 'Bed number', required: true }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available', 'maintenance']), hint: '“Occupied” is set automatically when a student is allocated.' }]),
   },
   events: {
     key: 'events', label: 'Events', api: '/events',

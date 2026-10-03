@@ -113,3 +113,4 @@ make backup  # pg_dump into ./backups/ (gzip)
 - **Roles & Permissions:** the screen under *Administration -> Roles* edits what each role may do. Changes apply immediately; custom roles are supported.
 - **Resource definitions** (generic CRUD endpoints) now live in `backend/src/modules/resources/definitions/*.ts`, one file per domain.
 - **Uploads** are served from `/uploads`; on hosts with ephemeral disks (e.g. Render free tier) files disappear on redeploy, so mount a persistent disk or move to object storage.
+- **Hostel:** a bed is "occupied" only while a student has an *active* allocation, and "full" rooms are worked out from their beds - neither is edited by hand. Use *Hostel Allocations -> Allocate bed / Check out / Transfer*; transfers keep the old stay as history. Boys/girls hostels only accept matching students. Smoke test: `npm run smoke:hostel` (backend, on a fresh DB).

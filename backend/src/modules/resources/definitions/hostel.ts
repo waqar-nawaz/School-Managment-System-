@@ -1,135 +1,133 @@
-/** Hostels, rooms, beds and allocations */
+/** Hostels, rooms and beds. (Allocations have their own router: modules/hostel/allocations.routes.ts) */
 import { Request } from "express";
-import { ApiError } from "../../../utils/ApiError";
 import { Op } from "sequelize";
-import {
-  Student,
-  Hostel,
-  Room,
-  Bed,
-  HostelAllocation,
-} from "../../../models";
+import { ApiError } from "../../../utils/ApiError";
+import { Hostel, Room, Bed, HostelAllocation } from "../../../models";
 import { ResourceDefinition, getExisting, plain } from "./shared";
+import { syncRoom, activeAllocationCount } from "../../hostel/hostel.service";
 
+const ROOM_MANUAL_STATUSES = ["available", "maintenance"];
+const BED_MANUAL_STATUSES = ["available", "maintenance"];
+
+// ---------------------------------------------------------------- hostels
 const validateHostel = async (body: any, req: Request) => {
   const existing = await getExisting(Hostel, req);
   const name = String(body.name ?? existing?.name ?? "").trim();
   const gender = String(body.gender ?? existing?.gender ?? "");
-  const branchId = req.user?.branchId;
+  const branchId = req.user?.branchId ?? existing?.branchId ?? null;
   if (!name) throw ApiError.badRequest("Hostel name is required");
-  if (!["boys", "girls", "coed"].includes(gender)) throw ApiError.badRequest("Invalid hostel gender");
-  // Capacity is derived from actual beds; keep the legacy column for compatibility.
+  if (!["boys", "girls", "coed"].includes(gender)) throw ApiError.badRequest("Hostel type must be boys, girls or coed");
+
+  const clash = await Hostel.findOne({
+    where: { name: { [Op.iLike]: name }, ...(branchId != null ? { branchId } : {}), ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
+  });
+  if (clash) throw ApiError.conflict(`A hostel named "${clash.name}" already exists`);
+
+  if (existing) {
+    const activeCount = await activeAllocationCount({ hostelId: existing.id });
+    if (body.isActive === false && existing.isActive !== false && activeCount > 0) {
+      throw ApiError.badRequest(`Cannot deactivate: ${activeCount} student(s) currently live here. Check them out or transfer them first.`);
+    }
+    if (gender !== existing.gender && gender !== "coed" && activeCount > 0) {
+      throw ApiError.badRequest("Cannot change the hostel type while students are living in it");
+    }
+  }
+
+  // Capacity is derived from the actual beds; keep the legacy column untouched.
   body.name = name; body.gender = gender; body.capacity = existing?.capacity ?? 0; body.branchId = branchId;
   return body;
 };
 
+// ---------------------------------------------------------------- rooms
 const validateRoom = async (body: any, req: Request) => {
   const existing = await getExisting(Room, req);
   const hostelId = Number(body.hostelId ?? existing?.hostelId);
   const roomNo = String(body.roomNo ?? existing?.roomNo ?? "").trim();
   const capacity = Number(body.capacity ?? existing?.capacity ?? 4);
-  const branchId = req.user?.branchId;
-  if (!Number.isInteger(hostelId) || hostelId <= 0 || !roomNo) throw ApiError.badRequest("hostelId and roomNo are required");
-  if (!Number.isInteger(capacity) || capacity < 1) throw ApiError.badRequest("Room capacity must be positive");
-  if (existing) {
-    const currentBedCount = await Bed.count({ where: { roomId: existing.id } });
-    if (capacity < currentBedCount) throw ApiError.badRequest("Room capacity cannot be less than its existing beds");
-  }
+  const branchId = req.user?.branchId ?? existing?.branchId ?? null;
+  if (!Number.isInteger(hostelId) || hostelId <= 0) throw ApiError.badRequest("Please choose a hostel");
+  if (!roomNo) throw ApiError.badRequest("Room number is required");
+  if (!Number.isInteger(capacity) || capacity < 1) throw ApiError.badRequest("Bed capacity must be at least 1");
+
   const hostel = await Hostel.findByPk(hostelId);
   if (!hostel || hostel.isActive === false || (branchId != null && Number(hostel.branchId) !== Number(branchId))) {
     throw ApiError.badRequest("Hostel does not belong to your branch or is inactive");
   }
+
+  if (existing) {
+    const bedCount = await Bed.count({ where: { roomId: existing.id } });
+    if (capacity < bedCount) throw ApiError.badRequest(`This room already has ${bedCount} bed(s); capacity cannot be lower`);
+    // Moving a room that has beds would desync every allocation's hostel.
+    if (Number(existing.hostelId) !== hostelId && bedCount > 0) {
+      throw ApiError.badRequest("A room that already has beds cannot be moved to another hostel");
+    }
+  }
+
   const duplicate = await Room.findOne({ where: { hostelId, roomNo, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw ApiError.badRequest("Room number already exists in this hostel");
+  if (duplicate) throw ApiError.conflict(`Room ${roomNo} already exists in ${hostel.name}`);
+
+  // "full" is derived from the beds; only available/maintenance can be chosen by hand.
+  if (body.status !== undefined && body.status !== "full" && !ROOM_MANUAL_STATUSES.includes(String(body.status))) {
+    throw ApiError.badRequest("Room status must be available or maintenance");
+  }
+  if (body.status === "maintenance" && existing) {
+    const live = await activeAllocationCount({ roomId: existing.id });
+    if (live > 0) throw ApiError.badRequest(`Cannot put the room under maintenance: ${live} student(s) live in it`);
+  }
+  if (body.status === "full") delete body.status;
+  if (body.status === undefined && !existing) body.status = "available";
+
   body.hostelId = hostelId; body.roomNo = roomNo; body.capacity = capacity; body.branchId = branchId;
   return body;
 };
 
+// ---------------------------------------------------------------- beds
 const validateBed = async (body: any, req: Request) => {
   const existing = await getExisting(Bed, req);
   const roomId = Number(body.roomId ?? existing?.roomId);
   const bedNo = String(body.bedNo ?? existing?.bedNo ?? "").trim();
-  const branchId = req.user?.branchId;
-  if (!Number.isInteger(roomId) || roomId <= 0 || !bedNo) throw ApiError.badRequest("roomId and bedNo are required");
+  const branchId = req.user?.branchId ?? existing?.branchId ?? null;
+  if (!Number.isInteger(roomId) || roomId <= 0) throw ApiError.badRequest("Please choose a room");
+  if (!bedNo) throw ApiError.badRequest("Bed number is required");
+
   const room = await Room.findByPk(roomId);
   if (!room || (branchId != null && Number(room.branchId) !== Number(branchId))) throw ApiError.badRequest("Room does not belong to your branch");
   const hostel = await Hostel.findByPk(room.hostelId);
   if (!hostel || hostel.isActive === false || (branchId != null && Number(hostel.branchId) !== Number(branchId))) {
     throw ApiError.badRequest("Room's hostel is inactive or outside your branch");
   }
+
   const duplicate = await Bed.findOne({ where: { roomId, bedNo, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (duplicate) throw ApiError.badRequest("Bed number already exists in this room");
-  if (!existing) {
+  if (duplicate) throw ApiError.conflict(`Bed ${bedNo} already exists in room ${room.roomNo}`);
+
+  const roomChanged = !existing || Number(existing.roomId) !== roomId;
+  if (roomChanged) {
     const bedCount = await Bed.count({ where: { roomId } });
     if (bedCount >= Number(room.capacity)) {
-      throw ApiError.badRequest(`Room ${room.roomNo} has reached its capacity of ${room.capacity} beds`);
+      throw ApiError.badRequest(`Room ${room.roomNo} already has ${bedCount} of ${room.capacity} beds. Increase the room capacity first.`);
     }
   }
-  body.roomId = roomId; body.bedNo = bedNo; body.branchId = branchId;
-  return body;
-};
 
-const refreshRoomStatus = async (roomId: number) => {
-  const room = await Room.findByPk(roomId);
-  if (!room) return;
-  const availableBeds = await Bed.count({ where: { roomId, status: "available" } });
-  const status = availableBeds === 0 ? "full" : "available";
-  if (room.status !== status) await room.update({ status });
-};
-
-const validateHostelAllocation = async (body: any, req: Request) => {
-  const existing = await getExisting(HostelAllocation, req);
-  const studentId = Number(body.studentId ?? existing?.studentId);
-  const requestedHostelId = body.hostelId !== undefined ? Number(body.hostelId) : undefined;
-  const requestedRoomId = body.roomId !== undefined ? Number(body.roomId) : undefined;
-  const bedId = Number(body.bedId ?? existing?.bedId);
-  const branchId = req.user?.branchId;
-  const status = String(body.status ?? existing?.status ?? "active");
-  const monthlyFee = Number(body.monthlyFee ?? existing?.monthlyFee ?? 0);
-  const checkIn = body.checkIn !== undefined ? new Date(body.checkIn) : (existing?.checkIn ? new Date(existing.checkIn) : new Date());
-  const checkOut = body.checkOut !== undefined ? (body.checkOut ? new Date(body.checkOut) : null) : (existing?.checkOut ? new Date(existing.checkOut) : null);
-
-  if (!Number.isInteger(studentId) || studentId <= 0 || !Number.isInteger(bedId) || bedId <= 0) throw ApiError.badRequest("studentId and bedId are required");
-  if (!["active", "checked_out", "transferred"].includes(status)) throw ApiError.badRequest("Invalid hostel allocation status");
-  if (!Number.isFinite(monthlyFee) || monthlyFee < 0) throw ApiError.badRequest("monthlyFee must be non-negative");
-  if (!Number.isFinite(checkIn.getTime()) || (checkOut && (!Number.isFinite(checkOut.getTime()) || checkOut < checkIn))) throw ApiError.badRequest("Invalid hostel allocation date range");
-
-  const student = await Student.findByPk(studentId);
-  if (!student || (branchId != null && Number(student.branchId) !== Number(branchId))) throw ApiError.badRequest("Student does not belong to your branch");
-
-  const bed = await Bed.findByPk(bedId);
-  if (!bed || (branchId != null && Number(bed.branchId) !== Number(branchId))) throw ApiError.badRequest("Selected bed does not belong to your branch");
-  const changingBed = !existing || Number(existing.bedId) !== bedId;
-  if (changingBed && bed.status !== "available") throw ApiError.badRequest("Selected bed is not available");
-
-  const room = await Room.findByPk(bed.roomId);
-  if (!room || (branchId != null && Number(room.branchId) !== Number(branchId))) throw ApiError.badRequest("Room does not belong to your branch");
-  const hostel = await Hostel.findByPk(room.hostelId);
-  if (requestedRoomId !== undefined && requestedRoomId !== room.id) throw ApiError.badRequest("Selected room does not match the selected bed");
-  if (requestedHostelId !== undefined && requestedHostelId !== hostel?.id) throw ApiError.badRequest("Selected hostel does not match the selected room");
-  if (!hostel || hostel.isActive === false || (branchId != null && Number(hostel.branchId) !== Number(branchId))) throw ApiError.badRequest("Hostel does not belong to your branch or is inactive");
-
-  const activeBed = await HostelAllocation.findOne({ where: { bedId, status: "active", ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
-  if (status === "active" && activeBed) throw ApiError.badRequest("Selected bed is already allocated");
-
-  const activeStudent = status === "active"
-    ? await HostelAllocation.findOne({ where: { studentId, status: "active", ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } })
-    : null;
-  if (activeStudent) throw ApiError.badRequest("Student already has an active hostel allocation");
-
-  const previousRoomId = existing && Number(existing.bedId) !== bedId
-    ? Number((await Bed.findByPk(existing.bedId))?.roomId ?? 0)
-    : 0;
-  if (existing && Number(existing.bedId) !== bedId) {
-    const previousBed = await Bed.findByPk(existing.bedId);
-    if (previousBed && previousBed.status === "occupied") await previousBed.update({ status: "available" });
+  // "occupied" belongs to allocations: it is set/cleared automatically and never by hand.
+  if (body.status !== undefined) {
+    const wanted = String(body.status);
+    if (wanted === "occupied") {
+      if (!(existing && existing.status === "occupied")) throw ApiError.badRequest("A bed becomes occupied only when a student is allocated to it");
+      delete body.status;
+    } else if (!BED_MANUAL_STATUSES.includes(wanted)) {
+      throw ApiError.badRequest("Bed status must be available or maintenance");
+    }
   }
-  await bed.update({ status: status === "active" ? "occupied" : "available" });
-  await refreshRoomStatus(room.id);
-  if (previousRoomId > 0 && previousRoomId !== room.id) await refreshRoomStatus(previousRoomId);
+  if (existing && existing.status === "occupied") {
+    if (roomChanged) throw ApiError.badRequest("An occupied bed cannot be moved to another room");
+    if (body.status !== undefined && body.status !== "occupied") {
+      throw ApiError.badRequest("This bed is occupied. Check the student out (or transfer them) before changing its status");
+    }
+  }
+  if (!existing && body.status === undefined) body.status = "available";
 
-  body.studentId = studentId; body.bedId = bedId; body.roomId = room.id; body.hostelId = hostel.id;
-  body.status = status; body.monthlyFee = monthlyFee; body.checkIn = checkIn; body.checkOut = checkOut; body.branchId = branchId;
+  (req as any).__bedOldRoomId = existing ? Number(existing.roomId) : null;
+  body.roomId = roomId; body.bedNo = bedNo; body.branchId = branchId;
   return body;
 };
 
@@ -144,19 +142,21 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
         throw ApiError.notFound("Hostel not found or outside your branch");
       }
       const roomCount = await Room.count({ where: { hostelId: hostel.id } });
-      if (roomCount > 0) throw ApiError.badRequest("Cannot delete a hostel that still has rooms");
+      if (roomCount > 0) throw ApiError.badRequest("This hostel still has rooms. Delete its rooms first (or just mark the hostel inactive).");
+      if ((await HostelAllocation.count({ where: { hostelId: hostel.id } })) > 0) {
+        throw ApiError.badRequest("This hostel has allocation history and cannot be deleted. Mark it inactive instead.");
+      }
     },
     decorate: (row) => {
       const p = plain(row);
       const rooms = Array.isArray(p.rooms) ? p.rooms : [];
-      const totalBeds = rooms.reduce((n: number, room: any) => n + (Array.isArray(room.beds) ? room.beds.length : 0), 0);
-      const occupiedBeds = rooms.reduce((n: number, room: any) => n + (Array.isArray(room.beds) ? room.beds.filter((b: any) => b.status === "occupied").length : 0), 0);
-      const availableBeds = rooms.reduce((n: number, room: any) => n + (Array.isArray(room.beds) ? room.beds.filter((b: any) => b.status === "available").length : 0), 0);
+      const beds = rooms.flatMap((room: any) => (Array.isArray(room.beds) ? room.beds : []));
       p.roomCount = rooms.length;
-      p.totalBeds = totalBeds;
-      p.occupiedBeds = occupiedBeds;
-      p.availableBeds = availableBeds;
-      p.capacity = totalBeds;
+      p.totalBeds = beds.length;
+      p.occupiedBeds = beds.filter((b: any) => b.status === "occupied").length;
+      p.availableBeds = beds.filter((b: any) => b.status === "available").length;
+      p.capacity = p.totalBeds;
+      p.occupancy = p.totalBeds ? `${p.occupiedBeds} / ${p.totalBeds}` : "No beds yet";
       return p;
     },
   },
@@ -164,13 +164,15 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
     path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "rooms",
     includes: [{ association: "hostel", attributes: ["id", "name"] }, { association: "beds", attributes: ["id", "status"] }],
     beforeCreate: validateRoom, beforeUpdate: validateRoom,
+    afterCreate: async (row) => { await syncRoom(Number(row.id)); },
+    afterUpdate: async (row) => { await syncRoom(Number(row.id)); },
     beforeRemove: async (req) => {
       const room = await Room.findByPk(Number(req.params.id));
       if (!room || (req.user?.branchId != null && Number(room.branchId) !== Number(req.user.branchId))) {
         throw ApiError.notFound("Room not found or outside your branch");
       }
       const bedCount = await Bed.count({ where: { roomId: room.id } });
-      if (bedCount > 0) throw ApiError.badRequest("Cannot delete a room that still has beds");
+      if (bedCount > 0) throw ApiError.badRequest("This room still has beds. Delete its beds first.");
     },
     decorate: (row) => {
       const p = plain(row);
@@ -179,7 +181,7 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
       p.bedCount = beds.length;
       p.availableBeds = beds.filter((b: any) => b.status === "available").length;
       p.occupiedBeds = beds.filter((b: any) => b.status === "occupied").length;
-      p.status = p.availableBeds === 0 ? "full" : "available";
+      // p.status is the stored (synced) status, so "maintenance" is preserved.
       p.roomLabel = `Room ${p.roomNo} — ${p.hostelName}`;
       return p;
     },
@@ -188,18 +190,15 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
     path: "beds", model: Bed, searchable: ["bedNo"], permission: "beds",
     includes: [{
       association: "room",
-      attributes: ["id", "roomNo"],
-      include: [{ association: "hostel", attributes: ["id", "name"] }],
+      attributes: ["id", "roomNo", "hostelId", "status"],
+      include: [{ association: "hostel", attributes: ["id", "name", "gender"] }],
     }],
-    beforeCreate: async (body, req) => {
-      const result = await validateBed(body, req);
-      await refreshRoomStatus(Number(result.roomId));
-      return result;
-    },
-    beforeUpdate: async (body, req) => {
-      const result = await validateBed(body, req);
-      await refreshRoomStatus(Number(result.roomId));
-      return result;
+    beforeCreate: validateBed, beforeUpdate: validateBed,
+    afterCreate: async (row) => { await syncRoom(Number(row.roomId)); },
+    afterUpdate: async (row, req) => {
+      await syncRoom(Number(row.roomId));
+      const old = (req as any).__bedOldRoomId;
+      if (old && old !== Number(row.roomId)) await syncRoom(old);
     },
     beforeRemove: async (req) => {
       const bed = await Bed.findByPk(Number(req.params.id));
@@ -207,45 +206,20 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
         throw ApiError.notFound("Bed not found or outside your branch");
       }
       if (bed.status === "occupied") throw ApiError.badRequest("Cannot delete an occupied bed");
-      await refreshRoomStatus(Number(bed.roomId));
+      if ((await HostelAllocation.count({ where: { bedId: bed.id } })) > 0) {
+        throw ApiError.badRequest("This bed has allocation history and cannot be deleted. Mark it as under maintenance instead.");
+      }
     },
+    afterRemove: async (row) => { await syncRoom(Number(row.roomId)); },
     decorate: (row) => {
       const p = plain(row);
       p.roomNo = p.room?.roomNo ?? "";
+      p.hostelId = p.room?.hostelId ?? p.room?.hostel?.id ?? null;
       p.hostelName = p.room?.hostel?.name ?? "";
+      p.hostelGender = p.room?.hostel?.gender ?? "";
       p.bedLabel = `Bed ${p.bedNo} — Room ${p.roomNo} — ${p.hostelName}`;
       return p;
     },
   },
-  {
-    path: "hostel-allocations", model: HostelAllocation, searchable: ["status"], permission: "hostel-allocations",
-    includes: [
-      { association: "student", attributes: ["id", "firstName", "lastName", "admissionNo"] },
-      { association: "hostel", attributes: ["id", "name"] },
-      { association: "room", attributes: ["id", "roomNo"] },
-      { association: "bed", attributes: ["id", "bedNo"] },
-    ],
-    decorate: (row) => {
-      const p = plain(row);
-      p.studentName = p.student ? `${p.student.firstName} ${p.student.lastName}`.trim() : "";
-      p.admissionNo = p.student?.admissionNo ?? "";
-      p.hostelName = p.hostel?.name ?? "";
-      p.roomNo = p.room?.roomNo ?? "";
-      p.bedNo = p.bed?.bedNo ?? "";
-      return p;
-    },
-    beforeCreate: validateHostelAllocation,
-    beforeUpdate: validateHostelAllocation,
-    beforeRemove: async (req) => {
-      const allocation = await HostelAllocation.findByPk(Number(req.params.id));
-      if (!allocation || (req.user?.branchId != null && Number(allocation.branchId) !== Number(req.user.branchId))) {
-        throw ApiError.notFound("Hostel allocation not found or outside your branch");
-      }
-      const bed = await Bed.findByPk(allocation.bedId);
-      if (bed) {
-        await bed.update({ status: "available" });
-        await refreshRoomStatus(Number(bed.roomId));
-      }
-    },
-  },
 ];
+
