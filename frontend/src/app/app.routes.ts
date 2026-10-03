@@ -77,6 +77,13 @@ export const routes: Routes = [
           import('./features/reports/reports.component').then((m) => m.ReportsComponent),
       },
       {
+        path: 'hostel-allocations',
+        data: { permission: 'hostel-allocations:read' },
+        canActivate: [PermissionGuard],
+        loadComponent: () =>
+          import('./features/hostel/hostel-allocations.component').then((m) => m.HostelAllocationsComponent),
+      },
+      {
         path: 'roles',
         data: { permission: 'roles:read' },
         canActivate: [PermissionGuard],

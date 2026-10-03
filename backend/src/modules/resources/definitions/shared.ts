@@ -23,6 +23,8 @@ export interface ResourceDefinition {
   sensitiveColumns?: string[];
   readonly?: boolean; // no write operations exposed
   afterCreate?: (row: any, req: Request) => void | Promise<void>;
+  afterUpdate?: (row: any, req: Request) => void | Promise<void>;
+  afterRemove?: (row: any, req: Request) => void | Promise<void>;
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeRemove?: (req: Request) => void | Promise<void>;

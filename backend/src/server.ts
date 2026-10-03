@@ -5,6 +5,7 @@ import { connectDatabase } from "./database/sequelize";
 import { defineAssociations } from "./models";
 import { runSeeders } from "./database/seeders";
 import { startJobs } from "./jobs";
+import { reconcileHostelState, ensureHostelIndexes } from "./modules/hostel/hostel.service";
 
 async function bootstrap(): Promise<void> {
   defineAssociations();
@@ -24,6 +25,9 @@ async function bootstrap(): Promise<void> {
     } else {
       logger.info("RUN_SEEDERS=false — skipping seeders");
     }
+    // Repair bed/room state left by older versions, then lock in the one-active-allocation rules.
+    await reconcileHostelState();
+    await ensureHostelIndexes();
     app.locals.dbReady = true;
     logger.info("Database connected and schema is ready");
   } catch (err) {

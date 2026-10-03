@@ -14,6 +14,9 @@ export interface CrudOptions<M extends Model = Model> {
   beforeCreate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   beforeUpdate?: (body: any, req: Request) => Record<string, unknown> | Promise<Record<string, unknown>>;
   afterCreate?: (row: M, req: Request) => void | Promise<void>;
+  afterUpdate?: (row: M, req: Request) => void | Promise<void>;
+  /** Runs after the row is deleted (row is the deleted instance). */
+  afterRemove?: (row: M, req: Request) => void | Promise<void>;
   beforeRemove?: (req: Request) => void | Promise<void>;
   detailIncludes?: FindOptions["include"];
   /** Add computed fields (e.g. related display names) to a returned row. */
@@ -212,6 +215,7 @@ export function createCrudController<M extends Model = Model>(
         if (FORBIDDEN_UPDATE_FIELDS.has(key)) delete body[key];
       }
       await (row as any).update(body);
+      if (opts.afterUpdate) await opts.afterUpdate(row as M, req);
       ApiResponse.success(res, 200, `${model.name} updated`, present(row));
     },
 
@@ -229,6 +233,7 @@ export function createCrudController<M extends Model = Model>(
         }
       }
       await (row as any).destroy();
+      if (opts.afterRemove) await opts.afterRemove(row as M, req);
       ApiResponse.success(res, 200, `${model.name} deleted`, null);
     },
 

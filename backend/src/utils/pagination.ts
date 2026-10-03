@@ -15,9 +15,12 @@ function toInt(value: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Dropdowns (classes, sections, beds...) legitimately need more than 100 rows; 500 keeps responses bounded. */
+export const MAX_PAGE_SIZE = 500;
+
 export function parsePagination(req: Request, defaultLimit = 10): Pagination {
   const page = Math.max(1, toInt(req.query.page ?? "1", 1));
-  const limit = Math.min(100, Math.max(1, toInt(req.query.limit ?? String(defaultLimit), defaultLimit)));
+  const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, toInt(req.query.limit ?? String(defaultLimit), defaultLimit)));
   const sortRaw = String(req.query.sort || "-createdAt");
 
   const sort: Array<[string, "ASC" | "DESC"]> = sortRaw
