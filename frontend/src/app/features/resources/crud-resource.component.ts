@@ -237,8 +237,10 @@ const NO_EXPORT = new Set([
           <form (ngSubmit)="save()" (input)="clearFieldErrors()" #f="ngForm">
             <div class="form-grid">
               @for (field of formFields; track field.key) {
-                <div class="form-group" [class.form-group-full]="field.type === 'textarea'">
-                  <label>{{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</label>
+                <div class="form-group" [class.form-group-full]="field.type === 'textarea'" [class.form-group-bool]="field.type === 'bool'">
+                  @if (field.type !== 'bool') {
+                    <label>{{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</label>
+                  }
                   @switch (field.type) {
                     @case ('textarea') {
                       <textarea class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]"></textarea>
@@ -247,7 +249,11 @@ const NO_EXPORT = new Set([
                       <input type="number" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
                     }
                     @case ('bool') {
-                      <input type="checkbox" class="form-checkbox" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
+                      <label class="form-check form-switch">
+                        <input type="checkbox" class="form-checkbox form-switch-input" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
+                        <span class="form-switch-track" aria-hidden="true"><span class="form-switch-thumb"></span></span>
+                        <span class="form-switch-label">{{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</span>
+                      </label>
                     }
                     @case ('select') {
                       <select class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]">
