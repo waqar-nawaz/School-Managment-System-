@@ -303,7 +303,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
 })
 export class UsersComponent implements OnInit {
   /** Starts with the built-in roles, then replaced by the real list from the server (includes custom roles + staff). */
-  ROLES: string[] = [...USER_ROLES, 'staff'];
+  ROLES: string[] = [...USER_ROLES];
   users: User[] = [];
   total = 0;
   page = 1;
@@ -349,7 +349,7 @@ export class UsersComponent implements OnInit {
     this.api.get<Array<{ name: string }>>('/roles', { limit: 100 }).subscribe({
       next: (r) => {
         const names = (r?.data ?? []).map((x) => x.name).filter((n) => n && n !== 'super_admin' || this.isSuperAdmin);
-        if (names.length) this.ROLES = Array.from(new Set([...names, 'staff']));
+        if (names.length) this.ROLES = names;
       },
       error: () => {},
     });
