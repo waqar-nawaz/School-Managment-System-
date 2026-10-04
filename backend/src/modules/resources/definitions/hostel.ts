@@ -131,6 +131,39 @@ const validateBed = async (body: any, req: Request) => {
   return body;
 };
 
+/**
+ * Keep the room's physical bed inventory aligned with its configured capacity.
+ *
+ * A room capacity is the maximum number of beds. For new rooms (and when
+ * capacity is increased) we provision missing beds as B1, B2, ... Bn.
+ * Existing/manual bed names are preserved; we only add the missing numbered
+ * beds needed to reach the requested capacity.
+ */
+async function ensureRoomBeds(row: Room): Promise<void> {
+  const capacity = Number(row.capacity);
+  if (!Number.isInteger(capacity) || capacity < 1) return;
+
+  const existing = await Bed.findAll({
+    where: { roomId: row.id },
+    attributes: ["id", "bedNo"],
+  });
+  const existingNames = new Set(existing.map((b) => String(b.bedNo).trim().toLowerCase()));
+
+  const missing: Array<{ roomId: number; branchId: number | null; bedNo: string; status: string }> = [];
+  for (let i = 1; existing.length + missing.length < capacity; i += 1) {
+    const bedNo = `B${i}`;
+    if (existingNames.has(bedNo.toLowerCase())) continue;
+    missing.push({
+      roomId: Number(row.id),
+      branchId: row.branchId ?? null,
+      bedNo,
+      status: "available",
+    });
+  }
+
+  if (missing.length) await Bed.bulkCreate(missing as any[]);
+}
+ 
 export const HOSTEL_RESOURCES: ResourceDefinition[] = [
   {
     path: "hostels", model: Hostel, searchable: ["name", "wardenName"], permission: "hostels",
@@ -164,8 +197,14 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
     path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "rooms",
     includes: [{ association: "hostel", attributes: ["id", "name"] }, { association: "beds", attributes: ["id", "status"] }],
     beforeCreate: validateRoom, beforeUpdate: validateRoom,
-    afterCreate: async (row) => { await syncRoom(Number(row.id)); },
-    afterUpdate: async (row) => { await syncRoom(Number(row.id)); },
+    afterCreate: async (row) => {
+      await ensureRoomBeds(row);
+      await syncRoom(Number(row.id));
+    },
+    afterUpdate: async (row) => {
+      await ensureRoomBeds(row);
+      await syncRoom(Number(row.id));
+    },
     beforeRemove: async (req) => {
       const room = await Room.findByPk(Number(req.params.id));
       if (!room || (req.user?.branchId != null && Number(room.branchId) !== Number(req.user.branchId))) {
