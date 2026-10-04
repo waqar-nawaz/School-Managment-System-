@@ -6,24 +6,29 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { Student, Parent, StudentGuardian, Enrolment, AcademicYear, User, Attendance, Invoice, SchoolClass, Section } from "../../models";
+import {
+  Student, Parent, StudentGuardian, Enrolment, User, Attendance, Invoice, SchoolClass, Section,
+  HostelAllocation, AdmissionApplication,
+} from "../../models";
 import { createCrudController } from "../../utils/crudFactory";
-import { createUser } from "../users/users.service";
 import { exportCsv } from "../../utils/csvExport";
-import { syncBed } from "../hostel/hostel.service";
-import { HostelAllocation } from "../../models";
 import { assertStudentAccess, ownStudentIds, canSeeMedical } from "../../utils/access";
-import { RefreshToken } from "../../models";
-import { invalidateActiveCache } from "../../middlewares/authenticate";
 import { writeAuditLog } from "../../services/audit.service";
+import { getPermissionsForRole } from "../../services/rbac.service";
+import { generateRandomPassword } from "../../utils/password.util";
+import { adminResetPassword } from "../users/users.service";
 import { monthRange } from "../../utils/dateRange";
+import {
+  admitStudent, deactivateStudent, reactivateStudent, assertSectionHasRoom, cleanGender, cleanDob, cleanPhone, cleanEmail,
+  resolveAcademicYear, pickRollNo,
+} from "./students.service";
 
 const router = Router();
 router.use(authenticate);
 
 const base = createCrudController<Student>({
   model: Student,
-  searchable: ["firstName", "lastName", "admissionNo", "email"],
+  searchable: ["firstName", "lastName", "admissionNo", "email", "guardianName", "guardianPhone"],
   defaultSort: [["admissionNo", "ASC"]],
   includes: [{ association: "enrolments" }],
   defaultWhere: { isActive: true },
@@ -35,54 +40,6 @@ function stripMedical(req: any, student: any) {
   const json = typeof student.toJSON === "function" ? student.toJSON() : { ...student };
   if (!canSeeMedical(req.user?.role)) delete json.medicalInfo;
   return json;
-}
-
-/** Enable/disable the student's login together with the student record. */
-async function setStudentLogin(student: Student, isActive: boolean, transaction?: any) {
-  if (!student.userId) return;
-  await User.update({ isActive }, { where: { id: student.userId }, transaction });
-  if (!isActive) {
-    await RefreshToken.update({ revoked: true, revokedAt: new Date() }, { where: { userId: student.userId, revoked: false }, transaction });
-  }
-  invalidateActiveCache(Number(student.userId));
-}
-
-async function assertSectionHasRoom(req: any, student: Student, sectionId: number, classId: number, transaction?: any) {
-  const branchId = req.user?.branchId;
-  const section = await Section.findOne({
-    where: { id: sectionId, classId, ...(branchId != null ? { branchId } : {}), isActive: true }, transaction,
-  });
-  if (!section) throw ApiError.badRequest("Section is inactive or does not belong to the class");
-  if (Number(section.capacity) > 0) {
-    const activeCount = await Enrolment.count({
-      where: { sectionId, status: "active", studentId: { [Op.ne]: student.id } }, transaction,
-    });
-    if (activeCount >= Number(section.capacity)) {
-      throw ApiError.badRequest(`Section ${section.name} is full (capacity ${section.capacity})`);
-    }
-  }
-}
-
-async function reactivateStudent(req: any, student: Student, transaction?: any) {
-  const classId = Number(student.currentClassId ?? 0);
-  const sectionId = student.currentSectionId != null ? Number(student.currentSectionId) : null;
-  if (classId && sectionId) await assertSectionHasRoom(req, student, sectionId, classId, transaction);
-  await student.update({ isActive: true }, { transaction });
-  await Enrolment.update({ status: "active" }, { where: { studentId: student.id, status: "withdrawn" }, transaction });
-  await setStudentLogin(student, true, transaction);
-}
-
-async function deactivateStudent(student: Student, transaction?: any) {
-  // Release the seat so capacity checks free up.
-  await Enrolment.update({ status: "withdrawn" }, { where: { studentId: student.id, status: "active" }, transaction });
-  await student.update({ isActive: false }, { transaction });
-  await setStudentLogin(student, false, transaction);
-  // A student who leaves school must not keep a hostel bed forever: close the stay and free the bed.
-  const stays = await HostelAllocation.findAll({ where: { studentId: student.id, status: "active" }, transaction });
-  for (const stay of stays) {
-    await stay.update({ status: "checked_out", checkOut: new Date() }, { transaction });
-    await syncBed(Number(stay.bedId), transaction);
-  }
 }
 
 router.get("/", authorize("students:read"), asyncHandler(async (req, res) => {
@@ -118,262 +75,138 @@ router.post(
   "/",
   authorize("students:create"),
   asyncHandler(async (req, res) => {
-    const body = req.body;
-    const guardians: any[] = Array.isArray(body.guardians) ? [...body.guardians] : [];
-    if (body.guardianName || body.guardianPhone) {
-      guardians.push({ fullName: body.guardianName || "Guardian", phone: body.guardianPhone, relation: "guardian" });
-    }
-
-    const firstName = String(body.firstName || "").trim();
-    const lastName = String(body.lastName || "").trim();
     const branchId = Number(req.user?.branchId);
     if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
-    if (!firstName) throw ApiError.badRequest("firstName is required");
-    if (firstName.length > 120 || lastName.length > 120) throw ApiError.badRequest("Student name is too long");
-    const admissionNo = String(body.admissionNo || `STU-${Date.now()}`).trim();
-    const duplicateAdmission = await Student.findOne({ where: { admissionNo } });
-    if (duplicateAdmission) throw ApiError.conflict("Admission number already exists");
-    const providedEmail = body.email ? String(body.email).trim().toLowerCase() : "";
-    if (providedEmail && !/^\S+@\S+\.\S+$/.test(providedEmail)) throw ApiError.badRequest("Invalid email");
-    const slug = String(admissionNo).toLowerCase().replace(/[^a-z0-9]+/g, "") || "student";
-    const unique = `${Date.now().toString(36)}${Math.floor(Math.random() * 10000)}`;
-    // Student names are not unique. Admission number is the student identity.
-    // The linked login account still needs unique email/username values.
-    let email = providedEmail || `${slug}.${unique}@school.local`;
-    let username = String(body.username || "").trim();
-    if (!username) username = providedEmail ? providedEmail.split("@")[0] : `student_${unique}`;
-    if (username.length < 3) username = `student_${unique}`;
-    if (await User.findOne({ where: { email } })) email = `${slug}.${unique}@school.local`;
-    if (await User.findOne({ where: { username } })) username = `${username}_${unique}`;
-
-    const dob = body.dateOfBirth ?? body.dob;
-    const currentClassId = body.currentClassId ?? body.classId;
-    const currentSectionId = body.currentSectionId ?? body.sectionId;
-
-    if (currentClassId) {
-      const schoolClass = await SchoolClass.findOne({ where: { id: Number(currentClassId), branchId } });
-      if (!schoolClass || !schoolClass.isActive) throw ApiError.badRequest("Selected class is inactive or outside your branch");
-      if (currentSectionId) {
-        const section = await Section.findOne({ where: { id: Number(currentSectionId), branchId } });
-        if (!section || !section.isActive || Number(section.classId) !== Number(currentClassId)) {
-          throw ApiError.badRequest("Selected section does not belong to the selected class");
-        }
-      }
-    }
-
-    const result = await sequelize.transaction(async (transaction) => {
-      const user = await createUser({
-        username, email, firstName, lastName, role: "student",
-        gender: body.gender, phone: body.phone ?? body.guardianPhone,
-        branchId, sendWelcome: !!providedEmail,
-        generatedBy: req.user!.id, transaction,
-      });
-
-      const student = await Student.create({
-        admissionNo, firstName, lastName, dateOfBirth: dob, gender: body.gender,
-        bloodGroup: body.bloodGroup, nationality: body.nationality,
-        emergencyContact: body.emergencyContact, guardianName: body.guardianName,
-        guardianPhone: body.guardianPhone, address: body.address, email: body.email,
-        admissionDate: body.admissionDate || new Date(), admissionStatus: "admitted",
-        // New admissions are always active. Deactivation is a separate lifecycle action.
-        isActive: true,
-        currentClassId, currentSectionId, medicalInfo: body.medicalInfo,
-        userId: user.id, branchId,
-      }, { transaction });
-
-      // Guardians: reuse an existing parent (by id or phone) or create one. createUser() already
-      // creates the Parent profile for role "parent", so we UPDATE that row instead of inserting a
-      // second Parent for the same login (which broke the parent portal).
-      let guardianIndex = 0;
-      for (const g of guardians) {
-        guardianIndex += 1;
-        const gPhone = g.phone ? String(g.phone).trim() : "";
-        let parent = g.id
-          ? await Parent.findOne({ where: { id: g.id, branchId }, transaction })
-          : (gPhone ? await Parent.findOne({ where: { phone: gPhone, branchId }, transaction }) : null);
-
-        if (!parent) {
-          const gName = String(g.fullName || g.name || "Guardian").trim() || "Guardian";
-          const stamp = `${Date.now().toString(36)}${guardianIndex}${Math.floor(Math.random() * 1000)}`;
-          const gEmail = g.email ? String(g.email).trim().toLowerCase() : "";
-          const pUser = await createUser({
-            username: `${gName.replace(/[^a-zA-Z0-9]+/g, "_").toLowerCase().slice(0, 40) || "parent"}_${stamp}`,
-            email: gEmail && !(await User.findOne({ where: { email: gEmail }, transaction }))
-              ? gEmail : `${slug}-p${guardianIndex}.${stamp}@school.local`,
-            firstName: gName, lastName: "", role: "parent", phone: gPhone || undefined,
-            branchId, sendWelcome: false, generatedBy: req.user!.id, transaction,
-          });
-          parent = await Parent.findOne({ where: { userId: pUser.id }, transaction });
-          if (!parent) throw ApiError.internal("Parent profile was not created");
-          await parent.update({
-            fullName: gName, phone: gPhone || parent.phone, email: g.email ? String(g.email) : parent.email,
-            relation: g.relation || "guardian", occupation: g.occupation, address: g.address,
-          }, { transaction });
-        }
-
-        await StudentGuardian.findOrCreate({
-          where: { studentId: student.id, parentId: parent.id },
-          defaults: {
-            studentId: student.id, parentId: parent.id,
-            relation: g.relation || parent.relation || "guardian",
-            isPrimary: g.isPrimary !== undefined ? !!g.isPrimary : guardianIndex === 1,
-          } as any,
-          transaction,
-        });
-      }
-
-      if (currentClassId) {
-        if (currentSectionId) {
-          const section = await Section.findOne({
-            where: { id: Number(currentSectionId), classId: Number(currentClassId), branchId, isActive: true },
-            transaction,
-          });
-          if (!section) throw ApiError.badRequest("Selected section is inactive or does not belong to the selected class");
-          if (Number(section.capacity) > 0) {
-            const activeCount = await Enrolment.count({
-              where: { sectionId: section.id, status: "active" },
-              transaction,
-            });
-            if (activeCount >= Number(section.capacity)) {
-              throw ApiError.badRequest("Section " + section.name + " is full (capacity " + section.capacity + ")");
-            }
-          }
-        }
-
-        let academicYearId: number | undefined = body.academicYearId;
-        if (academicYearId) {
-          const selectedYear = await AcademicYear.findOne({ where: { id: Number(academicYearId), branchId }, transaction });
-          if (!selectedYear) throw ApiError.badRequest("Selected academic year is not configured for your branch");
-          academicYearId = selectedYear.id;
-        } else {
-          const currentYear =
-            (await AcademicYear.findOne({ where: { isCurrent: true, branchId }, transaction })) ||
-            (await AcademicYear.findOne({ where: { branchId }, order: [["startDate", "DESC"]], transaction }));
-          if (currentYear) {
-            academicYearId = currentYear.id;
-          } else {
-            // Bootstrap the first academic year so student admission does not fail
-            // just because the setup wizard has not created one yet.
-            const admissionDate = new Date(body.admissionDate || new Date());
-            const year = admissionDate.getMonth() >= 6 ? admissionDate.getFullYear() : admissionDate.getFullYear() - 1;
-            const startDate = new Date(year, 6, 1);
-            const endDate = new Date(year + 1, 5, 30);
-            const yearName = year + "-" + (year + 1);
-            const existingYearByName = await AcademicYear.findOne({
-              where: { name: yearName, branchId },
-              transaction,
-            });
-            if (existingYearByName) {
-              academicYearId = existingYearByName.id;
-            } else {
-              const createdYear = await AcademicYear.create({
-              name: yearName,
-              startDate,
-              endDate,
-              isCurrent: true,
-              isClosed: false,
-              branchId,
-              }, { transaction });
-              academicYearId = createdYear.id;
-            }
-          }
-        }
-
-        await Enrolment.create({
-          studentId: student.id, academicYearId, classId: currentClassId, branchId,
-          sectionId: currentSectionId ?? null, enrolledOn: new Date(),
-          status: "active", rollNo: body.rollNo,
-        } as any, { transaction });
-      }
-
-      return student;
-    });
-
+    const body = req.body ?? {};
+    const { student, credentials } = await sequelize.transaction((t) =>
+      admitStudent(
+        { ...body, dateOfBirth: body.dateOfBirth ?? body.dob, currentClassId: body.currentClassId ?? body.classId, currentSectionId: body.currentSectionId ?? body.sectionId },
+        { branchId, userId: req.user!.id },
+        t
+      )
+    );
     await writeAuditLog({
-      action: "create", entity: "student", entityId: result.id, userId: req.user!.id,
-      role: req.user!.role, ip: req.ip, newData: { admissionNo: result.admissionNo },
+      action: "create", entity: "student", entityId: student.id, userId: req.user!.id,
+      role: req.user!.role, ip: req.ip, newData: { admissionNo: student.admissionNo },
     });
-    ApiResponse.success(res, 201, "Student admitted", result);
+    // Login details are returned ONCE so staff can give them to the family (only hashes are stored).
+    ApiResponse.success(res, 201, "Student admitted", { ...(student.toJSON() as object), credentials });
   })
 );
 
+const blank = (v: unknown) => v === "" || v === undefined;
+
 router.put("/:id", authorize("students:update"), asyncHandler(async (req, res) => {
   const student = await assertStudentAccess(req, Number(req.params.id));
-  const b = req.body as Record<string, unknown>;
-  const allowed = [
-    "firstName", "lastName", "dateOfBirth", "gender", "bloodGroup", "nationality",
-    "emergencyContact", "guardianName", "guardianPhone", "address", "email",
-    "admissionDate", "currentClassId", "currentSectionId", "medicalInfo", "isActive",
-  ];
+  const b = req.body as Record<string, any>;
+  const branchId = Number(req.user?.branchId ?? student.branchId);
   const patch: Record<string, unknown> = {};
-  for (const key of allowed) if (b[key] !== undefined) patch[key] = b[key];
-  if (patch.firstName !== undefined && !String(patch.firstName).trim()) throw ApiError.badRequest("firstName cannot be empty");
-  if (patch.email && !/^\S+@\S+\.\S+$/.test(String(patch.email))) throw ApiError.badRequest("Invalid email");
 
-  if (b.dob !== undefined && b.dateOfBirth === undefined) patch.dateOfBirth = b.dob;
-  if (b.classId !== undefined && b.currentClassId === undefined) patch.currentClassId = b.classId;
-  if (b.sectionId !== undefined && b.currentSectionId === undefined) patch.currentSectionId = b.sectionId;
+  const plain = ["bloodGroup", "religion", "nationality", "address", "guardianName"] as const;
+  for (const k of plain) if (b[k] !== undefined) patch[k] = blank(b[k]) ? null : String(b[k]).trim();
+  if (b.firstName !== undefined) {
+    const v = String(b.firstName).trim();
+    if (!v) throw ApiError.badRequest("First name cannot be empty");
+    if (v.length > 120) throw ApiError.badRequest("Student name is too long");
+    patch.firstName = v;
+  }
+  if (b.lastName !== undefined) patch.lastName = String(b.lastName ?? "").trim();
+  if (b.gender !== undefined) patch.gender = cleanGender(b.gender, true);
+  if (b.dateOfBirth !== undefined || b.dob !== undefined) patch.dateOfBirth = cleanDob(b.dateOfBirth ?? b.dob);
+  if (b.email !== undefined) patch.email = cleanEmail(b.email);
+  if (b.guardianPhone !== undefined) patch.guardianPhone = cleanPhone(b.guardianPhone, "Guardian phone");
+  if (b.emergencyContact !== undefined) patch.emergencyContact = cleanPhone(b.emergencyContact, "Emergency contact");
+  if (b.admissionDate !== undefined && b.admissionDate !== "") {
+    const d = new Date(String(b.admissionDate));
+    if (!Number.isFinite(d.getTime())) throw ApiError.badRequest("Admission date is not a valid date");
+    patch.admissionDate = d;
+  }
+  if (b.medicalInfo !== undefined) {
+    if (b.medicalInfo !== null && (typeof b.medicalInfo !== "object" || Array.isArray(b.medicalInfo))) throw ApiError.badRequest("Medical info must be an object");
+    patch.medicalInfo = b.medicalInfo;
+  }
 
-  const newClassId = patch.currentClassId !== undefined
-    ? Number(patch.currentClassId) : Number(student.currentClassId ?? 0);
-  const newSectionId = patch.currentSectionId !== undefined
-    ? (patch.currentSectionId === null || patch.currentSectionId === "" ? null : Number(patch.currentSectionId))
-    : (student.currentSectionId ?? null);
-
-  if (newClassId) {
-    const schoolClass = await SchoolClass.findByPk(newClassId);
-    if (!schoolClass || !schoolClass.isActive) throw ApiError.badRequest("Class not found or inactive");
-    if (req.user?.branchId != null && Number(schoolClass.branchId) !== Number(req.user.branchId)) {
-      throw ApiError.badRequest("Selected class does not belong to your branch");
+  // A boys/girls hostel resident cannot be switched to the other gender behind the hostel's back.
+  if (patch.gender && patch.gender !== student.gender) {
+    const stay: any = await HostelAllocation.findOne({ where: { studentId: student.id, status: "active" }, include: ["hostel"] });
+    const hg = stay?.hostel?.gender;
+    if (stay && ((hg === "boys" && patch.gender !== "male") || (hg === "girls" && patch.gender !== "female"))) {
+      throw ApiError.badRequest(`${student.firstName} lives in "${stay.hostel.name}" (${hg} only). Check them out of the hostel first.`);
     }
-    if (newSectionId != null) {
-      const section = await Section.findByPk(newSectionId);
-      if (!section || !section.isActive) throw ApiError.badRequest("Section not found or inactive");
-      if (Number(section.classId) !== newClassId || Number(section.branchId) !== Number(req.user?.branchId)) {
-        throw ApiError.badRequest("Selected section does not belong to the selected class or branch");
-      }
-      const activeCount = await Enrolment.count({
-        where: { sectionId: newSectionId, branchId: req.user?.branchId, status: "active", studentId: { [Op.ne]: student.id } },
-      });
-      if (Number(section.capacity) > 0 && activeCount >= Number(section.capacity)) {
-        throw ApiError.badRequest("Section " + section.name + " is full (capacity " + section.capacity + ")");
-      }
+  }
+
+  // ---- class / section (empty string means "none"; changing class without a section clears the old one)
+  const classGiven = b.currentClassId !== undefined || b.classId !== undefined;
+  const sectionGiven = b.currentSectionId !== undefined || b.sectionId !== undefined;
+  const rawClass = b.currentClassId !== undefined ? b.currentClassId : b.classId;
+  const rawSection = b.currentSectionId !== undefined ? b.currentSectionId : b.sectionId;
+  const oldClassId = student.currentClassId != null ? Number(student.currentClassId) : null;
+  const newClassId = classGiven ? (blank(rawClass) || rawClass === null ? null : Number(rawClass)) : oldClassId;
+  let newSectionId: number | null = sectionGiven ? (blank(rawSection) || rawSection === null ? null : Number(rawSection)) : (student.currentSectionId != null ? Number(student.currentSectionId) : null);
+  if (classGiven && newClassId !== oldClassId && !sectionGiven) newSectionId = null;
+  if (newClassId !== null && (!Number.isInteger(newClassId) || newClassId <= 0)) throw ApiError.badRequest("Invalid class");
+  if (newSectionId !== null && (!Number.isInteger(newSectionId) || newSectionId <= 0)) throw ApiError.badRequest("Invalid section");
+  if (newSectionId && !newClassId) throw ApiError.badRequest("Choose the class before the section");
+
+  const placementChanged = classGiven || sectionGiven;
+  if (placementChanged) {
+    patch.currentClassId = newClassId;
+    patch.currentSectionId = newSectionId;
+    if (newClassId) {
+      const klass = await SchoolClass.findOne({ where: { id: newClassId, branchId } });
+      if (!klass || !klass.isActive) throw ApiError.badRequest("Class not found, inactive or outside your branch");
     }
   }
 
   const wasActive = student.isActive === true;
-  const wantsActive = patch.isActive === undefined ? undefined : patch.isActive === true || patch.isActive === "true";
-  delete patch.isActive; // handled explicitly below so seat/login logic always runs
-  const classTouched = patch.currentClassId !== undefined || patch.currentSectionId !== undefined;
-  const branchId = req.user?.branchId ?? student.branchId;
+  const wantsActive = b.isActive === undefined ? undefined : b.isActive === true || b.isActive === "true";
+  const rollGiven = b.rollNo !== undefined;
 
   await sequelize.transaction(async (transaction) => {
+    if (placementChanged && newClassId && newSectionId && (wantsActive ?? wasActive)) {
+      await assertSectionHasRoom(branchId, Number(student.id), newSectionId, newClassId, transaction);
+    }
     await student.update(patch, { transaction });
 
     if (wantsActive === false && wasActive) {
       await deactivateStudent(student, transaction);
     } else if (wantsActive === true && !wasActive) {
-      await reactivateStudent(req, student, transaction);
-    } else if (classTouched && newClassId && (wantsActive ?? wasActive)) {
-      // Only touch the enrolment when class/section were actually edited.
-      const academicYear =
-        (await AcademicYear.findOne({ where: { isCurrent: true, branchId }, transaction })) ||
-        (await AcademicYear.findOne({ where: { branchId }, order: [["startDate", "DESC"]], transaction }));
-      if (academicYear) {
-        const [enrolment] = await Enrolment.findOrCreate({
-          where: { studentId: student.id, academicYearId: academicYear.id },
-          defaults: {
-            studentId: student.id, academicYearId: academicYear.id, classId: newClassId, branchId,
-            sectionId: newSectionId ?? null, enrolledOn: new Date(), status: "active",
-          } as any,
-          transaction,
-        });
-        await enrolment.update({ classId: newClassId, branchId, sectionId: newSectionId ?? null, status: "active" }, { transaction });
+      await reactivateStudent(branchId, student, transaction);
+    } else if ((placementChanged || rollGiven) && (wantsActive ?? wasActive)) {
+      const year = await resolveAcademicYear(undefined, branchId, undefined, transaction);
+      const existing = await Enrolment.findOne({ where: { studentId: student.id, academicYearId: year.id }, transaction });
+      if (newClassId) {
+        const moved = !existing || Number(existing.classId) !== newClassId || (existing.sectionId != null ? Number(existing.sectionId) : null) !== newSectionId;
+        const rollNo = rollGiven || moved
+          ? await pickRollNo(rollGiven ? b.rollNo : null, { yearId: Number(year.id), classId: newClassId, sectionId: newSectionId }, Number(student.id), transaction)
+          : existing!.rollNo;
+        if (existing) await existing.update({ classId: newClassId, sectionId: newSectionId, rollNo, status: "active", branchId }, { transaction });
+        else await Enrolment.create({ studentId: student.id, academicYearId: year.id, classId: newClassId, sectionId: newSectionId, rollNo, branchId, enrolledOn: new Date(), status: "active" } as any, { transaction });
+      } else if (existing && placementChanged) {
+        // Class was cleared: the student is no longer placed anywhere this year.
+        await existing.update({ status: "withdrawn" }, { transaction });
       }
+    }
+
+    // Keep the login account's name/gender/phone in step with the student record.
+    if (student.userId && (patch.firstName !== undefined || patch.lastName !== undefined || patch.gender !== undefined || patch.guardianPhone !== undefined)) {
+      await User.update(
+        {
+          ...(patch.firstName !== undefined ? { firstName: patch.firstName } : {}),
+          ...(patch.lastName !== undefined ? { lastName: patch.lastName } : {}),
+          ...(patch.gender ? { gender: patch.gender } : {}),
+        } as any,
+        { where: { id: student.userId }, transaction }
+      );
     }
   });
 
-  ApiResponse.success(res, 200, "Student updated", student);
+  await writeAuditLog({
+    action: "update", entity: "student", entityId: student.id, userId: req.user!.id, role: req.user!.role,
+    ip: req.ip, newData: { fields: Object.keys(patch) },
+  });
+  await student.reload();
+  ApiResponse.success(res, 200, "Student updated", stripMedical(req, student));
 }));
 
 router.delete("/:id", authorize("students:delete"), asyncHandler(async (req, res) => {
@@ -389,12 +222,79 @@ router.delete("/:id", authorize("students:delete"), asyncHandler(async (req, res
 router.patch("/:id/reactivate", authorize("students:update"), asyncHandler(async (req, res) => {
   const student = await assertStudentAccess(req, Number(req.params.id));
   if (student.isActive) return ApiResponse.success(res, 200, "Student is already active", student);
-  await sequelize.transaction((transaction) => reactivateStudent(req, student, transaction));
+  await sequelize.transaction((transaction) => reactivateStudent(req.user?.branchId, student, transaction));
   await writeAuditLog({
     action: "update", entity: "student", entityId: student.id, userId: req.user!.id,
     role: req.user!.role, ip: req.ip, newData: { isActive: true },
   });
   ApiResponse.success(res, 200, "Student reactivated", student);
+}));
+
+
+/** Everything the student profile drawer needs in one call. */
+router.get("/:id/profile", authorize("students:read"), asyncHandler(async (req, res) => {
+  const student = await assertStudentAccess(req, Number(req.params.id));
+  const perms = await getPermissionsForRole(req.user!.role);
+  const can = (p: string) => perms.includes("*") || perms.includes(p);
+
+  const [klass, section, guardians, enrolment, hostelStay, application] = await Promise.all([
+    student.currentClassId ? SchoolClass.findByPk(student.currentClassId, { attributes: ["id", "name"] }) : null,
+    student.currentSectionId ? Section.findByPk(student.currentSectionId, { attributes: ["id", "name"] }) : null,
+    StudentGuardian.findAll({ where: { studentId: student.id } }),
+    Enrolment.findOne({ where: { studentId: student.id, status: "active" }, order: [["id", "DESC"]] }),
+    can("hostel-allocations:read") ? HostelAllocation.findOne({ where: { studentId: student.id, status: "active" }, include: ["hostel", "room", "bed"] }) : null,
+    can("admissions:read") ? AdmissionApplication.findOne({ where: { studentId: student.id }, attributes: ["id", "applicationNo", "dateApplied"] }) : null,
+  ]);
+  const parentRows = guardians.length ? await Parent.findAll({ where: { id: guardians.map((g) => Number(g.parentId)) } }) : [];
+  const byId = new Map(parentRows.map((p) => [Number(p.id), p]));
+
+  const out: Record<string, unknown> = {
+    student: stripMedical(req, student),
+    className: klass?.name ?? null, sectionName: section?.name ?? null, rollNo: enrolment?.rollNo ?? null,
+    guardians: guardians.map((g) => {
+      const p = byId.get(Number(g.parentId));
+      return { parentId: Number(g.parentId), relation: g.relation, isPrimary: g.isPrimary, fullName: p?.fullName, phone: p?.phone, email: p?.email };
+    }),
+    application,
+  };
+  if (hostelStay) {
+    const h: any = hostelStay;
+    out.hostel = { hostel: h.hostel?.name, room: h.room?.roomNo, bed: h.bed?.bedNo, checkIn: h.checkIn, monthlyFee: h.monthlyFee };
+  }
+  if (can("attendance:read")) {
+    const { start, end } = monthRange(new Date().toISOString().slice(0, 7));
+    const rows = await Attendance.findAll({ where: { studentId: student.id, date: { [Op.gte]: start, [Op.lt]: end } }, attributes: ["status"] });
+    const summary: Record<string, number> = {};
+    for (const r of rows) summary[r.status] = (summary[r.status] || 0) + 1;
+    out.attendance = { month: new Date().toISOString().slice(0, 7), summary, total: rows.length };
+  }
+  if (can("invoices:read") || can("fees:read")) {
+    const inv = await Invoice.findAll({ where: { studentId: student.id, status: { [Op.ne]: "cancelled" } }, attributes: ["totalDue", "amountPaid", "status"] });
+    const billed = inv.reduce((a, i) => a + Number(i.totalDue), 0);
+    const paid = inv.reduce((a, i) => a + Number(i.amountPaid), 0);
+    out.fees = { invoices: inv.length, billed, paid, outstanding: Math.max(0, billed - paid), overdue: inv.filter((i) => i.status === "overdue").length };
+  }
+  ApiResponse.success(res, 200, "Student profile", out);
+}));
+
+/** Issue fresh passwords for the student's login and the linked parents (shown once). */
+router.post("/:id/reset-logins", authorize("users:update"), asyncHandler(async (req, res) => {
+  const student = await assertStudentAccess(req, Number(req.params.id));
+  const targets: Array<{ role: string; name: string; userId: number }> = [];
+  if (student.userId) targets.push({ role: "student", name: `${student.firstName} ${student.lastName}`.trim(), userId: Number(student.userId) });
+  const links = await StudentGuardian.findAll({ where: { studentId: student.id } });
+  const parents = links.length ? await Parent.findAll({ where: { id: links.map((l) => Number(l.parentId)) } }) : [];
+  for (const p of parents) if (p.userId) targets.push({ role: "parent", name: p.fullName, userId: Number(p.userId) });
+  if (!targets.length) throw ApiError.badRequest("This student has no login accounts");
+  const credentials = [];
+  for (const t of targets) {
+    const user = await User.findByPk(t.userId, { attributes: ["id", "username"] });
+    if (!user) continue;
+    const password = generateRandomPassword();
+    await adminResetPassword(t.userId, password, req.user!.id);
+    credentials.push({ role: t.role, name: t.name, username: user.username, password });
+  }
+  ApiResponse.success(res, 200, "New passwords issued. Share them with the family; they are not shown again.", { credentials });
 }));
 
 router.get("/:id/guardians", authorize("students:read"), asyncHandler(async (req, res) => {

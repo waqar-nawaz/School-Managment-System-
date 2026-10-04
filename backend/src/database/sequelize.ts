@@ -59,6 +59,9 @@ async function ensureColumns(): Promise<void> {
     { table: "terms", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "subjects", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "sections", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
+    { table: "admission_applications", column: "guardianName", def: { type: DataType.STRING(120) } },
+    { table: "admission_applications", column: "guardianRelation", def: { type: DataType.STRING(30) } },
+    { table: "admission_applications", column: "studentId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "students", column: "guardianName", def: { type: DataType.STRING(120) } },
     { table: "students", column: "guardianPhone", def: { type: DataType.STRING(30) } },
     { table: "inventory", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
@@ -151,6 +154,13 @@ async function postSyncPatches(): Promise<void> {
     );
   } catch (err) {
     logger.warn(`Could not backfill enrolments.branchId: ${(err as Error).message}`);
+  }
+
+  // students.religion was VARCHAR(6): most religion names did not fit. Idempotent.
+  try {
+    await sequelize.query(`ALTER TABLE students ALTER COLUMN religion TYPE VARCHAR(50)`);
+  } catch (err) {
+    logger.warn(`Could not widen students.religion: ${(err as Error).message}`);
   }
 
   // Postgres requires a new ENUM value to be added to the existing type before it can be used
