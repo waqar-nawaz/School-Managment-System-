@@ -10,7 +10,6 @@ export const USER_ROLES = [
   'transport_manager',
   'hostel_warden',
   'receptionist',
-  'staff',
 ] as const;
 
 export type UserRole = (typeof USER_ROLES)[number];
@@ -27,7 +26,6 @@ export const ROLE_LABELS: Record<string, string> = {
   transport_manager: 'Transport Manager',
   hostel_warden: 'Hostel Warden',
   receptionist: 'Receptionist',
-  staff: 'Staff',
 };
 
 export const ATTENDANCE_STATUSES = ['present', 'absent', 'late', 'excused', 'holiday'] as const;
