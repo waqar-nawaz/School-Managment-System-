@@ -237,7 +237,7 @@ const NO_EXPORT = new Set([
           <form (ngSubmit)="save()" (input)="clearFieldErrors()" #f="ngForm">
             <div class="form-grid">
               @for (field of formFields; track field.key) {
-                <div class="form-group" [class.form-group-full]="field.type === 'textarea'" [class.form-group-bool]="field.type === 'bool'">
+                <div class="form-group" [class.form-group-full]="field.type === 'textarea'">
                   @if (field.type !== 'bool') {
                     <label>{{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</label>
                   }
@@ -249,10 +249,7 @@ const NO_EXPORT = new Set([
                       <input type="number" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
                     }
                     @case ('bool') {
-                      <label class="form-check form-checkbox-row">
-                        <input type="checkbox" class="form-checkbox" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
-                        <span class="form-checkbox-text">{{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</span>
-                      </label>
+                      <label class="form-check"><input type="checkbox" class="form-checkbox" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" /> {{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</label>
                     }
                     @case ('select') {
                       <select class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]">
