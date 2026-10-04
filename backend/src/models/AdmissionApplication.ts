@@ -2,6 +2,7 @@ import { Table, Column, Unique, Index, DataType, ForeignKey, BelongsTo } from "s
 import { BaseModel } from "./BaseModel";
 import { User } from "./User";
 import { Branch } from "./Branch";
+import { Student } from "./Student";
 
 @Table({ tableName: "admission_applications" })
 export class AdmissionApplication extends BaseModel {
@@ -33,6 +34,18 @@ export class AdmissionApplication extends BaseModel {
 
   @Column({ type: DataType.TEXT })
   address!: string;
+
+  /** Parent / guardian who is applying (their phone and email are the contact fields above). */
+  @Column({ type: DataType.STRING(120) })
+  guardianName!: string;
+
+  @Column({ type: DataType.STRING(30) })
+  guardianRelation!: string;
+
+  /** Set when the application was turned into a student. */
+  @ForeignKey(() => Student)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  studentId!: number;
 
   @Column({ type: DataType.ENUM("enquiry", "applied", "shortlisted", "admitted", "rejected", "waitlisted", "withdrawn"), defaultValue: "enquiry" })
   status!: string;

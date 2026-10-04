@@ -25,7 +25,7 @@ export class Student extends BaseModel {
   @Column({ type: DataType.STRING(30) })
   bloodGroup!: string;
 
-  @Column({ type: DataType.STRING(6) })
+  @Column({ type: DataType.STRING(50) })
   religion!: string;
 
   @Column({ type: DataType.STRING(45) })

@@ -5,9 +5,9 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { AdmissionApplication, User, Student, Parent, StudentGuardian, Enrolment, SchoolClass, Section, AcademicYear, Branch } from "../../models";
+import { AdmissionApplication, User, Student, SchoolClass } from "../../models";
 import { sequelize } from "../../database/sequelize";
-import { createUser } from "../users/users.service";
+import { admitStudent, deactivateStudent, cleanPhone, cleanGender } from "../students/students.service";
 import { createCrudController } from "../../utils/crudFactory";
 import { ADMISSION_STATUS } from "../../utils/constants";
 import { writeAuditLog } from "../../services/audit.service";
@@ -33,6 +33,10 @@ const validateApplication = async (body: any, req: any, current?: AdmissionAppli
     ? String(body.email).trim().toLowerCase()
     : (current?.email ?? null);
   const applicationNo = String(body.applicationNo ?? current?.applicationNo ?? "").trim();
+  const phone = body.phone !== undefined ? cleanPhone(body.phone, "Phone") : (current?.phone ?? null);
+  const guardianName = body.guardianName !== undefined ? (String(body.guardianName ?? "").trim() || null) : (current?.guardianName ?? null);
+  const guardianRelation = body.guardianRelation !== undefined ? (String(body.guardianRelation ?? "").trim() || null) : (current?.guardianRelation ?? null);
+  if (guardianName && guardianName.length > 120) throw ApiError.badRequest("Guardian name is too long");
 
   if (!studentName) throw ApiError.badRequest("studentName is required");
   if (!appliedClass) throw ApiError.badRequest("appliedClass is required");
@@ -41,7 +45,8 @@ const validateApplication = async (body: any, req: any, current?: AdmissionAppli
   if (!Number.isFinite(dateApplied.getTime())) throw ApiError.badRequest("Invalid dateApplied");
   if (dateApplied > new Date()) throw ApiError.badRequest("dateApplied cannot be in the future");
   if (dateOfBirth && (!Number.isFinite(dateOfBirth.getTime()) || dateOfBirth > new Date())) throw ApiError.badRequest("Invalid dateOfBirth");
-  if (gender && !["male", "female", "other"].includes(gender)) throw ApiError.badRequest("Invalid gender");
+  if (gender) cleanGender(gender);
+  if (studentName.length > 120) throw ApiError.badRequest("Student name is too long (max 120)");
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw ApiError.badRequest("Invalid email");
   if (dateOfBirth && dateApplied < dateOfBirth) throw ApiError.badRequest("dateApplied cannot be before dateOfBirth");
 
@@ -53,6 +58,22 @@ const validateApplication = async (body: any, req: any, current?: AdmissionAppli
     },
   });
   if (duplicate) throw ApiError.conflict("Application number already exists in this branch");
+
+  // The same child applying twice (typo-proof: name ignoring case/spaces + date of birth) is almost
+  // always a double entry; point the clerk at the existing application instead.
+  if (dateOfBirth && !["rejected", "withdrawn"].includes(status)) {
+    const sameDay = new Date(dateOfBirth.toISOString().slice(0, 10));
+    const twin = await AdmissionApplication.findOne({
+      where: {
+        studentName: { [Op.iLike]: studentName.replace(/\s+/g, " ") },
+        dateOfBirth: { [Op.gte]: sameDay, [Op.lt]: new Date(sameDay.getTime() + 86400000) },
+        status: { [Op.notIn]: ["rejected", "withdrawn"] },
+        ...branchWhere(req),
+        ...(current?.id ? { id: { [Op.ne]: current.id } } : {}),
+      },
+    });
+    if (twin) throw ApiError.conflict(`${studentName} (same date of birth) already has application ${twin.applicationNo} (${twin.status})`);
+  }
 
   if (body.reviewedBy !== undefined && body.reviewedBy !== null) {
     const reviewer = await User.findOne({ where: { id: Number(body.reviewedBy), ...branchWhere(req) } });
@@ -68,6 +89,9 @@ const validateApplication = async (body: any, req: any, current?: AdmissionAppli
   body.dateOfBirth = dateOfBirth;
   body.gender = gender;
   body.email = email;
+  body.phone = phone;
+  body.guardianName = guardianName;
+  body.guardianRelation = guardianRelation;
   body.branchId = branchId;
   return body;
 };
@@ -82,6 +106,14 @@ const base = createCrudController<AdmissionApplication>({
     if (!current) throw ApiError.notFound("Application not found");
     delete body.applicationNo;
     delete body.branchId;
+    delete body.studentId;
+    if (["admitted", "rejected", "withdrawn"].includes(current.status)) {
+      // Once decided, the record (and for admitted ones the student created from it) is frozen.
+      if (Object.keys(body).some((k) => k !== "remarks")) {
+        throw ApiError.badRequest(`This application is ${current.status} and can no longer be edited (only remarks can be added).`);
+      }
+      return { remarks: body.remarks };
+    }
     // Force clients to use PATCH /:id/status (which enforces the state machine).
     // PUT must not allow free-form status transitions.
     delete body.status;
@@ -91,9 +123,11 @@ const base = createCrudController<AdmissionApplication>({
 
 router.get("/", authorize("admissions:read"), (req, res, next) => base.list(req, res).catch(next));
 router.get("/stats/pipeline", authorize("admissions:read"), asyncHandler(async (req, res) => {
-  const apps = await AdmissionApplication.findAll({ where: branchWhere(req), attributes: ["status"] });
+  const rows = (await AdmissionApplication.findAll({
+    where: branchWhere(req), attributes: ["status", [sequelize.fn("COUNT", sequelize.col("id")), "n"]], group: ["status"], raw: true,
+  })) as unknown as Array<{ status: string; n: string }>;
   const pipeline: Record<string, number> = {};
-  for (const a of apps) pipeline[a.status] = (pipeline[a.status] || 0) + 1;
+  for (const r of rows) pipeline[r.status] = Number(r.n);
   ApiResponse.success(res, 200, "Admission pipeline", pipeline);
 }));
 
@@ -111,6 +145,13 @@ router.post("/", authorize("admissions:create"), asyncHandler(async (req, res) =
   const rand = Math.floor(Math.random() * 0xffff).toString(36).toUpperCase();
   const applicationNo = String(body.applicationNo || `APP-${Date.now()}-${rand}`).trim();
   delete body.applicationNo;
+  // A new application cannot start as admitted/rejected/withdrawn: those are decisions made later
+  // ("admitted" only through Register student, which creates the student).
+  const startStatus = String(body.status ?? "enquiry").trim().toLowerCase();
+  if (!["enquiry", "applied", "shortlisted", "waitlisted"].includes(startStatus)) {
+    throw ApiError.badRequest("A new application must start as enquiry, applied, shortlisted or waitlisted");
+  }
+  delete body.studentId;
   const payload = await validateApplication({ ...body, applicationNo }, req);
   const app = await AdmissionApplication.create({ ...payload, applicationNo });
   await writeAuditLog({
@@ -131,10 +172,12 @@ router.post("/", authorize("admissions:create"), asyncHandler(async (req, res) =
 // `registerStudent` in the frontend creates the student first, then PATCHes status to 'admitted'.
 // Previously this transition was forbidden, orphaning the student record.
 const ADMISSION_TRANSITIONS: Record<string, string[]> = {
-  enquiry: ["applied", "admitted", "rejected", "waitlisted"],
-  applied: ["shortlisted", "admitted", "rejected", "waitlisted"],
-  shortlisted: ["admitted", "rejected", "waitlisted"],
-  waitlisted: ["admitted", "rejected"],
+  // "admitted" is deliberately absent: it only happens through POST /:id/register, which creates the
+  // student in the same transaction (marking it admitted by hand left applications with no student).
+  enquiry: ["applied", "rejected", "waitlisted"],
+  applied: ["shortlisted", "rejected", "waitlisted"],
+  shortlisted: ["rejected", "waitlisted"],
+  waitlisted: ["rejected"],
   admitted: ["withdrawn"],   // admitted is (almost) terminal — only allow explicit withdrawal
   rejected: [],              // terminal
   withdrawn: [],             // terminal
@@ -145,6 +188,7 @@ router.patch("/:id/status", authorize("admissions:update"), asyncHandler(async (
   if (!ADMISSION_STATUS.includes(status as any)) throw ApiError.badRequest("Invalid status");
   const app = await AdmissionApplication.findOne({ where: { id: Number(req.params.id), ...branchWhere(req) } });
   if (!app) throw ApiError.notFound("Application not found");
+  if (status === "admitted") throw ApiError.badRequest("Use “Register student” to admit an applicant. It creates the student record and their logins.");
   const oldStatus = app.status;  // capture BEFORE update so audit log shows the actual old value
   const allowed = ADMISSION_TRANSITIONS[app.status] ?? [];
   if (!allowed.includes(status)) {
@@ -154,7 +198,14 @@ router.patch("/:id/status", authorize("admissions:update"), asyncHandler(async (
   if (!reviewer || !reviewer.isActive || (req.user?.branchId != null && Number(reviewer.branchId) !== Number(req.user.branchId))) {
     throw ApiError.forbidden("Reviewer is not active or does not belong to your branch");
   }
-  await app.update({ status, reviewedBy: reviewer.id });
+  await sequelize.transaction(async (t) => {
+    await app.update({ status, reviewedBy: reviewer.id }, { transaction: t });
+    // Withdrawing an admitted applicant withdraws the student created from it (seat, login, hostel bed).
+    if (oldStatus === "admitted" && status === "withdrawn" && app.studentId) {
+      const student = await Student.findByPk(app.studentId, { transaction: t });
+      if (student && student.isActive) await deactivateStudent(student, t);
+    }
+  });
   await writeAuditLog({
     action: "update",
     entity: "admission_application",
@@ -170,201 +221,59 @@ router.patch("/:id/status", authorize("admissions:update"), asyncHandler(async (
 }));
 
 /**
- * Atomic register-student endpoint.
- * Creates a Student from the admission application (reusing the /students POST logic)
- * and transitions the application to 'admitted' in a single request — no more
- * two-step flow where student creation succeeds but the status update fails.
+ * Atomic "Register student": creates the student, enrolment, guardian + logins and marks the
+ * application admitted in ONE transaction. The application row is locked first, so a double click
+ * (or two clerks) can never create two students from one application.
  *
- * Body: { currentClassId?: number, currentSectionId?: number, academicYearId?: number, rollNo?: string }
+ * Body: { currentClassId?, currentSectionId?, academicYearId?, rollNo?, admissionNo? }
+ * Response includes the one-time login details of the accounts that were created.
  */
 router.post(
   "/:id/register",
-  authorize("admissions:update", "students:create"),
+  authorize("admissions:update"),
+  authorize("students:create"),
   asyncHandler(async (req, res) => {
-    const app = await AdmissionApplication.findOne({
-      where: { id: Number(req.params.id), ...branchWhere(req) },
-    });
-    if (!app) throw ApiError.notFound("Application not found");
-    if (app.status === "admitted") throw ApiError.badRequest("Application already admitted");
-    if (app.status === "rejected" || app.status === "withdrawn") {
-      throw ApiError.badRequest(`Cannot register an application that is ${app.status}`);
-    }
-
-    // Build student payload from the application.
-    const [firstName, ...rest] = String(app.studentName || "").trim().split(/\s+/);
-    const lastName = rest.join(" ");
     const branchId = Number(req.user?.branchId);
     if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
 
-    let currentClassId = req.body.currentClassId != null && req.body.currentClassId !== "" ? Number(req.body.currentClassId) : null;
-    if (!currentClassId && app.appliedClass) {
-      // No class picked: fall back to the class the family applied for (matched by name in this branch).
-      const applied = await SchoolClass.findOne({ where: { branchId, isActive: true, name: { [Op.like]: String(app.appliedClass).trim() } as any } });
-      if (applied) currentClassId = Number(applied.id);
-    }
-    const currentSectionId = req.body.currentSectionId != null && req.body.currentSectionId !== "" ? Number(req.body.currentSectionId) : null;
-    const academicYearId = req.body.academicYearId != null && req.body.academicYearId !== "" ? Number(req.body.academicYearId) : null;
-    const rollNo = req.body.rollNo != null ? String(req.body.rollNo) : null;
-
-    // Validate class/section ownership + capacity (mirror of /students POST validation).
-    if (currentClassId) {
-      const schoolClass = await SchoolClass.findOne({ where: { id: currentClassId, branchId } });
-      if (!schoolClass || !schoolClass.isActive) {
-        throw ApiError.badRequest("Selected class is inactive or outside your branch");
-      }
-      if (currentSectionId) {
-        const section = await Section.findOne({ where: { id: currentSectionId, branchId } });
-        if (!section || !section.isActive || Number(section.classId) !== Number(currentClassId)) {
-          throw ApiError.badRequest("Selected section does not belong to the selected class");
-        }
-        // Capacity check (excluding this student, who doesn't exist yet — so no exclusion needed).
-        if (Number(section.capacity) > 0) {
-          const activeCount = await Enrolment.count({
-            where: { sectionId: currentSectionId, branchId, status: "active" },
-          });
-          if (activeCount >= Number(section.capacity)) {
-            throw ApiError.badRequest(`Section ${section.name} is full (capacity ${section.capacity})`);
-          }
-        }
-      }
-    }
-
-    const result = await sequelize.transaction(async (transaction) => {
-      const admissionNo = String(app.applicationNo || `STU-${Date.now()}`).trim();
-      const dup = await Student.findOne({ where: { admissionNo }, transaction });
-      if (dup) throw ApiError.conflict("Admission number already exists");
-
-      const slug = admissionNo.toLowerCase().replace(/[^a-z0-9]+/g, "") || "student";
-      const unique = `${Date.now().toString(36)}${Math.floor(Math.random() * 10000)}`;
-      // The application's email/phone are the family's contact details, so they go to the guardian's
-      // (parent portal) login. The child's own login gets a unique placeholder address.
-      const email = `${slug}.${unique}@school.local`;
-      let username = `${slug}_${unique}`.slice(0, 60);
-      if (await User.findOne({ where: { username }, transaction })) username = `${username}${Math.floor(Math.random() * 1000)}`;
-
-      // Create Student User account.
-      const user = await createUser({
-        username, email,
-        firstName: firstName || app.studentName,
-        lastName,
-        role: "student",
-        gender: app.gender,
-        phone: app.phone,
-        branchId,
-        sendWelcome: false,
-        generatedBy: req.user!.id,
-        transaction,
+    const result = await sequelize.transaction(async (t) => {
+      const app = await AdmissionApplication.findOne({
+        where: { id: Number(req.params.id), ...branchWhere(req) }, transaction: t, lock: t.LOCK.UPDATE,
       });
+      if (!app) throw ApiError.notFound("Application not found");
+      if (app.status === "admitted") throw ApiError.badRequest("This application has already been admitted");
+      if (app.status === "rejected" || app.status === "withdrawn") throw ApiError.badRequest(`Cannot register an application that is ${app.status}`);
 
-      // Create the Student record.
-      const student = await Student.create({
-        admissionNo,
-        firstName: firstName || app.studentName,
-        lastName,
-        dateOfBirth: app.dateOfBirth,
-        gender: app.gender,
-        guardianName: `${firstName || app.studentName}'s Guardian`,
-        guardianPhone: app.phone,
-        address: app.address,
-        email: app.email,
-        admissionDate: new Date().toLocaleDateString("en-CA"),
-        admissionStatus: "admitted",
-        isActive: true,
-        currentClassId: currentClassId ?? null,
-        currentSectionId: currentSectionId ?? null,
-        branchId,
-        userId: user.id,
-      }, { transaction });
+      const [firstName, ...rest] = String(app.studentName || "").trim().split(/\s+/);
 
-      // Guardian: reuse an existing parent (same phone/email in this branch, e.g. siblings) or
-      // create one. createUser() already creates the Parent profile, so we only fill it in.
-      if (app.phone || app.email) {
-        const guardianEmail = app.email ? String(app.email).trim().toLowerCase() : "";
-        let parent: Parent | null = null;
-        if (app.phone) parent = await Parent.findOne({ where: { phone: app.phone, branchId }, transaction });
-        if (!parent && guardianEmail) {
-          const existingUser = await User.findOne({ where: { email: guardianEmail }, transaction });
-          if (existingUser) parent = await Parent.findOne({ where: { userId: existingUser.id }, transaction });
-        }
-        if (!parent) {
-          const emailFree = guardianEmail && !(await User.findOne({ where: { email: guardianEmail }, transaction }));
-          const parentEmail = emailFree ? guardianEmail : `${slug}.parent.${unique}@school.local`;
-          let parentUsername = `${(guardianEmail ? guardianEmail.split("@")[0] : `parent_${slug}`).replace(/[^a-z0-9_.-]/g, "").slice(0, 40) || "parent"}`;
-          if (parentUsername.length < 3 || (await User.findOne({ where: { username: parentUsername }, transaction }))) {
-            parentUsername = `${parentUsername.padEnd(3, "p")}_${unique}`;
-          }
-          const guardianName = `${firstName || app.studentName}'s Guardian`;
-          const parentUser = await createUser({
-            username: parentUsername, email: parentEmail,
-            firstName: guardianName, lastName: "", role: "parent",
-            phone: app.phone, branchId, sendWelcome: !!emailFree,
-            generatedBy: req.user!.id, transaction,
-          });
-          parent = await Parent.findOne({ where: { userId: parentUser.id }, transaction });
-          if (!parent) throw ApiError.internal("Parent profile was not created");
-          await parent.update({ fullName: guardianName, phone: app.phone, email: emailFree ? parentEmail : null, relation: "guardian" } as any, { transaction });
-        }
-        await StudentGuardian.findOrCreate({
-          where: { studentId: student.id, parentId: parent.id },
-          defaults: { studentId: student.id, parentId: parent.id, relation: "guardian", isPrimary: true } as any,
-          transaction,
-        });
+      // No class picked: fall back to the class the family applied for (exact name, any letter case).
+      let classId: unknown = req.body.currentClassId;
+      if ((classId === undefined || classId === null || classId === "") && app.appliedClass) {
+        const wanted = String(app.appliedClass).trim().toLowerCase();
+        const classes = await SchoolClass.findAll({ where: { branchId, isActive: true }, attributes: ["id", "name"], transaction: t });
+        const match = classes.find((c) => String(c.name).trim().toLowerCase() === wanted);
+        if (match) classId = match.id;
       }
 
-      // Create Enrolment (if class provided) — mirror of /students POST logic.
-      if (currentClassId) {
-        let resolvedAcademicYearId = academicYearId;
-        if (!resolvedAcademicYearId) {
-          // Auto-bootstrap / pick the current academic year for this branch.
-          const year = await AcademicYear.findOne({
-            where: { branchId, isCurrent: true },
-            transaction,
-          }) || await AcademicYear.findOne({
-            where: { branchId },
-            order: [["createdAt", "DESC"]],
-            transaction,
-          });
-          if (!year) {
-            // Boot-strap a default academic year so the enrolment is not orphaned.
-            const newYear = await AcademicYear.create({
-              name: `AY-${new Date().getFullYear()}`,
-              startDate: new Date(new Date().getFullYear(), 0, 1),
-              endDate: new Date(new Date().getFullYear(), 11, 31),
-              isCurrent: true,
-              branchId,
-            }, { transaction });
-            resolvedAcademicYearId = newYear.id;
-          } else {
-            resolvedAcademicYearId = year.id;
-          }
-        }
-        await Enrolment.create({
-          studentId: student.id,
-          academicYearId: resolvedAcademicYearId,
-          classId: currentClassId,
-          sectionId: currentSectionId ?? null,
-          rollNo,
-          enrolledOn: new Date(),
-          status: "active",
-          branchId,
-        }, { transaction });
-      }
+      const { student, credentials } = await admitStudent(
+        {
+          firstName, lastName: rest.join(" "), admissionNo: req.body.admissionNo, gender: app.gender, dateOfBirth: app.dateOfBirth,
+          address: app.address, phone: app.phone,
+          currentClassId: classId, currentSectionId: req.body.currentSectionId, academicYearId: req.body.academicYearId, rollNo: req.body.rollNo,
+          guardians: app.phone || app.email || app.guardianName
+            ? [{ fullName: app.guardianName || `${app.studentName}'s guardian`, relation: app.guardianRelation || "guardian", phone: app.phone, email: app.email, isPrimary: true }]
+            : [],
+        },
+        { branchId, userId: req.user!.id },
+        t
+      );
 
-      // Transition the application to 'admitted'.
-      await app.update({ status: "admitted", reviewedBy: req.user!.id }, { transaction });
-
+      await app.update({ status: "admitted", reviewedBy: req.user!.id, studentId: student.id }, { transaction: t });
       await writeAuditLog({
-        action: "create",
-        entity: "student",
-        entityId: student.id,
-        userId: req.user!.id,
-        role: req.user!.role,
-        branchId,
-        ip: req.ip,
-        newData: { admissionNo, fromApplication: app.id, classId: currentClassId, sectionId: currentSectionId },
+        action: "create", entity: "student", entityId: student.id, userId: req.user!.id, role: req.user!.role, branchId, ip: req.ip,
+        newData: { admissionNo: student.admissionNo, fromApplication: app.id, classId: student.currentClassId, sectionId: student.currentSectionId },
       });
-
-      return { student, application: app };
+      return { student, application: app, credentials };
     });
 
     ApiResponse.success(res, 201, "Student registered from application", result);

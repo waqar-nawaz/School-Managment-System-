@@ -5,6 +5,8 @@ let pass=0,fail=0;const fails=[];
 const ok=(c,m)=>{ if(c){pass++;console.log('  ok  ',m)}else{fail++;fails.push(m);console.log('  FAIL',m)} };
 const call=async(m,p,t,b)=>{const r=await fetch(B+p,{method:m,headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:b?JSON.stringify(b):undefined});return {s:r.status,j:await r.json().catch(()=>null),d:null}};
 const get=async(p,t)=>{const r=await call('GET',p,t);return r.j?.data};
+// Rooms create their beds automatically (B1..Bn from the capacity), so tests look them up.
+const bedNo=async(roomId,no,t)=>(await get('/beds?filter[roomId]='+roomId+'&limit=100',t)).find(b=>b.bedNo===no);
 const msg=r=>r.j?.message||'';
 const login=async(i,p)=>(await fetch(B+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({identifier:i,password:p})}).then(r=>r.json())).data;
 const L=await login('superadmin','Admin@123'); const A=L.accessToken; const BR=L.user.branchId;
@@ -18,10 +20,10 @@ const hg=(await call('POST','/hostels',A,{name:'Girls Block',gender:'girls'})).j
 const dupH=await call('POST','/hostels',A,{name:'boys block',gender:'boys'}); ok(dupH.s===409,'duplicate hostel name blocked '+dupH.s);
 const r1=(await call('POST','/rooms',A,{hostelId:hb.id,roomNo:'101',capacity:2})).j.data;
 ok((await get('/rooms/'+r1.id,A)).status==='available','empty room is "available" (was "full")');
-const b1=(await call('POST','/beds',A,{roomId:r1.id,bedNo:'B1'})).j.data;
-const b2=(await call('POST','/beds',A,{roomId:r1.id,bedNo:'B2'})).j.data;
+ok((await get('/beds?filter[roomId]='+r1.id+'&limit=50',A)).length===2,'room capacity 2 auto-creates 2 beds');
+const b1=await bedNo(r1.id,'B1',A), b2=await bedNo(r1.id,'B2',A);
 const over=await call('POST','/beds',A,{roomId:r1.id,bedNo:'B3'}); ok(over.s===400,'bed beyond room capacity blocked '+over.s);
-const rg=(await call('POST','/rooms',A,{hostelId:hg.id,roomNo:'G1',capacity:1})).j.data; const gb=(await call('POST','/beds',A,{roomId:rg.id,bedNo:'G-B1'})).j.data;
+const rg=(await call('POST','/rooms',A,{hostelId:hg.id,roomNo:'G1',capacity:1})).j.data; const gb=await bedNo(rg.id,'B1',A);
 const occTamper=await call('POST','/beds',A,{roomId:r1.id,bedNo:'X',status:'occupied'}); ok(occTamper.s===400,'cannot create a bed as occupied '+occTamper.s);
 
 console.log('# allocate (UI payload: hostelId + roomId + bedId, string ids)');
@@ -102,7 +104,7 @@ const wa=await call('POST','/hostel-allocations',W,{studentId:boy3.id,bedId:b1.i
 console.log('# hostel fee on invoices');
 const stuI=await mk('Faraz','male'); const stuNo=await mk('Noor','male');
 const hI=(await call('POST','/hostels',A,{name:'Invoice Block',gender:'boys'})).j.data; const rI=(await call('POST','/rooms',A,{hostelId:hI.id,roomNo:'I1',capacity:3})).j.data;
-const bI=(await call('POST','/beds',A,{roomId:rI.id,bedNo:'I-1'})).j.data; const bI2=(await call('POST','/beds',A,{roomId:rI.id,bedNo:'I-2'})).j.data; const bI3=(await call('POST','/beds',A,{roomId:rI.id,bedNo:'I-3'})).j.data;
+const bI=await bedNo(rI.id,'B1',A), bI3=await bedNo(rI.id,'B3',A);
 const stuZero=await mk('Zero','male');
 await call('POST','/hostel-allocations',A,{studentId:stuI.id,bedId:bI.id,checkIn:'2026-09-01',monthlyFee:2000});
 await call('POST','/hostel-allocations',A,{studentId:stuZero.id,bedId:bI3.id,checkIn:'2026-09-01',monthlyFee:0});
