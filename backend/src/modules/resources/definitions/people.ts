@@ -13,13 +13,14 @@ import { ResourceDefinition, getExisting } from "./shared";
 const validateStaffProfile = async (body: any, req: Request, model: any, label: string) => {
   const existing = await getExisting(model, req);
   const branchId = Number(req.user?.branchId);
-  const expectedRole = label === "teacher" ? "teacher" : "staff";
+  const EMPLOYEE_ROLES = new Set(["teacher", "staff", "hostel_warden", "accountant", "librarian", "transport_manager", "receptionist", "principal"]);
   if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
   const userId = Number(body.userId ?? existing?.userId);
   if (!Number.isInteger(userId) || userId <= 0) throw ApiError.badRequest("userId is required");
   const user = await User.findByPk(userId);
   if (!user || !user.isActive) throw ApiError.badRequest(`Selected ${label} user is not active`);
-  if (String(user.role) !== expectedRole) throw ApiError.badRequest(`Selected user must have the ${expectedRole} role`);
+  // Allow any employee role to be linked to a Staff profile (not just "staff").
+  if (!EMPLOYEE_ROLES.has(String(user.role))) throw ApiError.badRequest(`Selected user must have an employee role (teacher, staff, hostel_warden, accountant, librarian, transport_manager, receptionist, or principal)`);
   if (Number(user.branchId) !== branchId) throw ApiError.badRequest(`Selected ${label} user does not belong to your branch`);
   // A teacher/staff login gets its profile automatically when the user is created, so a second
   // profile for the same login is always a mistake (it broke lookups by userId).

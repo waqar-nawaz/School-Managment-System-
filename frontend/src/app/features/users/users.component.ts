@@ -303,7 +303,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
 })
 export class UsersComponent implements OnInit {
   /** Starts with the built-in roles, then replaced by the real list from the server (includes custom roles + staff). */
-  ROLES: string[] = [...USER_ROLES, 'staff'];
+  ROLES: string[] = [...USER_ROLES];
   users: User[] = [];
   total = 0;
   page = 1;

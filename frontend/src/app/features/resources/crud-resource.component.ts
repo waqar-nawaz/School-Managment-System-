@@ -59,7 +59,7 @@ const NO_EXPORT = new Set([
       <div class="page-header">
         <div>
           <h1 class="page-title">{{ config.label }}</h1>
-          <p class="page-subtitle">Manage {{ config.label.toLowerCase() }}</p>
+          <p class="page-subtitle">{{ config.subtitle ?? ('Manage ' + config.label.toLowerCase()) }}</p>
         </div>
         <div class="page-actions">
           @if (resourceKey === 'media' && canUpload) {
@@ -91,7 +91,7 @@ const NO_EXPORT = new Set([
             <input
               type="text"
               class="form-control"
-              placeholder="Search {{ config.label.toLowerCase() }}…"
+              [placeholder]="searchPlaceholder"
               [value]="searchText"
               (input)="onSearch($event)" />
             @if (searchText) {
@@ -102,82 +102,109 @@ const NO_EXPORT = new Set([
           </div>
         </div>
 
-        <div class="table-responsive">
-          <table class="table">
-            <thead>
-              <tr>
-                @for (col of config.columns; track col.key) {
-                  <th>{{ col.label }}</th>
-                }
-                @if (hasActions) {
-                  <th style="width:70px;text-align:right">Actions</th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (row of rows; track trackRow($index, row)) {
+        @if (resourceKey === 'beds') {
+          <div class="table-responsive">
+            <table class="table">
+              <thead>
                 <tr>
-                  @for (col of config.columns; track col.key) {
-                    <td>
-                      @switch (col.type) {
-                        @case ('date') { <span>{{ row[col.key] | date: 'MMM d, y' }}</span> }
-                        @case ('datetime') { <span>{{ row[col.key] | date: 'MMM d, y, h:mm a' }}</span> }
-                        @case ('money') { <span>{{ money(row[col.key]) }}</span> }
-                        @case ('bool') { @if (row[col.key]) {<span class="badge badge-success">Yes</span>} @else {<span class="badge">No</span>} }
-                        @case ('badge') { <span class="badge badge-{{ badgeClass(col, row[col.key]) }}">{{ display(col, row[col.key]) }}</span> }
-                        @default { <span>{{ cell(col, row) }}</span> }
+                  <th>Location</th>
+                  <th>Bed</th>
+                  <th>Status</th>
+                  @if (hasActions) { <th style="width:70px;text-align:right">Actions</th> }
+                </tr>
+              </thead>
+              <tbody>
+                @for (group of bedGroups; track group.key) {
+                  @for (row of group.rows; track row.id) {
+                    <tr>
+                      @if ($first) {
+                        <td [attr.rowspan]="group.rows.length" style="vertical-align:top">
+                          <strong>{{ group.hostelName }}</strong>
+                          <div class="form-hint" style="margin:3px 0 0">Room {{ group.roomNo }}</div>
+                          <small class="form-hint">{{ group.occupied }}/{{ group.total }} occupied</small>
+                        </td>
                       }
-                    </td>
-                  }
-                  @if (hasActions) {
-                    <td style="text-align:right;white-space:nowrap">
-                      <div class="row-menu">
-                        <button
-                          type="button"
-                          class="icon-btn"
-                          (click)="toggleRowMenu(row.id, $event)"
-                          aria-label="Actions">
-                          <app-icon name="more-vertical" [size]="18" />
-                        </button>
-                        @if (openMenuId === row.id) {
-                          <div
-                            class="row-menu-list"
-                            [style.top.px]="menuPos?.top"
-                            [style.right.px]="menuPos?.right"
-                            (click)="$event.stopPropagation()">
-                            @if (rowEditable) {
-                              <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null">
-                                <app-icon name="edit" [size]="15" /> Edit
-                              </button>
-                            }
-                            @if (resourceKey === 'students') {
-                              @if (row['isActive'] && canDelete) {
-                                <button type="button" class="row-menu-item danger" (click)="askStatusChange(row, 'deactivate'); openMenuId = null">
-                                  <app-icon name="x" [size]="15" /> Deactivate
-                                </button>
-                              }
-                              @if (!row['isActive'] && canEdit) {
-                                <button type="button" class="row-menu-item" (click)="askStatusChange(row, 'activate'); openMenuId = null">
-                                  <app-icon name="check" [size]="15" /> Activate
-                                </button>
-                              }
-                            } @else if (rowDeletable) {
-                              <button type="button" class="row-menu-item danger" (click)="askDelete(row); openMenuId = null">
-                                <app-icon name="trash" [size]="15" /> Delete
-                              </button>
+                      <td><strong>Bed {{ row.bedNo }}</strong></td>
+                      <td><span class="badge badge-{{ bedStatusClass(row.status) }}">{{ bedStatusLabel(row.status) }}</span></td>
+                      @if (hasActions) {
+                        <td style="text-align:right;white-space:nowrap">
+                          <div class="row-menu">
+                            <button type="button" class="icon-btn" (click)="toggleRowMenu(row.id, $event)" aria-label="Actions">
+                              <app-icon name="more-vertical" [size]="18" />
+                            </button>
+                            @if (openMenuId === row.id) {
+                              <div class="row-menu-list" [style.top.px]="menuPos?.top" [style.right.px]="menuPos?.right" (click)="$event.stopPropagation()">
+                                @if (rowEditable) {
+                                  <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit</button>
+                                }
+                                @if (rowDeletable) {
+                                  <button type="button" class="row-menu-item danger" (click)="askDelete(row); openMenuId = null"><app-icon name="trash" [size]="15" /> Delete</button>
+                                }
+                              </div>
                             }
                           </div>
-                        }
-                      </div>
-                    </td>
+                        </td>
+                      }
+                    </tr>
                   }
+                } @empty {
+                  <tr><td [attr.colspan]="hasActions ? 4 : 3" class="empty-cell">No beds found.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <div class="table-responsive">
+            <table class="table">
+              <thead>
+                <tr>
+                  @for (col of config.columns; track col.key) { <th>{{ col.label }}</th> }
+                  @if (hasActions) { <th style="width:70px;text-align:right">Actions</th> }
                 </tr>
-              } @empty {
-                <tr><td [attr.colspan]="config.columns.length + (hasActions ? 1 : 0)" class="empty-cell">No records found.</td></tr>
-              }
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                @for (row of rows; track trackRow($index, row)) {
+                  <tr>
+                    @for (col of config.columns; track col.key) {
+                      <td>
+                        @switch (col.type) {
+                          @case ('date') { <span>{{ row[col.key] | date: 'MMM d, y' }}</span> }
+                          @case ('datetime') { <span>{{ row[col.key] | date: 'MMM d, y, h:mm a' }}</span> }
+                          @case ('money') { <span>{{ money(row[col.key]) }}</span> }
+                          @case ('bool') { @if (row[col.key]) {<span class="badge badge-success">Yes</span>} @else {<span class="badge">No</span>} }
+                          @case ('badge') { <span class="badge badge-{{ badgeClass(col, row[col.key]) }}">{{ display(col, row[col.key]) }}</span> }
+                          @default { <span>{{ cell(col, row) }}</span> }
+                        }
+                      </td>
+                    }
+                    @if (hasActions) {
+                      <td style="text-align:right;white-space:nowrap">
+                        <div class="row-menu">
+                          <button type="button" class="icon-btn" (click)="toggleRowMenu(row.id, $event)" aria-label="Actions"><app-icon name="more-vertical" [size]="18" /></button>
+                          @if (openMenuId === row.id) {
+                            <div class="row-menu-list" [style.top.px]="menuPos?.top" [style.right.px]="menuPos?.right" (click)="$event.stopPropagation()">
+                              @if (rowEditable) {
+                                <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit</button>
+                              }
+                              @if (resourceKey === 'students') {
+                                @if (row['isActive'] && canDelete) { <button type="button" class="row-menu-item danger" (click)="askStatusChange(row, 'deactivate'); openMenuId = null"><app-icon name="x" [size]="15" /> Deactivate</button> }
+                                @if (!row['isActive'] && canEdit) { <button type="button" class="row-menu-item" (click)="askStatusChange(row, 'activate'); openMenuId = null"><app-icon name="check" [size]="15" /> Activate</button> }
+                              } @else if (rowDeletable) {
+                                <button type="button" class="row-menu-item danger" (click)="askDelete(row); openMenuId = null"><app-icon name="trash" [size]="15" /> Delete</button>
+                              }
+                            </div>
+                          }
+                        </div>
+                      </td>
+                    }
+                  </tr>
+                } @empty {
+                  <tr><td [attr.colspan]="config.columns.length + (hasActions ? 1 : 0)" class="empty-cell">No records found.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
 
         <div class="pagination-bar">
           <select class="form-control form-control-sm pagination-size" [ngModel]="pageSize" (ngModelChange)="setPageSize($event)">
@@ -211,7 +238,9 @@ const NO_EXPORT = new Set([
             <div class="form-grid">
               @for (field of formFields; track field.key) {
                 <div class="form-group" [class.form-group-full]="field.type === 'textarea'">
-                  <label>{{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</label>
+                  @if (field.type !== 'bool') {
+                    <label>{{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</label>
+                  }
                   @switch (field.type) {
                     @case ('textarea') {
                       <textarea class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]"></textarea>
@@ -220,7 +249,7 @@ const NO_EXPORT = new Set([
                       <input type="number" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
                     }
                     @case ('bool') {
-                      <input type="checkbox" class="form-checkbox" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
+                      <label class="form-check"><input type="checkbox" class="form-checkbox" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" /> {{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</label>
                     }
                     @case ('select') {
                       <select class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]">
@@ -383,6 +412,28 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.canEdit = this.perms.hasPermission(`${base}:update`);
     this.canDelete = this.perms.hasPermission(`${base}:delete`);
     this.canExport = this.perms.hasPermission('reports:export') && !NO_EXPORT.has(this.resourceKey);
+  }
+
+  get searchPlaceholder(): string {
+    if (this.resourceKey === 'rooms') return 'Search room, floor or hostel…';
+    if (this.resourceKey === 'beds') return 'Search bed, room or hostel…';
+    return `Search ${this.config?.label.toLowerCase() ?? 'records'}…`;
+  }
+
+  get bedGroups(): Array<{ key: string; hostelName: string; roomNo: string; occupied: number; total: number; rows: Row[] }> {
+    const groups = new Map<string, { key: string; hostelName: string; roomNo: string; occupied: number; total: number; rows: Row[] }>();
+    for (const row of this.rows) {
+      const key = `${row.hostelId ?? row.hostelName ?? ''}:${row.roomId ?? row.roomNo ?? ''}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = { key, hostelName: row.hostelName || 'Unknown hostel', roomNo: row.roomNo || '—', occupied: 0, total: 0, rows: [] };
+        groups.set(key, group);
+      }
+      group.rows.push(row);
+      group.total += 1;
+      if (row.status === 'occupied') group.occupied += 1;
+    }
+    return Array.from(groups.values());
   }
 
   onSearch(event: Event): void {
@@ -861,6 +912,20 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
       // X-Export-Truncated here. The backend sets it, but the frontend blob download
       // doesn't give access to headers. A future improvement would be to use a
       // full HttpResponse and check headers.
+  }
+
+  bedStatusClass(value: unknown): string {
+    const status = String(value ?? '');
+    if (status === 'available') return 'success';
+    if (status === 'occupied') return 'info';
+    if (status === 'maintenance') return 'warning';
+    return '';
+  }
+
+  bedStatusLabel(value: unknown): string {
+    const status = String(value ?? '');
+    if (!status) return '—';
+    return status.replace(/_/g, ' ');
   }
 
   badgeClass(col: { badgeMap?: Record<string, string> }, value: unknown): string {

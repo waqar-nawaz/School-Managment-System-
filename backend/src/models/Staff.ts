@@ -29,6 +29,11 @@ export class Staff extends BaseModel {
   @Column({ type: DataType.STRING(120) })
   designation!: string;
 
+  /** What kind of employee: teacher, staff, hostel_warden, accountant, librarian, etc. */
+  @Index
+  @Column({ type: DataType.STRING(30), defaultValue: "staff" })
+  employeeType!: string;
+
   @Column({ type: DataType.DATE })
   hireDate!: Date;
 
