@@ -220,6 +220,7 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
       p.bedCount = beds.length;
       p.availableBeds = beds.filter((b: any) => b.status === "available").length;
       p.occupiedBeds = beds.filter((b: any) => b.status === "occupied").length;
+      p.bedOccupancy = `${p.occupiedBeds} occupied / ${p.bedCount} beds`;
       // p.status is the stored (synced) status, so "maintenance" is preserved.
       p.roomLabel = `Room ${p.roomNo} — ${p.hostelName}`;
       return p;
