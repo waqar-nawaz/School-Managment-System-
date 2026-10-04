@@ -195,6 +195,14 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
   },
   {
     path: "rooms", model: Room, searchable: ["roomNo", "floor"], permission: "rooms",
+    defaultSort: [["roomNo", "ASC"]],
+    toSearchWhere: (q) => ({
+      [Op.or]: [
+        { roomNo: { [Op.iLike]: `%${q}%` } },
+        { floor: { [Op.iLike]: `%${q}%` } },
+        { "$hostel.name$": { [Op.iLike]: `%${q}%` } },
+      ],
+    }),
     includes: [{ association: "hostel", attributes: ["id", "name"] }, { association: "beds", attributes: ["id", "status"] }],
     beforeCreate: validateRoom, beforeUpdate: validateRoom,
     afterCreate: async (row) => {
@@ -228,6 +236,14 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
   },
   {
     path: "beds", model: Bed, searchable: ["bedNo"], permission: "beds",
+    defaultSort: [["roomId", "ASC"], ["bedNo", "ASC"]],
+    toSearchWhere: (q) => ({
+      [Op.or]: [
+        { bedNo: { [Op.iLike]: `%${q}%` } },
+        { "$room.roomNo$": { [Op.iLike]: `%${q}%` } },
+        { "$room.hostel.name$": { [Op.iLike]: `%${q}%` } },
+      ],
+    }),
     includes: [{
       association: "room",
       attributes: ["id", "roomNo", "hostelId", "status"],
