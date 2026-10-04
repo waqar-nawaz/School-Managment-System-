@@ -59,7 +59,7 @@ const NO_EXPORT = new Set([
       <div class="page-header">
         <div>
           <h1 class="page-title">{{ config.label }}</h1>
-          <p class="page-subtitle">Manage {{ config.label.toLowerCase() }}</p>
+          <p class="page-subtitle">{{ config.subtitle ?? ('Manage ' + config.label.toLowerCase()) }}</p>
         </div>
         <div class="page-actions">
           @if (resourceKey === 'media' && canUpload) {
