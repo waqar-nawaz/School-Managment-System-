@@ -61,15 +61,16 @@ type Dialog = null | 'allocate' | 'transfer' | 'checkout';
       <div class="table-responsive">
         <table class="table">
           <thead>
-            <tr><th>Student</th><th>Hostel</th><th>Room</th><th>Bed</th><th>Check-in</th><th>Check-out</th><th>Monthly fee</th><th>Status</th><th style="width:190px;text-align:right">Actions</th></tr>
+            <tr><th>Student</th><th>Location</th><th>Check-in</th><th>Check-out</th><th>Monthly fee</th><th>Status</th><th style="width:190px;text-align:right">Actions</th></tr>
           </thead>
           <tbody>
             @for (a of rows; track a.id) {
               <tr>
                 <td>{{ a.studentName || ('#' + a.studentId) }}<div class="form-hint" style="margin:0">{{ a.admissionNo }}</div></td>
-                <td>{{ a.hostelName }}</td>
-                <td>{{ a.roomNo }}</td>
-                <td>{{ a.bedNo }}</td>
+                <td>
+                  <strong>{{ a.hostelName }}</strong>
+                  <div class="form-hint" style="margin:0">Room {{ a.roomNo }} · Bed {{ a.bedNo }}</div>
+                </td>
                 <td>{{ a.checkIn | date: 'MMM d, y' }}</td>
                 <td>{{ a.checkOut ? (a.checkOut | date: 'MMM d, y') : '—' }}</td>
                 <td>{{ money(a.monthlyFee) }}</td>
@@ -85,7 +86,7 @@ type Dialog = null | 'allocate' | 'transfer' | 'checkout';
                 </td>
               </tr>
             } @empty {
-              <tr><td colspan="9" class="empty-cell">{{ loading ? 'Loading…' : (search || statusFilter || hostelFilter ? 'No allocations match your filters.' : 'No allocations yet. Click “Allocate bed” to place a student.') }}</td></tr>
+              <tr><td colspan="7" class="empty-cell">{{ loading ? 'Loading…' : (search || statusFilter || hostelFilter ? 'No allocations match your filters.' : 'No allocations yet. Click “Allocate bed” to place a student.') }}</td></tr>
             }
           </tbody>
         </table>
