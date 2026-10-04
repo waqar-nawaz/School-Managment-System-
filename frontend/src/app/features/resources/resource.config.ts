@@ -178,13 +178,18 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   staff: {
     key: 'staff', label: 'Staff', api: '/staff',
-    columns: [nameCol('staffNo', 'Staff No'), nameCol('firstName', 'First Name'), nameCol('lastName', 'Last Name'), nameCol('department'), nameCol('designation'), boolCol('isActive', 'Active')],
+    columns: [nameCol('staffNo', 'Staff No'), nameCol('firstName', 'First Name'), nameCol('lastName', 'Last Name'), { key: 'employeeType', label: 'Type', type: 'badge', badgeMap: BADGE_COMMON }, nameCol('department'), nameCol('designation'), boolCol('isActive', 'Active')],
     fields: fields([
+      refField('userId', 'User', '/users', 'username', 'email', true),
       { key: 'staffNo', label: 'Staff number', required: true },
       { key: 'firstName', label: 'First name', required: true },
+      { key: 'lastName', label: 'Last name' },
+      { key: 'employeeType', label: 'Employee type', type: 'select', options: STATUS_OPTIONS(['teacher', 'staff', 'hostel_warden', 'accountant', 'librarian', 'transport_manager', 'receptionist', 'principal']) },
       { key: 'department', label: 'Department' },
       { key: 'designation', label: 'Designation' },
       { key: 'phone', label: 'Phone' }, { key: 'email', label: 'Email' },
+      { key: 'hireDate', label: 'Hire date', type: 'dateonly' },
+      { key: 'isActive', label: 'Active', type: 'bool' },
     ]),
   },
   exams: {
