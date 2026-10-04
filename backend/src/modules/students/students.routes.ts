@@ -10,6 +10,8 @@ import { Student, Parent, StudentGuardian, Enrolment, AcademicYear, User, Attend
 import { createCrudController } from "../../utils/crudFactory";
 import { createUser } from "../users/users.service";
 import { exportCsv } from "../../utils/csvExport";
+import { syncBed } from "../hostel/hostel.service";
+import { HostelAllocation } from "../../models";
 import { assertStudentAccess, ownStudentIds, canSeeMedical } from "../../utils/access";
 import { RefreshToken } from "../../models";
 import { invalidateActiveCache } from "../../middlewares/authenticate";
@@ -75,6 +77,12 @@ async function deactivateStudent(student: Student, transaction?: any) {
   await Enrolment.update({ status: "withdrawn" }, { where: { studentId: student.id, status: "active" }, transaction });
   await student.update({ isActive: false }, { transaction });
   await setStudentLogin(student, false, transaction);
+  // A student who leaves school must not keep a hostel bed forever: close the stay and free the bed.
+  const stays = await HostelAllocation.findAll({ where: { studentId: student.id, status: "active" }, transaction });
+  for (const stay of stays) {
+    await stay.update({ status: "checked_out", checkOut: new Date() }, { transaction });
+    await syncBed(Number(stay.bedId), transaction);
+  }
 }
 
 router.get("/", authorize("students:read"), asyncHandler(async (req, res) => {

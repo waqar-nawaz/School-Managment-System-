@@ -5,7 +5,8 @@ import { authorize } from "../../middlewares/authorize";
 import asyncHandler from "../../utils/asyncHandler";
 import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
-import { Invoice, FeeType, Student, Enrolment, Term, Payment, Receipt, StudentGuardian, Parent } from "../../models";
+import { Invoice, FeeType, Student, Enrolment, Term, Payment, Receipt, StudentGuardian, Parent, HostelAllocation } from "../../models";
+import { sequelize } from "../../database/sequelize";
 import { createCrudController } from "../../utils/crudFactory";
 import { studentScope } from "../../utils/access";
 import { writeAuditLog } from "../../services/audit.service";
@@ -23,6 +24,78 @@ const base = createCrudController<Invoice>({
   // Parents see their children's invoices, students their own. Staff are only branch-scoped.
   scopeWhere: (req) => studentScope(req, "studentId"),
 });
+
+
+type LineItem = { name: string; amount: number; ref?: string };
+
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const currentMonth = (): string => new Date().toISOString().slice(0, 7);
+const monthLabel = (m: string): string =>
+  new Date(`${m}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+const hostelRef = (m: string): string => `hostel:${m}`;
+
+/** Invoices (not cancelled) of these students that already carry the given line-item ref. */
+async function invoicesWithRef(studentIds: number[], ref: string): Promise<Map<number, string>> {
+  const found = new Map<number, string>();
+  if (!studentIds.length) return found;
+  const rows = await Invoice.findAll({
+    where: { studentId: studentIds, status: { [Op.ne]: "cancelled" } },
+    attributes: ["studentId", "invoiceNo", "lineItems"],
+  });
+  for (const inv of rows) {
+    const items = Array.isArray(inv.lineItems) ? (inv.lineItems as Array<{ ref?: string }>) : [];
+    if (items.some((it) => it?.ref === ref)) found.set(Number(inv.studentId), inv.invoiceNo);
+  }
+  return found;
+}
+
+const hostelLineName = (a: any, month: string): string =>
+  `Hostel fee (${monthLabel(month)}) — ${a.hostel?.name ?? "Hostel"}, room ${a.room?.roomNo ?? "?"}, bed ${a.bed?.bedNo ?? "?"}`;
+
+async function newInvoice(opts: {
+  student: Student; lineItems: LineItem[]; discount: number; tax: number; dueInDays: number;
+  termId?: number | null; callerBranch?: number | null; transaction?: any;
+}): Promise<Invoice> {
+  const gross = opts.lineItems.reduce((a, b) => a + Number(b.amount), 0);
+  if (opts.discount > gross) throw ApiError.badRequest("discount cannot exceed gross amount");
+  const totalDue = Math.round((gross - opts.discount + opts.tax) * 100) / 100;
+  const enrolment = await Enrolment.findOne({ where: { studentId: opts.student.id, status: "active" }, order: [["createdAt", "DESC"]], transaction: opts.transaction });
+  return Invoice.create({
+    invoiceNo: `INV-${uuidv4().slice(0, 8).toUpperCase()}`,
+    studentId: opts.student.id,
+    enrolmentId: enrolment?.id,
+    termId: opts.termId ?? null,
+    branchId: opts.student.branchId ?? opts.callerBranch ?? undefined,
+    amount: gross, discount: opts.discount, tax: opts.tax, totalDue,
+    dueDate: new Date(Date.now() + opts.dueInDays * 86400000),
+    issueDate: new Date(),
+    status: "pending",
+    lineItems: opts.lineItems,
+  } as any, { transaction: opts.transaction });
+}
+
+// Everything the "Generate invoice" dialog needs in one call (fee types, terms, hostel bed of the student).
+router.get("/generate-options", authorize("invoices:create"), asyncHandler(async (req, res) => {
+  const branch = req.user!.branchId;
+  const branchWhere = branch != null ? { branchId: branch } : {};
+  const [feeTypes, terms] = await Promise.all([
+    FeeType.findAll({ where: { isActive: true, ...branchWhere }, attributes: ["id", "name", "amount", "category"], order: [["name", "ASC"]] }),
+    Term.findAll({ where: { ...branchWhere }, attributes: ["id", "name", "isCurrent", "academicYearId"], order: [["isCurrent", "DESC"], ["id", "DESC"]] }),
+  ]);
+  let hostel: Record<string, unknown> | null = null;
+  const studentId = Number(req.query.studentId);
+  if (Number.isInteger(studentId) && studentId > 0) {
+    const student = await Student.findByPk(studentId, { attributes: ["id", "branchId"] });
+    if (!student || (branch != null && Number(student.branchId) !== Number(branch))) throw ApiError.notFound("Student not found");
+    const a: any = await HostelAllocation.findOne({ where: { studentId, status: "active" }, include: ["hostel", "room", "bed"] });
+    if (a) {
+      const month = currentMonth();
+      const already = (await invoicesWithRef([studentId], hostelRef(month))).get(studentId) ?? null;
+      hostel = { allocationId: Number(a.id), monthlyFee: Number(a.monthlyFee), label: hostelLineName(a, month), month, alreadyInvoiced: already };
+    }
+  }
+  ApiResponse.success(res, 200, "Invoice options", { feeTypes, terms, hostel });
+}));
 
 router.get("/", authorize("invoices:read"), (req, res, next) => base.list(req, res).catch(next));
 router.get("/:id", authorize("invoices:read"), (req, res, next) => base.getOne(req, res).catch(next));
@@ -73,11 +146,12 @@ router.put("/:id", authorize("invoices:update"), asyncHandler(async (req, res, n
 
 /** Generate an invoice for a student from fee types (standard or custom line items). */
 router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, res) => {
-  const { studentId, termId, academicYearId, feeTypeIds, customItems, discount = 0, tax = 0, dueInDays = 14 } =
+  const { studentId, termId, feeTypeIds, customItems, discount = 0, tax = 0, dueInDays = 14, includeHostelFee = false, hostelMonth } =
     req.body as {
       studentId: number;
       termId?: number;
-      academicYearId?: number;
+      includeHostelFee?: boolean;
+      hostelMonth?: string;
       feeTypeIds?: number[];
       customItems?: Array<{ name: string; amount: number }>;
       discount?: number;
@@ -104,7 +178,23 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
     throw ApiError.forbidden("Student does not belong to your branch");
   }
 
-  const lineItems: Array<{ name: string; amount: number }> = [];
+  if (termId) {
+    const term = await Term.findOne({ where: { id: termId, ...(callerBranch != null ? { branchId: callerBranch } : {}) } });
+    if (!term) throw ApiError.badRequest("Selected term was not found in your branch");
+  }
+
+  const lineItems: LineItem[] = [];
+  if (includeHostelFee) {
+    const month = String(hostelMonth || currentMonth());
+    if (!MONTH_RE.test(month)) throw ApiError.badRequest("hostelMonth must look like 2026-10");
+    const alloc: any = await HostelAllocation.findOne({ where: { studentId, status: "active" }, include: ["hostel", "room", "bed"] });
+    if (!alloc) throw ApiError.badRequest("This student has no active hostel bed, so there is no hostel fee to add");
+    const fee = Number(alloc.monthlyFee);
+    if (!(fee > 0)) throw ApiError.badRequest("The monthly hostel fee on this student's allocation is 0. Set it on the allocation first");
+    const dup = (await invoicesWithRef([Number(studentId)], hostelRef(month))).get(Number(studentId));
+    if (dup) throw ApiError.conflict(`The hostel fee for ${monthLabel(month)} is already on invoice ${dup}`);
+    lineItems.push({ name: hostelLineName(alloc, month), amount: fee, ref: hostelRef(month) });
+  }
   if (Array.isArray(feeTypeIds) && feeTypeIds.length) {
     // Scope fee types to caller's branch to prevent attaching other branches' fees.
     const feeWhere: any = { id: { [Op.in]: feeTypeIds }, isActive: true };
@@ -122,34 +212,74 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
       lineItems.push({ name: String(ci.name), amount: amt });
     }
   }
-  if (!lineItems.length) throw ApiError.badRequest("Provide feeTypeIds or customItems");
+  if (!lineItems.length) throw ApiError.badRequest("Choose at least one fee, the hostel fee, or add a custom item");
 
-  const gross = lineItems.reduce((a, b) => a + Number(b.amount), 0);
-  if (numDiscount > gross) throw ApiError.badRequest("discount cannot exceed gross amount");
-  const totalDue = Math.round((gross - numDiscount + numTax) * 100) / 100;
+  const invoice = await newInvoice({ student, lineItems, discount: numDiscount, tax: numTax, dueInDays: numDueInDays, termId: termId ?? null, callerBranch });
 
-  let enrolmentId: number | undefined;
-  const enrolment = await Enrolment.findOne({ where: { studentId, status: "active" }, order: [["createdAt", "DESC"]] });
-  if (enrolment) enrolmentId = enrolment.id;
+  await writeAuditLog({ action: "create", entity: "invoice", entityId: invoice.id, userId: req.user!.id, role: req.user!.role, ip: req.ip, newData: { invoiceNo: invoice.invoiceNo, totalDue: invoice.totalDue } });
+  ApiResponse.success(res, 201, "Invoice generated", invoice);
+}));
 
-  const invoice = await Invoice.create({
-    invoiceNo: `INV-${uuidv4().slice(0, 8).toUpperCase()}`,
-    studentId,
-    enrolmentId,
-    termId: termId ?? null,
-    branchId: student.branchId ?? callerBranch ?? undefined,
-    amount: gross,
-    discount: numDiscount,
-    tax: numTax,
-    totalDue,
-    dueDate: new Date(Date.now() + numDueInDays * 86400000),
-    issueDate: new Date(),
-    status: "pending",
-    lineItems,
+
+/**
+ * Bill the monthly hostel fee of every resident for one month. Safe to run twice: a student who
+ * already has that month's hostel line on a (non-cancelled) invoice is skipped.
+ */
+router.post("/generate-hostel", authorize("invoices:create"), asyncHandler(async (req, res) => {
+  const month = String(req.body?.month || currentMonth());
+  if (!MONTH_RE.test(month)) throw ApiError.badRequest("month must look like 2026-10");
+  const dueInDays = req.body?.dueInDays === undefined ? 14 : Number(req.body.dueInDays);
+  if (!Number.isInteger(dueInDays) || dueInDays < 0 || dueInDays > 365) throw ApiError.badRequest("dueInDays must be an integer between 0 and 365");
+  const termId = req.body?.termId ? Number(req.body.termId) : null;
+  const callerBranch = req.user!.branchId;
+  if (termId && !(await Term.findOne({ where: { id: termId, ...(callerBranch != null ? { branchId: callerBranch } : {}) } }))) {
+    throw ApiError.badRequest("Selected term was not found in your branch");
+  }
+
+  const [y, m] = month.split("-").map(Number);
+  const start = new Date(Date.UTC(y, m - 1, 1));
+  const end = new Date(Date.UTC(y, m, 0, 23, 59, 59));
+  // Anyone who had a bed at some point during that month.
+  const allocs: any[] = await HostelAllocation.findAll({
+    where: {
+      checkIn: { [Op.lte]: end },
+      [Op.or]: [{ checkOut: null }, { checkOut: { [Op.gte]: start } }],
+      ...(callerBranch != null ? { branchId: callerBranch } : {}),
+    },
+    include: ["student", "hostel", "room", "bed"],
+    order: [["checkIn", "ASC"]],
+  });
+  // A transferred student has two overlapping rows: bill once, using the latest bed.
+  const latest = new Map<number, any>();
+  for (const a of allocs) latest.set(Number(a.studentId), a);
+
+  const ids = Array.from(latest.keys());
+  const existing = await invoicesWithRef(ids, hostelRef(month));
+  const created: Array<{ invoiceNo: string; student: string; amount: number }> = [];
+  let skippedExisting = 0, skippedNoFee = 0, skippedInactive = 0;
+
+  await sequelize.transaction(async (t) => {
+    for (const a of latest.values()) {
+      const student: Student = a.student;
+      if (!student || student.isActive === false) { skippedInactive++; continue; }
+      if (existing.has(Number(a.studentId))) { skippedExisting++; continue; }
+      const fee = Number(a.monthlyFee);
+      if (!(fee > 0)) { skippedNoFee++; continue; }
+      const inv = await newInvoice({
+        student, lineItems: [{ name: hostelLineName(a, month), amount: fee, ref: hostelRef(month) }],
+        discount: 0, tax: 0, dueInDays, termId, callerBranch, transaction: t,
+      });
+      created.push({ invoiceNo: inv.invoiceNo, student: `${student.firstName} ${student.lastName}`.trim(), amount: fee });
+    }
   });
 
-  await writeAuditLog({ action: "create", entity: "invoice", entityId: invoice.id, userId: req.user!.id, role: req.user!.role, ip: req.ip, newData: { invoiceNo: invoice.invoiceNo, totalDue } });
-  ApiResponse.success(res, 201, "Invoice generated", invoice);
+  await writeAuditLog({
+    action: "create", entity: "invoice", entityId: 0, userId: req.user!.id, role: req.user!.role, ip: req.ip,
+    newData: { event: "hostel_month_billed", month, created: created.length, skippedExisting, skippedNoFee },
+  } as any);
+  ApiResponse.success(res, 201, created.length ? `${created.length} hostel invoice(s) created for ${monthLabel(month)}` : `Nothing to bill for ${monthLabel(month)}`, {
+    month, created: created.length, skippedExisting, skippedNoFee, skippedInactive, total: created.reduce((a, b) => a + b.amount, 0), invoices: created.slice(0, 100),
+  });
 }));
 
 /** Mark an invoice status (overdue, cancelled, paid). Enforces a state machine. */
