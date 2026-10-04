@@ -349,7 +349,7 @@ export class UsersComponent implements OnInit {
     this.api.get<Array<{ name: string }>>('/roles', { limit: 100 }).subscribe({
       next: (r) => {
         const names = (r?.data ?? []).map((x) => x.name).filter((n) => n && n !== 'super_admin' || this.isSuperAdmin);
-        if (names.length) this.ROLES = names;
+        if (names.length) this.ROLES = Array.from(new Set([...names, 'staff']));
       },
       error: () => {},
     });
