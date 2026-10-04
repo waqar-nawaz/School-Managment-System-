@@ -77,6 +77,12 @@ export const routes: Routes = [
           import('./features/reports/reports.component').then((m) => m.ReportsComponent),
       },
       {
+        path: 'students',
+        data: { permission: 'students:read' },
+        canActivate: [PermissionGuard],
+        loadComponent: () => import('./features/students/students.component').then((m) => m.StudentsComponent),
+      },
+      {
         path: 'hostel-allocations',
         data: { permission: 'hostel-allocations:read' },
         canActivate: [PermissionGuard],

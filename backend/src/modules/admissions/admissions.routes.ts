@@ -145,6 +145,13 @@ router.post("/", authorize("admissions:create"), asyncHandler(async (req, res) =
   const rand = Math.floor(Math.random() * 0xffff).toString(36).toUpperCase();
   const applicationNo = String(body.applicationNo || `APP-${Date.now()}-${rand}`).trim();
   delete body.applicationNo;
+  // A new application cannot start as admitted/rejected/withdrawn: those are decisions made later
+  // ("admitted" only through Register student, which creates the student).
+  const startStatus = String(body.status ?? "enquiry").trim().toLowerCase();
+  if (!["enquiry", "applied", "shortlisted", "waitlisted"].includes(startStatus)) {
+    throw ApiError.badRequest("A new application must start as enquiry, applied, shortlisted or waitlisted");
+  }
+  delete body.studentId;
   const payload = await validateApplication({ ...body, applicationNo }, req);
   const app = await AdmissionApplication.create({ ...payload, applicationNo });
   await writeAuditLog({
