@@ -125,7 +125,7 @@ const NO_EXPORT = new Set([
                         </td>
                       }
                       <td><strong>Bed {{ row.bedNo }}</strong></td>
-                      <td><span class="badge badge-{{ badgeClass({key:'status',label:'Status',type:'badge',badgeMap: {available:'success',occupied:'info',maintenance:'warning'}}, row.status) }}">{{ display({key:'status',label:'Status',type:'badge'}, row.status) }}</span></td>
+                      <td><span class="badge badge-{{ bedStatusClass(row.status) }}">{{ bedStatusLabel(row.status) }}</span></td>
                       @if (hasActions) {
                         <td style="text-align:right;white-space:nowrap">
                           <div class="row-menu">
@@ -910,6 +910,20 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
       // X-Export-Truncated here. The backend sets it, but the frontend blob download
       // doesn't give access to headers. A future improvement would be to use a
       // full HttpResponse and check headers.
+  }
+
+  bedStatusClass(value: unknown): string {
+    const status = String(value ?? '');
+    if (status === 'available') return 'success';
+    if (status === 'occupied') return 'info';
+    if (status === 'maintenance') return 'warning';
+    return '';
+  }
+
+  bedStatusLabel(value: unknown): string {
+    const status = String(value ?? '');
+    if (!status) return '—';
+    return status.replace(/_/g, ' ');
   }
 
   badgeClass(col: { badgeMap?: Record<string, string> }, value: unknown): string {
