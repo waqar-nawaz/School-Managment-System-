@@ -1,4 +1,4 @@
-// Hostel flow smoke test against a RUNNING API on a FRESH database (creates students/hostels).
+// Hostel + hostel-billing smoke test against a RUNNING API on a FRESH database.
 //   npm run dev   ->   npm run smoke:hostel      (API_BASE overrides http://localhost:3000/api)
 const B=process.env.API_BASE||'http://localhost:3000/api';
 let pass=0,fail=0;const fails=[];
@@ -98,5 +98,30 @@ const wl=await call('GET','/hostel-allocations?limit=5',W); ok(wl.s===200,'warde
 const wd=await call('DELETE','/hostel-allocations/'+oldRow.id,W); ok(wd.s===403,'warden cannot delete allocations '+wd.s);
 const wa=await call('POST','/hostel-allocations',W,{studentId:boy3.id,bedId:b1.id}); ok(wa.s===201,'warden can allocate '+wa.s+' '+msg(wa));
 // parent sees only own child's allocation
-const kid=await get('/students/'+boy3.id+'/guardians',A);
+
+console.log('# hostel fee on invoices');
+const stuI=await mk('Faraz','male'); const stuNo=await mk('Noor','male');
+const hI=(await call('POST','/hostels',A,{name:'Invoice Block',gender:'boys'})).j.data; const rI=(await call('POST','/rooms',A,{hostelId:hI.id,roomNo:'I1',capacity:3})).j.data;
+const bI=(await call('POST','/beds',A,{roomId:rI.id,bedNo:'I-1'})).j.data; const bI2=(await call('POST','/beds',A,{roomId:rI.id,bedNo:'I-2'})).j.data; const bI3=(await call('POST','/beds',A,{roomId:rI.id,bedNo:'I-3'})).j.data;
+const stuZero=await mk('Zero','male');
+await call('POST','/hostel-allocations',A,{studentId:stuI.id,bedId:bI.id,checkIn:'2026-09-01',monthlyFee:2000});
+await call('POST','/hostel-allocations',A,{studentId:stuZero.id,bedId:bI3.id,checkIn:'2026-09-01',monthlyFee:0});
+const noBed=await call('POST','/invoices/generate',A,{studentId:stuNo.id,includeHostelFee:true}); ok(noBed.s===400,'hostel fee refused when student has no bed: '+msg(noBed));
+const zero=await call('POST','/invoices/generate',A,{studentId:stuZero.id,includeHostelFee:true}); ok(zero.s===400,'hostel fee refused when monthly fee is 0: '+msg(zero));
+const opt=await call('GET','/invoices/generate-options?studentId='+stuI.id,A); ok(opt.s===200&&opt.j.data.hostel&&opt.j.data.hostel.monthlyFee===2000&&Array.isArray(opt.j.data.feeTypes)&&opt.j.data.feeTypes.length>0&&Array.isArray(opt.j.data.terms),'generate-options returns fee types, terms, hostel bed');
+const termId=opt.j.data.terms[0]?.id;
+const badTerm=await call('POST','/invoices/generate',A,{studentId:stuI.id,termId:99999,customItems:[{name:'x',amount:5}]}); ok(badTerm.s===400,'unknown term rejected '+badTerm.s);
+const gi=await call('POST','/invoices/generate',A,{studentId:stuI.id,termId,includeHostelFee:true,hostelMonth:'2026-10',customItems:[{name:'Mess',amount:500}]}); ok(gi.s===201&&Number(gi.j.data.totalDue)===2500&&gi.j.data.lineItems.some(l=>l.ref==='hostel:2026-10'),'invoice with hostel + custom item = 2500 '+gi.s+' '+msg(gi));
+const gi2=await call('POST','/invoices/generate',A,{studentId:stuI.id,includeHostelFee:true,hostelMonth:'2026-10'}); ok(gi2.s===409,'same month cannot be billed twice: '+msg(gi2));
+const only=await call('POST','/invoices/generate',A,{studentId:stuNo.id,customItems:[{name:'Admission',amount:100}]}); ok(only.s===201,'custom-items-only invoice works '+only.s+' '+msg(only));
+const bulk1=await call('POST','/invoices/generate-hostel',A,{month:'2026-10'}); ok(bulk1.s===201||bulk1.s===200,'bulk hostel billing runs '+bulk1.s+' '+msg(bulk1));
+ok(bulk1.j.data.skippedExisting>=1,'student already billed this month is skipped ('+bulk1.j.data.skippedExisting+')'); ok(bulk1.j.data.skippedNoFee>=1,'zero-fee resident skipped ('+bulk1.j.data.skippedNoFee+')');
+const bulk2=await call('POST','/invoices/generate-hostel',A,{month:'2026-11'}); ok(bulk2.j.data.created>=1&&bulk2.j.data.invoices.every(i=>i.amount>0),'next month bills the residents '+bulk2.j.data.created);
+const bulk3=await call('POST','/invoices/generate-hostel',A,{month:'2026-11'}); ok(bulk3.j.data.created===0&&bulk3.j.data.skippedExisting===bulk2.j.data.created,'running the same month again creates nothing');
+const badM=await call('POST','/invoices/generate-hostel',A,{month:'2026-13'}); ok(badM.s===400||badM.s===422,'bad month rejected');
+const longGone=await call('POST','/invoices/generate-hostel',A,{month:'2020-01'}); ok(longGone.j.data.created===0,'month before anyone lived there bills nothing');
+const stuGone=stuI.id; const gone=await call('DELETE','/students/'+stuGone,A); ok(gone.s<300,'student leaves school');
+const goneAl=(await get('/hostel-allocations?filter[studentId]='+stuGone+'&limit=5',A)); ok(goneAl.every(a=>a.status!=='active')&&(await get('/beds/'+bI.id,A)).status==='available','leaving school closes the hostel stay and frees the bed');
+const bulk4=await call('POST','/invoices/generate-hostel',A,{month:'2026-12'}); ok(!bulk4.j.data.invoices.some(i=>i.student.includes('Faraz')),'former student is not billed');
+
 console.log(`\n${pass} passed, ${fail} failed`); if(fail) console.log('FAILED:\n - '+fails.join('\n - '));

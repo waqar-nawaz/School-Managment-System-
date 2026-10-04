@@ -5,6 +5,7 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { currencyCode, formatMoney } from '../../core/utils/currency';
+import { Subject, debounceTime } from 'rxjs';
 import { PermissionService } from '../../core/services/permission.service';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
@@ -20,6 +21,16 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
 @Component({
   selector: 'app-invoices',
   standalone: true,
+  styles: [`
+    .pick-chip { display:flex; justify-content:space-between; align-items:center; gap:.5rem; padding:.5rem .75rem; border:1px solid rgba(127,127,127,.35); border-radius:8px; }
+    .pick-list { border:1px solid rgba(127,127,127,.35); border-radius:8px; margin-top:.35rem; max-height:200px; overflow:auto; }
+    .pick-item { display:flex; gap:.5rem; align-items:baseline; width:100%; padding:.5rem .75rem; border:0; background:transparent; text-align:left; cursor:pointer; color:inherit; }
+    .pick-item:hover { background:rgba(127,127,127,.12); } .pick-item small { opacity:.7; }
+    .fee-list { border:1px solid rgba(127,127,127,.3); border-radius:8px; }
+    .fee-row { display:flex; gap:.6rem; align-items:center; padding:.5rem .75rem; border-bottom:1px solid rgba(127,127,127,.15); cursor:pointer; }
+    .fee-row:last-child { border-bottom:0; } .fee-amt { margin-left:auto; font-variant-numeric:tabular-nums; } .fee-note { font-size:.8rem; opacity:.7; margin-left:.4rem; }
+    .gen-total { display:flex; gap:1rem; flex-wrap:wrap; align-items:center; justify-content:flex-end; padding:.6rem .75rem; margin:.5rem 0; border-radius:8px; background:rgba(127,127,127,.1); }
+  `],
   imports: [FormsModule, CommonModule, IconComponent, ConfirmDialogComponent],
   template: `
     <div class="page-header">
@@ -28,7 +39,10 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
         <p class="page-subtitle">Billing and receipts</p>
       </div>
       <div class="page-actions">
-        @if (canGenerate) { <button class="btn btn-primary" (click)="openGenerate()"><app-icon name="plus" [size]="15" /> Generate invoice</button> }
+        @if (canGenerate) {
+          <button class="btn btn-ghost" (click)="openHostelBilling()"><app-icon name="home" [size]="15" /> Bill hostel fees</button>
+          <button class="btn btn-primary" (click)="openGenerate()"><app-icon name="plus" [size]="15" /> Generate invoice</button>
+        }
       </div>
     </div>
 
@@ -103,43 +117,124 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
               <app-icon name="x" [size]="16" />
             </button>
           </div>
-          <form (ngSubmit)="generate(g)" #g="ngForm">
-            <div class="form-grid">
+          <form (ngSubmit)="generate()" #g="ngForm">
+            <div class="form-group">
+              <label>Student *</label>
+              @if (genStudent) {
+                <div class="pick-chip">
+                  <span>{{ genStudent.firstName }} {{ genStudent.lastName }} <small>{{ genStudent.admissionNo }}</small></span>
+                  <button type="button" class="btn btn-sm btn-ghost" (click)="clearGenStudent()">Change</button>
+                </div>
+              } @else {
+                <input class="form-control" placeholder="Type a name or admission number…" [(ngModel)]="studentQuery" (ngModelChange)="studentInput$.next()" name="sq" autocomplete="off" />
+                @if (studentResults.length) {
+                  <div class="pick-list">
+                    @for (st of studentResults; track st.id) {
+                      <button type="button" class="pick-item" (click)="chooseGenStudent(st)">{{ st.firstName }} {{ st.lastName }} <small>{{ st.admissionNo }}</small></button>
+                    }
+                  </div>
+                } @else if (studentQuery.trim().length >= 2 && !studentLoading) {
+                  <div class="form-hint">No students found.</div>
+                }
+              }
+            </div>
+
+            @if (genStudent) {
               <div class="form-group">
-                <label>Student ID *</label>
-                <input type="number" class="form-control" [(ngModel)]="genForm.studentId" name="studentId" required #studentId="ngModel" />
-                @if (g.submitted && studentId.invalid) {
-                  <div class="field-error">Student ID is required</div>
+                <label>Fees to charge</label>
+                @if (!genOptions) { <div class="form-hint">Loading…</div> }
+                @else {
+                  <div class="fee-list">
+                    @for (f of genOptions.feeTypes; track f.id) {
+                      <label class="fee-row">
+                        <input type="checkbox" [checked]="genForm.feeTypeIds.includes(f.id)" (change)="toggleFee(f.id)" [name]="'fee' + f.id" />
+                        <span>{{ f.name }}</span><span class="fee-amt">{{ money(f.amount) }}</span>
+                      </label>
+                    } @empty { <div class="form-hint">No fee types are set up yet. You can still add custom items below.</div> }
+                    @if (genOptions.hostel) {
+                      <label class="fee-row">
+                        <input type="checkbox" [(ngModel)]="genForm.includeHostelFee" name="includeHostelFee" [disabled]="!!genOptions.hostel.alreadyInvoiced" />
+                        <span>{{ genOptions.hostel.label }}
+                          @if (genOptions.hostel.alreadyInvoiced) { <em class="fee-note">already on invoice {{ genOptions.hostel.alreadyInvoiced }}</em> }
+                          @else if (!(genOptions.hostel.monthlyFee > 0)) { <em class="fee-note">monthly fee is 0 — set it on the allocation</em> }
+                        </span>
+                        <span class="fee-amt">{{ money(genOptions.hostel.monthlyFee) }}</span>
+                      </label>
+                    }
+                  </div>
                 }
               </div>
-              <div class="form-group"><label>Term ID</label><input type="number" class="form-control" [(ngModel)]="genForm.termId" name="termId" /></div>
-              <div class="form-group"><label>Academic year ID</label><input type="number" class="form-control" [(ngModel)]="genForm.academicYearId" name="academicYearId" /></div>
-              <div class="form-group"><label>Discount</label><input type="number" min="0" class="form-control" [(ngModel)]="genForm.discount" name="discount" /></div>
-              <div class="form-group"><label>Tax</label><input type="number" min="0" class="form-control" [(ngModel)]="genForm.tax" name="tax" /></div>
-              <div class="form-group"><label>Due in (days)</label><input type="number" min="0" max="365" class="form-control" [(ngModel)]="genForm.dueInDays" name="dueInDays" /></div>
-            </div>
-            <div class="form-group">
-              <label>Fee types (IDs, comma separated)</label>
-              <input class="form-control" placeholder="e.g. 1,2,3" [(ngModel)]="genForm.feeTypeIdsRaw" name="feeTypeIdsRaw" />
-            </div>
-            <div class="form-group">
-              <label>Custom line items</label>
-              @for (ci of genForm.customItems; track $index) {
-                <div style="display:flex;gap:6px;margin-bottom:6px">
-                  <input class="form-control" placeholder="Item name" [(ngModel)]="ci.name" name="ciName{{$index}}" />
-                  <input type="number" min="0" class="form-control" placeholder="Amount" style="max-width:140px" [(ngModel)]="ci.amount" name="ciAmount{{$index}}" />
-                  <button type="button" class="btn btn-sm btn-ghost-danger" (click)="removeCustomItem($index)"><app-icon name="x" [size]="12" /></button>
+
+              <div class="form-group">
+                <label>Extra items (optional)</label>
+                @for (ci of genForm.customItems; track $index) {
+                  <div style="display:flex;gap:6px;margin-bottom:6px">
+                    <input class="form-control" placeholder="Item name" [(ngModel)]="ci.name" name="ciName{{$index}}" />
+                    <input type="number" min="0" class="form-control" placeholder="Amount" style="max-width:140px" [(ngModel)]="ci.amount" name="ciAmount{{$index}}" />
+                    <button type="button" class="btn btn-sm btn-ghost-danger" (click)="removeCustomItem($index)" aria-label="Remove item"><app-icon name="x" [size]="12" /></button>
+                  </div>
+                }
+                <button type="button" class="btn btn-sm btn-ghost" (click)="addCustomItem()"><app-icon name="plus" [size]="12" /> Add item</button>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Term</label>
+                  <select class="form-control" [(ngModel)]="genForm.termId" name="termId">
+                    <option [ngValue]="null">No term</option>
+                    @for (t of genOptions?.terms ?? []; track t.id) { <option [ngValue]="t.id">{{ t.name }}{{ t.isCurrent ? ' (current)' : '' }}</option> }
+                  </select>
                 </div>
-              }
-              <button type="button" class="btn btn-sm btn-ghost" (click)="addCustomItem()"><app-icon name="plus" [size]="12" /> Add item</button>
-            </div>
+                <div class="form-group"><label>Due in (days)</label><input type="number" min="0" max="365" class="form-control" [(ngModel)]="genForm.dueInDays" name="dueInDays" /></div>
+                <div class="form-group"><label>Discount</label><input type="number" min="0" class="form-control" [(ngModel)]="genForm.discount" name="discount" /></div>
+                <div class="form-group"><label>Tax</label><input type="number" min="0" class="form-control" [(ngModel)]="genForm.tax" name="tax" /></div>
+              </div>
+
+              <div class="gen-total">
+                <span>Subtotal {{ money(genGross()) }}</span>
+                <span>Discount −{{ money(genForm.discount || 0) }}</span>
+                <span>Tax +{{ money(genForm.tax || 0) }}</span>
+                <strong>Total {{ money(genTotal()) }}</strong>
+              </div>
+              @if (genError) { <div class="field-error">{{ genError }}</div> }
+            }
+
             <div class="modal-actions">
               <button type="button" class="btn btn-ghost" (click)="showGenerate = false"><app-icon name="x" [size]="14" /> Cancel</button>
-              <button type="submit" class="btn btn-primary" [disabled]="busy">
-                <app-icon name="check" [size]="14" /> {{ busy ? 'Generating…' : 'Generate' }}
+              <button type="submit" class="btn btn-primary" [disabled]="busy || !genStudent || genGross() <= 0">
+                <app-icon name="check" [size]="14" /> {{ busy ? 'Generating…' : 'Generate invoice' }}
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    }
+
+    @if (hostelDialog) {
+      <div class="modal-backdrop">
+        <div class="modal">
+          <div class="modal-head">
+            <div class="modal-title">Bill monthly hostel fees</div>
+            <button type="button" class="modal-close" (click)="hostelDialog = false" aria-label="Close"><app-icon name="x" [size]="16" /></button>
+          </div>
+          @if (!hostelResult) {
+            <p class="page-subtitle" style="margin:0 0 1rem">Creates one invoice for every student who lived in the hostel that month, using the monthly fee on their allocation. Students already billed for that month are skipped, so it is safe to run twice.</p>
+            <div class="form-grid">
+              <div class="form-group"><label>Month</label><input type="month" class="form-control" [(ngModel)]="hostelMonth" name="hm" /></div>
+              <div class="form-group"><label>Due in (days)</label><input type="number" min="0" max="365" class="form-control" [(ngModel)]="hostelDue" name="hd" /></div>
+            </div>
+            @if (genError) { <div class="field-error">{{ genError }}</div> }
+            <div class="modal-actions">
+              <button class="btn btn-ghost" (click)="hostelDialog = false">Cancel</button>
+              <button class="btn btn-primary" [disabled]="busy || !hostelMonth" (click)="billHostel()">{{ busy ? 'Billing…' : 'Create invoices' }}</button>
+            </div>
+          } @else {
+            <div class="gen-total" style="flex-direction:column;align-items:flex-start;gap:.35rem">
+              <strong>{{ hostelResult.created }} invoice(s) created — {{ money(hostelResult.total) }}</strong>
+              <span>Already billed: {{ hostelResult.skippedExisting }} · No fee set: {{ hostelResult.skippedNoFee }} · Inactive: {{ hostelResult.skippedInactive }}</span>
+            </div>
+            <div class="modal-actions"><button class="btn btn-primary" (click)="hostelDialog = false; hostelResult = null">Done</button></div>
+          }
         </div>
       </div>
     }
@@ -216,7 +311,18 @@ export class InvoicesComponent implements OnInit {
   page = 1;
   pageSize = 25;
   total = 0;
-  genForm: any = { discount: 0, tax: 0, dueInDays: 14, feeTypeIdsRaw: '', customItems: [] };
+  genForm: any = this.blankGen();
+  genStudent: any = null;
+  genOptions: { feeTypes: any[]; terms: any[]; hostel: any } | null = null;
+  genError = '';
+  studentQuery = '';
+  studentResults: any[] = [];
+  studentLoading = false;
+  readonly studentInput$ = new Subject<void>();
+  hostelDialog = false;
+  hostelMonth = new Date().toISOString().slice(0, 7);
+  hostelDue = 14;
+  hostelResult: any = null;
   payForm: any = { amount: 0, method: 'cash', reference: '', paidOn: '', currency: 'PKR', notes: '' };
   confirmDialog: { title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void } | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -233,6 +339,7 @@ export class InvoicesComponent implements OnInit {
   get canChangeStatus(): boolean { return this.perms.hasPermission('invoices:update'); }
 
   ngOnInit(): void {
+    this.studentInput$.pipe(debounceTime(300)).subscribe(() => this.findStudents());
     this.load();
   }
 
@@ -307,44 +414,89 @@ export class InvoicesComponent implements OnInit {
     this.load();
   }
 
+  private blankGen(): any {
+    return { feeTypeIds: [] as number[], includeHostelFee: false, termId: null, discount: 0, tax: 0, dueInDays: 14, customItems: [] as Array<{ name: string; amount: number }> };
+  }
+
   openGenerate(): void {
-    this.genForm = { discount: 0, tax: 0, dueInDays: 14, feeTypeIdsRaw: '', customItems: [] };
+    this.genForm = this.blankGen();
+    this.genStudent = null; this.genOptions = null; this.genError = '';
+    this.studentQuery = ''; this.studentResults = [];
     this.showGenerate = true;
   }
 
-  addCustomItem(): void {
-    this.genForm.customItems.push({ name: '', amount: 0 });
+  findStudents(): void {
+    const q = this.studentQuery.trim();
+    if (q.length < 2) { this.studentResults = []; return; }
+    this.studentLoading = true;
+    this.api.get<any[]>('/students', { q, limit: 15 }).subscribe({
+      next: (r) => { this.studentResults = r?.data ?? []; this.studentLoading = false; },
+      error: () => (this.studentLoading = false),
+    });
   }
 
-  removeCustomItem(index: number): void {
-    this.genForm.customItems.splice(index, 1);
+  chooseGenStudent(st: any): void {
+    this.genStudent = st; this.studentResults = []; this.genOptions = null; this.genError = '';
+    this.api.get<any>('/invoices/generate-options', { studentId: st.id }).subscribe({
+      next: (r) => {
+        this.genOptions = r?.data ?? { feeTypes: [], terms: [], hostel: null };
+        const cur = this.genOptions?.terms.find((t: any) => t.isCurrent);
+        this.genForm.termId = cur ? cur.id : null;
+        // A resident's hostel fee is pre-ticked when it is billable and not yet on an invoice this month.
+        const h = this.genOptions?.hostel;
+        this.genForm.includeHostelFee = !!(h && h.monthlyFee > 0 && !h.alreadyInvoiced);
+      },
+      error: () => {},
+    });
+  }
+  clearGenStudent(): void { this.genStudent = null; this.genOptions = null; this.genForm = this.blankGen(); }
+
+  toggleFee(id: number): void {
+    const list: number[] = this.genForm.feeTypeIds;
+    const i = list.indexOf(id);
+    i >= 0 ? list.splice(i, 1) : list.push(id);
   }
 
-  generate(form: NgForm): void {
-    if (form.invalid) {
-      form.form.markAllAsTouched();
-      return;
-    }
-    this.busy = true;
-    const feeTypeIds = (this.genForm.feeTypeIdsRaw || '').split(',').map((s: string) => Number(s.trim())).filter(Number.isFinite);
-    const customItems = (this.genForm.customItems || [])
-      .filter((ci: any) => ci.name && Number(ci.amount) > 0)
-      .map((ci: any) => ({ name: String(ci.name), amount: Number(ci.amount) }));
-    const body = { ...this.genForm, feeTypeIds, customItems };
-    delete body.feeTypeIdsRaw;
-    delete body.customItems;
+  genGross(): number {
+    const fees = (this.genOptions?.feeTypes ?? []).filter((f: any) => this.genForm.feeTypeIds.includes(f.id)).reduce((a: number, f: any) => a + Number(f.amount), 0);
+    const hostel = this.genForm.includeHostelFee && this.genOptions?.hostel ? Number(this.genOptions.hostel.monthlyFee) : 0;
+    const custom = (this.genForm.customItems as any[]).filter((c) => c.name && Number(c.amount) > 0).reduce((a, c) => a + Number(c.amount), 0);
+    return fees + hostel + custom;
+  }
+  genTotal(): number { return Math.max(0, this.genGross() - Number(this.genForm.discount || 0) + Number(this.genForm.tax || 0)); }
+
+  addCustomItem(): void { this.genForm.customItems.push({ name: '', amount: 0 }); }
+  removeCustomItem(index: number): void { this.genForm.customItems.splice(index, 1); }
+
+  generate(): void {
+    if (!this.genStudent) return;
+    if (Number(this.genForm.discount || 0) > this.genGross()) { this.genError = 'The discount cannot be more than the subtotal.'; return; }
+    this.busy = true; this.genError = '';
+    const customItems = (this.genForm.customItems as any[])
+      .filter((ci) => ci.name && Number(ci.amount) > 0)
+      .map((ci) => ({ name: String(ci.name), amount: Number(ci.amount) }));
+    const body: any = {
+      studentId: this.genStudent.id,
+      feeTypeIds: this.genForm.feeTypeIds,
+      includeHostelFee: !!this.genForm.includeHostelFee,
+      termId: this.genForm.termId || undefined,
+      discount: Number(this.genForm.discount || 0), tax: Number(this.genForm.tax || 0),
+      dueInDays: Number(this.genForm.dueInDays ?? 14),
+    };
     if (customItems.length) body.customItems = customItems;
     this.api.post('/invoices/generate', body).subscribe({
-      next: () => {
-        this.busy = false;
-        this.showGenerate = false;
-        this.toasts.success('Invoice generated');
-        this.load();
-      },
-      error: (err) => {
-        this.busy = false;
-        this.toasts.error(err?.error?.message || 'Could not generate invoice');
-      },
+      next: () => { this.busy = false; this.showGenerate = false; this.toasts.success('Invoice generated'); this.load(); },
+      error: (err) => { this.busy = false; this.genError = err?.error?.message || 'Could not generate invoice'; },
+    });
+  }
+
+  openHostelBilling(): void { this.hostelDialog = true; this.hostelResult = null; this.genError = ''; this.hostelMonth = new Date().toISOString().slice(0, 7); }
+
+  billHostel(): void {
+    this.busy = true; this.genError = '';
+    this.api.post<any>('/invoices/generate-hostel', { month: this.hostelMonth, dueInDays: Number(this.hostelDue ?? 14) }).subscribe({
+      next: (r) => { this.busy = false; this.hostelResult = r?.data; if (r?.data?.created) this.load(); },
+      error: (err) => { this.busy = false; this.genError = err?.error?.message || 'Could not create hostel invoices'; },
     });
   }
 
