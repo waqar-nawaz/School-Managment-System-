@@ -55,6 +55,7 @@ async function ensureColumns(): Promise<void> {
     { table: "parents", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "teachers", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "staff", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
+    { table: "staff", column: "employeeType", def: { type: DataType.STRING(30), defaultValue: "staff" } },
     { table: "academic_years", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "terms", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "subjects", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
