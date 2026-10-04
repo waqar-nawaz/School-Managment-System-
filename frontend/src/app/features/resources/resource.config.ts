@@ -35,6 +35,7 @@ export interface ResourceConfig {
   fields: FieldConfig[];
   canCreate?: boolean;
   createLabel?: string;
+  subtitle?: string;
 }
 
 const GENDER = [
@@ -335,17 +336,20 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   hostels: {
     key: 'hostels', label: 'Hostels', api: '/hostels',
-    columns: [nameCol('name'), nameCol('gender'), { key: 'roomCount', label: 'Rooms', type: 'number' }, { key: 'totalBeds', label: 'Beds', type: 'number' }, { key: 'occupancy', label: 'Occupied / Beds', type: 'text' }, { key: 'availableBeds', label: 'Free', type: 'number' }, nameCol('wardenName', 'Warden'), boolCol('isActive', 'Active')],
+    subtitle: 'Manage hostel buildings. Rooms and beds are managed separately.',
+    columns: [nameCol('name', 'Hostel'), nameCol('gender', 'Type'), { key: 'roomCount', label: 'Rooms', type: 'number' }, { key: 'totalBeds', label: 'Beds', type: 'number' }, { key: 'occupancy', label: 'Occupied / Beds', type: 'text' }, { key: 'availableBeds', label: 'Free', type: 'number' }, nameCol('wardenName', 'Warden'), boolCol('isActive', 'Active')],
     fields: fields([{ key: 'name', label: 'Hostel name', required: true }, { key: 'gender', label: 'Type', type: 'select', options: STATUS_OPTIONS(['boys', 'girls', 'coed']) }, { key: 'wardenName', label: 'Warden' }, { key: 'address', label: 'Address', type: 'textarea' }, { key: 'isActive', label: 'Active', type: 'bool', hint: 'Turn off to retire a hostel (not possible while students live in it).' }]),
   },
   rooms: {
     key: 'rooms', label: 'Rooms', api: '/rooms',
-    columns: [{ key: 'hostelName', label: 'Hostel', type: 'text' }, { key: 'roomLabel', label: 'Room', type: 'text' }, { key: 'capacity', label: 'Bed Capacity', type: 'number' }, { key: 'bedCount', label: 'Beds', type: 'number' }, { key: 'availableBeds', label: 'Available', type: 'number' }, statusCol()],
+    subtitle: 'Each room has a bed capacity. Beds are created automatically from the capacity.',
+    columns: [{ key: 'roomLabel', label: 'Room', type: 'text' }, { key: 'bedOccupancy', label: 'Beds', type: 'text' }, statusCol()],
     fields: fields([refField('hostelId', 'Hostel', '/hostels', 'name', undefined, true), { key: 'roomNo', label: 'Room number', required: true }, { key: 'capacity', label: 'Bed capacity', type: 'number', required: true }, { key: 'floor', label: 'Floor' }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available', 'maintenance']), hint: '“Full” is set automatically when every bed is taken.' }]),
   },
   beds: {
     key: 'beds', label: 'Beds', api: '/beds',
-    columns: [{ key: 'hostelName', label: 'Hostel', type: 'text' }, { key: 'roomNo', label: 'Room', type: 'text' }, nameCol('bedNo', 'Bed'), statusCol()],
+    subtitle: 'Beds belong to a room. Occupied status is controlled automatically by student allocations.',
+    columns: [{ key: 'bedLabel', label: 'Bed / Location', type: 'text' }, statusCol()],
     fields: fields([refField('roomId', 'Room', '/rooms', 'roomLabel', undefined, true), { key: 'bedNo', label: 'Bed number', required: true }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available', 'maintenance']), hint: '“Occupied” is set automatically when a student is allocated.' }]),
   },
   events: {
