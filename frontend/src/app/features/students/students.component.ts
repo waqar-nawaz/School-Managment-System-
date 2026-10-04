@@ -78,7 +78,7 @@ const blankForm = () => ({
                   <button class="btn btn-sm btn-ghost" (click)="openProfile(s.id)"><app-icon name="eye" [size]="14" /> View</button>
                   @if (canUpdate) {
                     <button class="btn btn-sm btn-ghost" (click)="openEdit(s)"><app-icon name="edit" [size]="14" /> Edit</button>
-                    @if (s.isActive) { <button class="btn btn-sm btn-ghost" (click)="askDeactivate(s)" aria-label="Deactivate"><app-icon name="user-x" [size]="14" /></button> }
+                    @if (s.isActive) { <button class="btn btn-sm btn-ghost" (click)="askDeactivate(s)" aria-label="Deactivate"><app-icon name="lock" [size]="14" /></button> }
                     @else { <button class="btn btn-sm btn-primary" (click)="reactivate(s)">Reactivate</button> }
                   }
                 </td>
@@ -232,7 +232,7 @@ const blankForm = () => ({
           </div>
 
           <div class="modal-actions">
-            @if (canResetLogins) { <button class="btn btn-ghost" (click)="confirmReset = true"><app-icon name="key" [size]="14" /> Reset family logins</button> }
+            @if (canResetLogins) { <button class="btn btn-ghost" (click)="confirmReset = true"><app-icon name="lock" [size]="14" /> Reset family logins</button> }
             @if (canUpdate) { <button class="btn btn-ghost" (click)="editFromProfile()"><app-icon name="edit" [size]="14" /> Edit</button> }
             <button class="btn btn-primary" (click)="profile = null">Close</button>
           </div>

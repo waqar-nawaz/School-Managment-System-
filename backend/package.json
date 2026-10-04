@@ -12,7 +12,8 @@
     "lint": "eslint \"src/**/*.ts\"",
     "prepare:prod": "npm run build && npm run seed",
     "smoke": "node scripts/smoke.mjs",
-    "smoke:hostel": "node scripts/smoke-hostel.mjs"
+    "smoke:hostel": "node scripts/smoke-hostel.mjs",
+    "smoke:students": "node scripts/smoke-students.mjs"
   },
   "keywords": [
     "school",
