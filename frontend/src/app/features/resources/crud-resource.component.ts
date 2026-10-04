@@ -249,10 +249,9 @@ const NO_EXPORT = new Set([
                       <input type="number" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
                     }
                     @case ('bool') {
-                      <label class="form-check form-switch">
-                        <input type="checkbox" class="form-checkbox form-switch-input" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
-                        <span class="form-switch-track" aria-hidden="true"><span class="form-switch-thumb"></span></span>
-                        <span class="form-switch-label">{{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</span>
+                      <label class="form-check form-checkbox-row">
+                        <input type="checkbox" class="form-checkbox" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
+                        <span class="form-checkbox-text">{{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</span>
                       </label>
                     }
                     @case ('select') {
