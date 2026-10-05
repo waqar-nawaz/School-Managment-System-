@@ -1,18 +1,11 @@
-import { User, Parent, Teacher, Staff, Role } from "../../models";
+import { User, Parent, Role } from "../../models";
 import { Transaction } from "sequelize";
 import { sequelize } from "../../database/sequelize";
 import { hashPassword, generateRandomPassword } from "../../utils/password.util";
 import { ApiError } from "../../utils/ApiError";
 import { sendWelcomeEmail } from "../../services/email.service";
 import { writeAuditLog } from "../../services/audit.service";
-
-/** Roles that are school employees and should have a Staff profile row.
- *  Every non-student/parent role gets a Staff record so Payroll, department,
- *  designation, and hireDate are tracked uniformly. */
-const EMPLOYEE_ROLES = new Set([
-  "teacher", "staff", "hostel_warden", "accountant", "librarian",
-  "transport_manager", "receptionist", "principal",
-]);
+import { ensureEmployeeProfiles } from "../employees/employees.service";
 
 export interface CreateUserInput {
   username: string;
@@ -47,32 +40,9 @@ export async function ensureRoleProfile(user: User, transaction?: Transaction): 
     }
   }
 
-  // 2. Teacher profile (for teacher role only — keeps Teacher-specific lookups working)
-  if (user.role === "teacher") {
-    const exists = await Teacher.findOne({ where: { userId: user.id }, transaction });
-    if (!exists) {
-      await Teacher.create({
-        staffNo: `TCH-${Date.now().toString(36).toUpperCase()}${user.id}`,
-        firstName: user.firstName, lastName: user.lastName, email: user.email,
-        phone: user.phone ?? null, branchId: user.branchId ?? null, isActive: true, userId: user.id,
-      } as any, { transaction });
-    }
-  }
-
-  // 3. Staff profile (for ALL employee roles — unified employee record)
-  //    This means teachers, wardens, accountants, librarians, etc. ALL get a Staff row
-  //    so Payroll, department, and designation work for everyone.
-  if (EMPLOYEE_ROLES.has(user.role)) {
-    const exists = await Staff.findOne({ where: { userId: user.id }, transaction });
-    if (!exists) {
-      await Staff.create({
-        staffNo: `STF-${Date.now().toString(36).toUpperCase()}${user.id}`,
-        firstName: user.firstName, lastName: user.lastName, email: user.email,
-        phone: user.phone ?? null, branchId: user.branchId ?? null, isActive: true,
-        userId: user.id, employeeType: user.role,
-      } as any, { transaction });
-    }
-  }
+  // 2. Employee profiles: every employee role gets a Staff row (teachers also a Teacher row), kept in
+  //    step with the login (type, name, contact, active). See employees.service.ts.
+  await ensureEmployeeProfiles(user, transaction);
 }
 
 export async function createUser(input: CreateUserInput): Promise<User> {
