@@ -11,10 +11,30 @@ import {
 } from "../../../models";
 import { getPermissionsForRole } from "../../../services/rbac.service";
 import { ResourceDefinition } from "./shared";
+import { findPersonDuplicate } from "../../payroll/payroll.util";
 
 export const HR_RESOURCES: ResourceDefinition[] = [
   {
     path: "payroll", model: PayrollItem, searchable: ["month", "status"], permission: "payroll",
+    includes: [
+      { association: "staff", attributes: ["id", "staffNo", "firstName", "lastName", "designation", "employeeType"] },
+      { association: "teacher", attributes: ["id", "staffNo", "firstName", "lastName"] },
+    ],
+    defaultSort: ["month", "DESC"],
+    decorate: (row: any) => {
+      const p = typeof row.toJSON === "function" ? row.toJSON() : { ...row };
+      const who = p.staff ?? p.teacher;
+      p.payeeName = who ? `${who.firstName ?? ""} ${who.lastName ?? ""}`.trim() : "";
+      p.staffNo = who?.staffNo ?? "";
+      p.designation = p.staff?.designation ?? (p.teacher ? "Teacher" : "");
+      return p;
+    },
+    beforeRemove: async (req) => {
+      const item = await PayrollItem.findByPk(Number(req.params.id));
+      if (!item || (req.user?.branchId != null && Number(item.branchId) !== Number(req.user.branchId))) throw ApiError.notFound("Payroll item not found");
+      if (item.status !== "draft") throw ApiError.badRequest(`Only draft payroll can be deleted (this one is ${item.status}).`);
+      if (await Payslip.count({ where: { payrollItemId: item.id } })) throw ApiError.badRequest("This item already has a payslip.");
+    },
     beforeCreate: async (body, req) => {
       const month = String(body.month ?? "").trim();
       const branchId = req.user?.branchId;
@@ -30,18 +50,19 @@ export const HR_RESOURCES: ResourceDefinition[] = [
         ? await Teacher.findByPk(teacherId as number, { include: [{ model: User, where: branchId != null ? { branchId } : undefined, required: branchId != null }] })
         : await Staff.findByPk(staffId as number, { include: [{ model: User, where: branchId != null ? { branchId } : undefined, required: branchId != null }] });
       if (!payee || !payee.isActive) throw ApiError.badRequest("Selected payroll payee is not active or does not belong to your branch");
-      const duplicate = await PayrollItem.findOne({ where: { ...(branchId != null ? { branchId } : {}), ...(payeeType === "teacher" ? { teacherId } : { staffId }), month } });
-      if (duplicate) throw ApiError.badRequest("Payroll already exists for this payee and month");
+      const duplicate = await findPersonDuplicate(payeeType, (payeeType === "teacher" ? teacherId : staffId) as number, month, branchId);
+      if (duplicate) throw ApiError.conflict("This person already has a payroll item for that month");
       const basicSalary = Number(body.basicSalary);
       const allowances = Number(body.allowances ?? 0);
       const deductions = Number(body.deductions ?? 0);
       if (!Number.isFinite(basicSalary) || basicSalary < 0 || !Number.isFinite(allowances) || allowances < 0 || !Number.isFinite(deductions) || deductions < 0) {
         throw ApiError.badRequest("Salary amounts must be valid non-negative numbers");
       }
+      if (deductions > basicSalary + allowances) throw ApiError.badRequest("Deductions cannot be more than salary plus allowances");
+      // New items always start as drafts; they move forward through approve -> pay.
       const status = String(body.status ?? "draft");
-      if (!["draft", "approved", "paid"].includes(status)) throw ApiError.badRequest("Invalid payroll status");
-      if (status === "paid" && !body.paidOn) throw ApiError.badRequest("paidOn is required when payroll status is paid");
-      if (body.paidOn && !Number.isFinite(new Date(body.paidOn).getTime())) throw ApiError.badRequest("Invalid paidOn date");
+      if (status !== "draft") throw ApiError.badRequest("A new payroll item starts as a draft. Approve and pay it afterwards.");
+      body.paidOn = null;
       body.branchId = branchId;
       body.month = month;
       body.payeeType = payeeType;
@@ -72,18 +93,32 @@ export const HR_RESOURCES: ResourceDefinition[] = [
         ? await Teacher.findByPk(teacherId as number, { include: [{ model: User, where: branchId != null ? { branchId } : undefined, required: branchId != null }] })
         : await Staff.findByPk(staffId as number, { include: [{ model: User, where: branchId != null ? { branchId } : undefined, required: branchId != null }] });
       if (!payee || !payee.isActive) throw ApiError.badRequest("Selected payroll payee is not active or does not belong to your branch");
-      const duplicate = await PayrollItem.findOne({ where: { ...(branchId != null ? { branchId } : {}), ...(payeeType === "teacher" ? { teacherId } : { staffId }), month, id: { [Op.ne]: id } } });
-      if (duplicate) throw ApiError.badRequest("Payroll already exists for this payee and month");
+      const duplicate = await findPersonDuplicate(payeeType, (payeeType === "teacher" ? teacherId : staffId) as number, month, branchId, id);
+      if (duplicate) throw ApiError.conflict("This person already has a payroll item for that month");
       const basicSalary = Number(body.basicSalary ?? current.basicSalary);
       const allowances = Number(body.allowances ?? current.allowances ?? 0);
       const deductions = Number(body.deductions ?? current.deductions ?? 0);
       if (!Number.isFinite(basicSalary) || basicSalary < 0 || !Number.isFinite(allowances) || allowances < 0 || !Number.isFinite(deductions) || deductions < 0) {
         throw ApiError.badRequest("Salary amounts must be valid non-negative numbers");
       }
+      if (deductions > basicSalary + allowances) throw ApiError.badRequest("Deductions cannot be more than salary plus allowances");
       const status = String(body.status ?? current.status);
       if (!["draft", "approved", "paid"].includes(status)) throw ApiError.badRequest("Invalid payroll status");
-      if (status === "paid" && !(body.paidOn ?? current.paidOn)) throw ApiError.badRequest("paidOn is required when payroll status is paid");
-      if (body.paidOn && !Number.isFinite(new Date(body.paidOn).getTime())) throw ApiError.badRequest("Invalid paidOn date");
+      // Money that has been paid is a record, not a draft: it is locked. Approved items can only be
+      // paid or re-opened; amounts, payee and month change only while the item is a draft.
+      const TRANSITIONS: Record<string, string[]> = { draft: ["draft", "approved"], approved: ["approved", "paid", "draft"], paid: ["paid"] };
+      if (!TRANSITIONS[current.status].includes(status)) throw ApiError.badRequest(`Cannot move payroll from ${current.status} to ${status}`);
+      const touchesMoney = ["month", "payeeType", "teacherId", "staffId", "basicSalary", "allowances", "deductions"].some((k) => {
+        if (body[k] === undefined) return false;
+        const cur: any = (current as any)[k];
+        return String(body[k] ?? "") !== String(cur ?? "") && !(["basicSalary", "allowances", "deductions"].includes(k) && Number(body[k]) === Number(cur));
+      });
+      if (current.status !== "draft" && touchesMoney) {
+        throw ApiError.badRequest(current.status === "paid" ? "This salary has been paid and is locked." : "Re-open the item (set it back to draft) before changing amounts.");
+      }
+      const paidOn = status === "paid" ? (body.paidOn ?? current.paidOn ?? new Date()) : null;
+      if (paidOn && !Number.isFinite(new Date(paidOn).getTime())) throw ApiError.badRequest("Invalid paidOn date");
+      body.paidOn = paidOn;
       body.branchId = current.branchId ?? branchId;
       body.month = month;
       body.payeeType = payeeType;
@@ -105,6 +140,8 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       const item = await PayrollItem.findByPk(payrollItemId);
       if (!item) throw ApiError.badRequest("Payroll item not found");
       if (branchId != null && Number(item.branchId) !== Number(branchId)) throw ApiError.badRequest("Payroll item does not belong to your branch");
+      if (item.status === "draft") throw ApiError.badRequest("Approve the payroll item before creating its payslip");
+      if (!body.payslipNo) body.payslipNo = `PS-${String(item.month).replace("-", "")}-${String(item.id).padStart(4, "0")}`;
       const existing = await Payslip.findOne({ where: { payrollItemId, ...(branchId != null ? { branchId } : {}) } });
       if (existing) throw ApiError.badRequest("A payslip already exists for this payroll item");
       if ((body.gross === undefined || body.gross === null || body.gross === "") || (body.net === undefined || body.net === null || body.net === "")) {

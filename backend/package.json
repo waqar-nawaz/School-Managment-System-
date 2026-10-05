@@ -13,7 +13,8 @@
     "prepare:prod": "npm run build && npm run seed",
     "smoke": "node scripts/smoke.mjs",
     "smoke:hostel": "node scripts/smoke-hostel.mjs",
-    "smoke:students": "node scripts/smoke-students.mjs"
+    "smoke:students": "node scripts/smoke-students.mjs",
+    "smoke:staff": "node scripts/smoke-staff.mjs"
   },
   "keywords": [
     "school",

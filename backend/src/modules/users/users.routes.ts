@@ -118,9 +118,9 @@ router.put("/:id", authorize("users:update"), validate(updateUserSchema), asyncH
   if (body.isActive === false && user.id === req.user!.id) {
     throw ApiError.badRequest("You cannot deactivate your own account");
   }
-  const roleChanged = body.role !== undefined && body.role !== user.role;
   await user.update(body);
-  if (roleChanged) await ensureRoleProfile(user);
+  // Role, name, contact or active flag changed: Parent/Staff/Teacher rows must follow the login.
+  await ensureRoleProfile(user);
   if (body.isActive === false) {
     // Same as PATCH /status: kill sessions right away.
     await RefreshToken.update({ revoked: true, revokedAt: new Date() }, { where: { userId: user.id, revoked: false } });
@@ -143,6 +143,7 @@ router.patch("/:id/status", authorize("users:update"), validate(updateUserStatus
     throw ApiError.badRequest("You cannot deactivate your own account");
   }
   await user.update({ isActive: req.body.isActive });
+  await ensureRoleProfile(user); // deactivated employees drop out of staff lists and payroll
   invalidateActiveCache(user.id);
   // When deactivating, revoke all refresh tokens so existing JWTs stop working
   // immediately (within the 60s active-cache window in authenticate.ts).

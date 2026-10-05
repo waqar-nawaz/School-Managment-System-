@@ -37,6 +37,10 @@ export class Staff extends BaseModel {
   @Column({ type: DataType.DATE })
   hireDate!: Date;
 
+  /** Default monthly basic salary; "Generate payroll" copies it into each month's payroll item. */
+  @Column({ type: DataType.DECIMAL(12, 2), defaultValue: 0 })
+  basicSalary!: number;
+
   @Column({ type: DataType.STRING(20) })
   phone!: string;
 

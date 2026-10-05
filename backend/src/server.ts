@@ -6,6 +6,7 @@ import { defineAssociations } from "./models";
 import { runSeeders } from "./database/seeders";
 import { startJobs } from "./jobs";
 import { reconcileHostelState, ensureHostelIndexes } from "./modules/hostel/hostel.service";
+import { backfillEmployeeProfiles } from "./modules/employees/employees.service";
 
 async function bootstrap(): Promise<void> {
   defineAssociations();
@@ -28,6 +29,7 @@ async function bootstrap(): Promise<void> {
     // Repair bed/room state left by older versions, then lock in the one-active-allocation rules.
     await reconcileHostelState();
     await ensureHostelIndexes();
+    await backfillEmployeeProfiles();
     app.locals.dbReady = true;
     logger.info("Database connected and schema is ready");
   } catch (err) {
