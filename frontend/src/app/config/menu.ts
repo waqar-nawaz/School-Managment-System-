@@ -12,7 +12,7 @@ export const MENU: MenuItem[] = [
   { label: 'Admissions', path: '/admissions', icon: 'clipboard', group: 'Academics', permission: 'admissions:read' },
   { label: 'Students', path: '/students', icon: 'users', group: 'Academics', permission: 'students:read' },
   { label: 'Teachers', path: '/teachers', icon: 'user-check', group: 'Academics', permission: 'teachers:read' },
-  { label: 'Staff', path: '/staff', icon: 'briefcase', group: 'Academics', permission: 'staff:read' },
+  { label: 'Employees', path: '/staff', icon: 'briefcase', group: 'Academics', permission: 'staff:read' },
   { label: 'Classes', path: '/classes', icon: 'home', group: 'Academics', permission: 'classes:read' },
   { label: 'Sections', path: '/sections', icon: 'layers', group: 'Academics', permission: 'sections:read' },
   { label: 'Subjects', path: '/subjects', icon: 'book', group: 'Academics', permission: 'subjects:read' },

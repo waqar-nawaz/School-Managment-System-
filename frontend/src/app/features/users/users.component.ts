@@ -189,6 +189,9 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                 <select class="form-control" name="role" [(ngModel)]="form.role">
                   @for (r of ROLES; track r) { <option [value]="r">{{ r }}</option> }
                 </select>
+                @if (isEmployeeRole(form.role)) {
+                  <div class="form-hint">An employee profile is created automatically with this login. To also set department, designation and salary in one step, use <strong>Employees → Add employee</strong> instead.</div>
+                }
               </div>
               <div class="form-group"><label>Phone</label><input class="form-control" name="phone" [(ngModel)]="form.phone" /></div>
               <div class="form-group"><label>Gender</label>
@@ -310,6 +313,8 @@ export class UsersComponent implements OnInit {
   pageSize = 15;
   search = '';
   roleFilter = '';
+  private readonly EMPLOYEE_ROLES = ['teacher', 'staff', 'accountant', 'librarian', 'hostel_warden', 'transport_manager', 'receptionist', 'principal'];
+  isEmployeeRole(role: string): boolean { return this.EMPLOYEE_ROLES.includes(role); }
   activeFilter = '';
   showForm = false;
   editing: boolean | null = null;

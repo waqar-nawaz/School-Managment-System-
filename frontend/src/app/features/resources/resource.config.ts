@@ -160,6 +160,8 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   teachers: {
     key: 'teachers', label: 'Teachers', api: '/teachers',
+    // Teacher profiles are created together with the teacher's login (Employees -> Add employee).
+    canCreate: false,
     columns: [nameCol('staffNo', 'Staff No'), nameCol('firstName', 'First Name'), nameCol('lastName', 'Last Name'), nameCol('email'), nameCol('phone'), nameCol('qualification'), boolCol('isActive', 'Active')],
     fields: fields([
       refField('userId', 'Login user', '/users', 'firstName', 'email', true),
