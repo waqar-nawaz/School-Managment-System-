@@ -244,9 +244,7 @@ const NO_EXPORT = new Set([
                                     <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit dates/reason</button>
                                     <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'cancelled'); openMenuId = null"><app-icon name="x" [size]="15" /> Cancel request</button>
                                   }
-                                } @else if (rowEditable && canApproveLeaves) {
-                                  <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit</button>
-                                } @else if (rowEditable) {
+                                } @else {
                                   <button type="button" class="row-menu-item" (click)="openView(row); openMenuId = null"><app-icon name="eye" [size]="15" /> View</button>
                                 }
                               } @else {
@@ -927,7 +925,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   }
 
   get canApproveLeaves(): boolean {
-    return this.perms.hasPermission('leaves:approve') || this.perms.isRole('super_admin', 'admin', 'principal');
+    return this.perms.hasPermission('leaves:approve');
   }
 
   get rowEditable(): boolean {
