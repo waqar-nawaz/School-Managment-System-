@@ -2,6 +2,7 @@ import { Notification, User } from "../models";
 import { sendMail } from "./email.service";
 import { sendSms } from "./sms.service";
 import { logger } from "../config/logger";
+import { emitNotification } from "./notification.socket";
 
 export interface NotifyOptions {
   userId: number;
@@ -21,13 +22,23 @@ export async function notify(opts: NotifyOptions): Promise<void> {
   if (!user || !user.isActive) return;
 
   try {
-    await Notification.create({
+    const row = await Notification.create({
       userId: opts.userId,
       branchId: user.branchId ?? undefined,
       channel,
       title: opts.title,
       body: opts.body,
       data: opts.data ?? {},
+    });
+    emitNotification(Number(opts.userId), {
+      id: Number(row.id),
+      userId: Number(row.userId),
+      title: row.title,
+      body: row.body,
+      channel: row.channel,
+      data: row.data ?? {},
+      readAt: row.readAt ?? null,
+      createdAt: row.createdAt,
     });
   } catch (err) {
     logger.error("Notification create failed", err);
