@@ -913,9 +913,11 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     if (!this.config) return;
     const api = this.resourceKey === 'students' && this.studentStatus === 'inactive'
       ? '/students/inactive'
-      : this.config.api;
+      : this.resourceKey === 'book-issues' && this.bookIssueStatusFilter === 'overdue'
+        ? '/book-issues/overdue/list'
+        : this.config.api;
     const params: Record<string, unknown> = { page: this.page, limit: this.pageSize, q: this.search };
-    if (this.resourceKey === 'book-issues' && this.bookIssueStatusFilter) {
+    if (this.resourceKey === 'book-issues' && this.bookIssueStatusFilter && this.bookIssueStatusFilter !== 'overdue') {
       params['filter[status]'] = this.bookIssueStatusFilter;
     }
     this.api
