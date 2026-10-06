@@ -286,7 +286,9 @@ export function defineAssociations(): void {
   HealthRecord.belongsTo(Student, { foreignKey: "studentId" });
   DisciplineRecord.belongsTo(Student, { foreignKey: "studentId" });
   Complaint.belongsTo(User, { as: "reporter", foreignKey: "submittedBy" });
-  AuditLog.belongsTo(User, { foreignKey: "userId" });
+  // AuditLog.user + AuditLog.branch associations are declared on the model via
+  // @BelongsTo decorators (see AuditLog.ts) — do not redeclare them here or
+  // sequelize-typescript will throw a duplicate-association error.
   Media.belongsTo(User, { foreignKey: "uploadedBy" });
   Media.belongsTo(Branch, { as: "branch", foreignKey: "branchId" });
   VisitorLog.belongsTo(User, { foreignKey: "registeredBy" });
