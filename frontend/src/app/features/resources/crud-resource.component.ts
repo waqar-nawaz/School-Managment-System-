@@ -752,6 +752,12 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
 
   get formFields(): FieldConfig[] {
     const fields = this.config?.fields ?? [];
+
+    if (this.resourceKey === "book-issues") {
+      if (!this.editingId) return fields.filter(f => f.key !== "dueDate");
+      return fields.filter(f => !["bookCopyId", "userId", "dueInDays"].includes(f.key));
+    }
+
     if (this.resourceKey !== "leaves") return fields;
 
     // Read-only view (requester looking at a processed leave): show every field so they can see
@@ -876,6 +882,10 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   openEdit(row: Row): void {
     this.editingId = row.id as number ?? null;
     this.formValues = { ...row };
+    if (this.resourceKey === "book-issues" && row.dueDate) {
+      const d = new Date(row.dueDate);
+      this.formValues["dueDate"] = Number.isNaN(d.getTime()) ? String(row.dueDate).slice(0, 10) : d.toISOString().slice(0, 10);
+    }
     this.formReadOnly = false;
     this.fieldErrors = {};
     this.refOptions = {};
