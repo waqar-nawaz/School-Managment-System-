@@ -947,6 +947,8 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     return col.badgeMap?.[key] ?? '';
   }
 
+  isArray(v: unknown): boolean { return Array.isArray(v); }
+
   display(col: { key: string; badgeMap?: Record<string, string> }, value: unknown): string {
     if (value === null || value === undefined || value === '') return '—';
     const s = String(value);
