@@ -88,55 +88,50 @@ const NO_EXPORT = new Set([
             </div>
           }
           @if (resourceKey === 'beds') {
-            <select class="form-control" style="max-width:180px;margin-right:12px" [(ngModel)]="bedHostelFilter" (ngModelChange)="onBedHostelFilter()">
-              <option value="">All hostels</option>
-              @for (h of bedHostelOptions; track h.id) { <option [value]="h.id">{{ h.name }}</option> }
-            </select>
-          }
-          <div class="search-box">
-            <input
-              type="text"
-              class="form-control"
-              [placeholder]="searchPlaceholder"
-              [value]="searchText"
-              (input)="onSearch($event)" />
-            @if (searchText) {
-              <button type="button" class="search-clear" (click)="clearSearch()" aria-label="Clear search">
-                <app-icon name="x" [size]="14" />
-              </button>
-            }
-          </div>
-        </div>
+          <div class="beds-view">
+            <div class="beds-view-head">
+              <div>
+                <div class="beds-view-title">Bed inventory</div>
+                <div class="beds-view-subtitle">Beds are grouped by room so the hostel and room name is shown once.</div>
+              </div>
+              <div class="beds-view-legend" aria-label="Bed status legend">
+                <span><i class="beds-dot available"></i> Available</span>
+                <span><i class="beds-dot occupied"></i> Occupied</span>
+                <span><i class="beds-dot maintenance"></i> Maintenance</span>
+              </div>
+            </div>
 
-        @if (resourceKey === 'beds') {
-          <div class="table-responsive">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Location</th>
-                  <th>Bed</th>
-                  <th>Status</th>
-                  @if (hasActions) { <th style="width:70px;text-align:right">Actions</th> }
-                </tr>
-              </thead>
-              <tbody>
-                @for (group of bedGroups; track group.key) {
-                  @for (row of group.rows; track row.id) {
-                    <tr>
-                      @if ($first) {
-                        <td [attr.rowspan]="group.rows.length" style="vertical-align:top">
-                          <strong>{{ group.hostelName }}</strong>
-                          <div class="form-hint" style="margin:3px 0 0">Room {{ group.roomNo }}</div>
-                          <small class="form-hint">{{ group.occupied }}/{{ group.total }} occupied</small>
-                        </td>
-                      }
-                      <td><strong>Bed {{ row.bedNo }}</strong></td>
-                      <td><span class="badge badge-{{ bedStatusClass(row.status) }}">{{ bedStatusLabel(row.status) }}</span></td>
-                      @if (hasActions) {
-                        <td style="text-align:right;white-space:nowrap">
-                          <div class="row-menu">
-                            <button type="button" class="icon-btn" (click)="toggleRowMenu(row.id, $event)" aria-label="Actions">
-                              <app-icon name="more-vertical" [size]="18" />
+            <div class="beds-room-list">
+              @for (group of bedGroups; track group.key) {
+                <section class="beds-room-card">
+                  <div class="beds-room-head">
+                    <div class="beds-room-location">
+                      <div class="beds-hostel-name">{{ group.hostelName }}</div>
+                      <div class="beds-room-name">Room {{ group.roomNo }}</div>
+                    </div>
+                    <div class="beds-room-occupancy">
+                      <div class="beds-occupancy-label">
+                        <span>{{ group.occupied }}/{{ group.total }} occupied</span>
+                        <span>{{ group.total - group.occupied }} free</span>
+                      </div>
+                      <div class="beds-progress" aria-hidden="true">
+                        <span [style.width.%]="group.total ? (group.occupied / group.total) * 100 : 0"></span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="beds-room-body">
+                    <div class="beds-chip-list">
+                      @for (row of group.rows; track row.id) {
+                        <div class="beds-chip beds-chip-{{ bedStatusClass(row.status) }}">
+                          <span class="beds-chip-status" aria-hidden="true"></span>
+                          <div class="beds-chip-copy">
+                            <strong>Bed {{ row.bedNo }}</strong>
+                            <small>{{ bedStatusLabel(row.status) }}</small>
+                          </div>
+                          @if (hasActions) {
+                            <button type="button" class="beds-chip-menu" (click)="toggleRowMenu(row.id, $event)" aria-label="Bed actions">
+                              <app-icon name="more-vertical" [size]="16" />
                             </button>
                             @if (openMenuId === row.id) {
                               <div class="row-menu-list" [style.top.px]="menuPos?.top" [style.right.px]="menuPos?.right" (click)="$event.stopPropagation()">
@@ -148,16 +143,20 @@ const NO_EXPORT = new Set([
                                 }
                               </div>
                             }
-                          </div>
-                        </td>
+                          }
+                        </div>
                       }
-                    </tr>
-                  }
-                } @empty {
-                  <tr><td [attr.colspan]="hasActions ? 4 : 3" class="empty-cell">No beds found.</td></tr>
-                }
-              </tbody>
-            </table>
+                    </div>
+                  </div>
+                </section>
+              } @empty {
+                <div class="beds-empty">
+                  <div class="beds-empty-icon"><app-icon name="home" [size]="22" /></div>
+                  <strong>No beds found</strong>
+                  <span>Try another hostel or search term.</span>
+                </div>
+              }
+            </div>
           </div>
         } @else {
           <div class="table-responsive">
@@ -358,6 +357,48 @@ const NO_EXPORT = new Set([
         (close)="statusConfirm = null" />
     }
   `,
+  styles: [`
+    .beds-view { padding: 4px 0 2px; }
+    .beds-view-head { display:flex; align-items:center; justify-content:space-between; gap:18px; margin:0 0 16px; }
+    .beds-view-title { font-size:15px; font-weight:700; letter-spacing:-.01em; }
+    .beds-view-subtitle { margin-top:3px; font-size:12px; color:var(--text-muted, #667085); }
+    .beds-view-legend { display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:var(--text-muted, #667085); }
+    .beds-view-legend span { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+    .beds-dot, .beds-chip-status { width:7px; height:7px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+    .beds-dot.available, .beds-chip-success .beds-chip-status { background:#16a34a; }
+    .beds-dot.occupied, .beds-chip-danger .beds-chip-status { background:#dc2626; }
+    .beds-dot.maintenance, .beds-chip-warning .beds-chip-status { background:#d97706; }
+    .beds-room-list { display:grid; gap:12px; }
+    .beds-room-card { border:1px solid var(--border-color, #e5e7eb); border-radius:12px; background:var(--surface, #fff); overflow:visible; }
+    .beds-room-head { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:14px 16px 12px; border-bottom:1px solid var(--border-color, #eef0f3); }
+    .beds-room-location { min-width:180px; }
+    .beds-hostel-name { font-size:13px; font-weight:700; color:var(--text, #111827); }
+    .beds-room-name { margin-top:3px; font-size:12px; color:var(--text-muted, #667085); }
+    .beds-room-occupancy { width:190px; max-width:35%; }
+    .beds-occupancy-label { display:flex; justify-content:space-between; gap:8px; margin-bottom:6px; font-size:11px; color:var(--text-muted, #667085); }
+    .beds-progress { height:5px; overflow:hidden; border-radius:999px; background:#eef0f3; }
+    .beds-progress span { display:block; height:100%; border-radius:inherit; background:#64748b; transition:width .2s ease; }
+    .beds-room-body { padding:14px 16px 16px; }
+    .beds-chip-list { display:flex; flex-wrap:wrap; gap:9px; }
+    .beds-chip { position:relative; min-width:128px; display:flex; align-items:center; gap:9px; padding:9px 8px 9px 11px; border:1px solid var(--border-color, #e5e7eb); border-radius:9px; background:#fafafa; }
+    .beds-chip-success { border-color:#bbf7d0; background:#f7fdf8; }
+    .beds-chip-danger { border-color:#fecaca; background:#fff8f8; }
+    .beds-chip-warning { border-color:#fde68a; background:#fffbeb; }
+    .beds-chip-copy { min-width:0; display:flex; flex-direction:column; gap:2px; }
+    .beds-chip-copy strong { font-size:12px; line-height:1.2; color:var(--text, #111827); }
+    .beds-chip-copy small { font-size:10px; line-height:1.2; text-transform:capitalize; color:var(--text-muted, #667085); }
+    .beds-chip-menu { margin-left:auto; width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:6px; background:transparent; color:var(--text-muted, #667085); cursor:pointer; }
+    .beds-chip-menu:hover { background:rgba(0,0,0,.05); color:var(--text, #111827); }
+    .beds-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:180px; border:1px dashed var(--border-color, #d9dde4); border-radius:12px; color:var(--text-muted, #667085); }
+    .beds-empty strong { font-size:13px; color:var(--text, #111827); }
+    .beds-empty span { font-size:12px; }
+    .beds-empty-icon { display:flex; align-items:center; justify-content:center; width:42px; height:42px; margin-bottom:3px; border-radius:50%; background:#f3f4f6; }
+    @media (max-width: 760px) {
+      .beds-view-head, .beds-room-head { align-items:flex-start; flex-direction:column; }
+      .beds-room-occupancy { width:100%; max-width:none; }
+      .beds-chip { min-width:118px; flex:1 1 118px; }
+    }
+  `],
 })
 export class CrudResourceComponent implements OnInit, OnDestroy {
   @Input() set resource(v: string) {
