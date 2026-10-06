@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { formatMoney } from '../../core/utils/currency';
 import { ApiService } from '../../core/services/api.service';
+import { ToastService } from '../../core/services/toast.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 
 @Component({
@@ -113,7 +114,7 @@ export class ReportsComponent implements OnInit {
   dateTo = '';
   loading = false;
 
-  constructor(private readonly api: ApiService) {}
+  constructor(private readonly api: ApiService, private readonly toasts: ToastService) {}
 
   ngOnInit(): void {
     this.loadActive();

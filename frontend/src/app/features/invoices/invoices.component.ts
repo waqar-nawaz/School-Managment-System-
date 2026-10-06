@@ -78,10 +78,10 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
                 <td>{{ inv.dueDate | date: 'MMM d, y' }}</td>
                 <td>
                   <span class="badge badge-{{ badgeOf(inv.status) }}">{{ inv.status }}</span>
-                  @if (canChangeStatus && nextStatuses(inv.status).length) {
+                  @if (canChangeStatus && nextStatuses(inv).length) {
                     <select class="form-control form-control-sm" style="display:inline-block;width:auto;margin-left:6px" (change)="transition(inv, $event)">
                       <option value="">Change…</option>
-                      @for (s of nextStatuses(inv.status); track s) { <option [value]="s">{{ s }}</option> }
+                      @for (s of nextStatuses(inv); track s) { <option [value]="s">{{ s }}</option> }
                     </select>
                   }
                 </td>
@@ -382,8 +382,16 @@ export class InvoicesComponent implements OnInit {
   }
 
   // Compute the list of statuses the user may transition to from the current status.
-  nextStatuses(current: string): string[] {
-    return INVOICE_TRANSITIONS[current] ?? [];
+  nextStatuses(inv: any): string[] {
+    const transitions = INVOICE_TRANSITIONS[inv?.status ?? inv] ?? [];
+    const amountPaid = Number(inv?.amountPaid ?? 0);
+    const totalDue = Number(inv?.totalDue ?? 0);
+    return transitions.filter((s: string) => {
+      if (s === 'cancelled' && amountPaid > 0) return false;
+      if (s === 'paid' && amountPaid < totalDue) return false;
+      if (s === 'partial' && amountPaid <= 0) return false;
+      return true;
+    });
   }
 
   // Backend eagerly loads the `student` association (invoices.routes.ts:20).
