@@ -178,6 +178,7 @@ const NO_EXPORT = new Set([
             </div>
           </div>
         } @else {
+          <div class="table-responsive">
             <table class="table">
               <thead>
                 <tr>
