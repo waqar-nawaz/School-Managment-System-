@@ -120,8 +120,69 @@ const validateBookFine = async (body: any, req: Request) => {
   return body;
 };
 
+const preventBookDelete = async (req: Request) => {
+  const id = Number(req.params.id);
+  const copies = await BookCopy.count({ where: { bookId: id } });
+  if (copies > 0) throw ApiError.badRequest("Cannot delete a book that has physical copies; deactivate it instead");
+};
+
+const preventBookCopyDelete = async (req: Request) => {
+  const id = Number(req.params.id);
+  const copy = await BookCopy.findByPk(id);
+  if (!copy) throw ApiError.notFound("Book copy not found");
+  if (["issued", "lost", "reserved"].includes(String(copy.status))) {
+    throw ApiError.badRequest("This copy cannot be deleted while it is part of the circulation lifecycle");
+  }
+  const history = await BookIssue.count({ where: { bookCopyId: id } });
+  if (history > 0) throw ApiError.badRequest("Cannot delete a copy with circulation history; keep it as damaged or lost");
+};
+
 export const LIBRARY_RESOURCES: ResourceDefinition[] = [
-  { path: "books", model: Book, searchable: ["title", "author", "isbn", "category"], permission: "library", beforeCreate: validateBook, beforeUpdate: validateBook },
-  { path: "book-copies", model: BookCopy, searchable: ["accessionNo", "status"], permission: "library", beforeCreate: validateBookCopy, beforeUpdate: validateBookCopy },
-  { path: "book-fines", model: BookFine, searchable: ["receiptNo", "status"], permission: "book-fines", beforeCreate: validateBookFine, beforeUpdate: validateBookFine },
+  {
+    path: "books",
+    model: Book,
+    searchable: ["title", "author", "isbn", "category"],
+    permission: "library",
+    beforeCreate: validateBook,
+    beforeUpdate: validateBook,
+    beforeRemove: preventBookDelete,
+  },
+  {
+    path: "book-copies",
+    model: BookCopy,
+    searchable: ["accessionNo", "status"],
+    permission: "library",
+    beforeCreate: validateBookCopy,
+    beforeUpdate: validateBookCopy,
+    beforeRemove: preventBookCopyDelete,
+    includes: [{ association: "book", attributes: ["id", "title", "isbn"] }],
+    decorate: (row: any) => {
+      const p = row && typeof row.get === "function" ? row.get({ plain: true }) : { ...row };
+      p.bookTitle = p.book?.title ?? "";
+      return p;
+    },
+  },
+  {
+    path: "book-fines",
+    model: BookFine,
+    searchable: ["receiptNo", "status", "reason"],
+    permission: "book-fines",
+    beforeCreate: validateBookFine,
+    beforeUpdate: validateBookFine,
+    includes: [
+      {
+        association: "bookIssue",
+        attributes: ["id", "status", "bookCopyId"],
+        include: [{ association: "bookCopy", attributes: ["id", "accessionNo"], include: [{ association: "book", attributes: ["id", "title", "isbn"] }] }],
+      },
+      { association: "user", attributes: ["id", "firstName", "lastName", "email"] },
+    ],
+    decorate: (row: any) => {
+      const p = row && typeof row.get === "function" ? row.get({ plain: true }) : { ...row };
+      p.bookTitle = p.bookIssue?.bookCopy?.book?.title ?? "";
+      p.accessionNo = p.bookIssue?.bookCopy?.accessionNo ?? "";
+      p.borrowerName = p.user ? `${p.user.firstName} ${p.user.lastName}`.trim() : "";
+      return p;
+    },
+  },
 ];
