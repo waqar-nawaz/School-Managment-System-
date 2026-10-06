@@ -427,7 +427,7 @@ const NO_EXPORT = new Set([
               </div>
               <div class="leave-summary-item">
                 <span class="leave-summary-label">Duration</span>
-                <strong>{{ formValues['days'] || '—' }} day{{ Number(formValues['days'] ?? 0) === 1 ? '' : 's' }}</strong>
+                <strong>{{ leaveDurationLabel }}</strong>
               </div>
               <div class="leave-summary-item">
                 <span class="leave-summary-label">Start date</span>
@@ -1203,6 +1203,12 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   get leaveInitials(): string {
     const parts = this.leaveEmployeeName.split(/\s+/).filter(Boolean);
     return parts.slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join('') || 'LR';
+  }
+
+  get leaveDurationLabel(): string {
+    const days = Number(this.formValues['days'] ?? 0);
+    if (!Number.isFinite(days) || days <= 0) return '—';
+    return `${days} day${days === 1 ? '' : 's'}`;
   }
 
   get leaveTypeLabel(): string {
