@@ -44,7 +44,7 @@ interface DashboardStats {
     .mini-stats{display:grid;grid-template-columns:repeat(3,1fr)}.mini-stats a{padding:15px 18px;text-decoration:none;color:inherit}.mini-stats a+a{border-left:1px solid var(--border-color,#eef0f3)}.mini-stats strong{display:block;font-size:18px}.mini-stats span{display:block;margin-top:3px;font-size:10px;color:var(--text-muted,#667085)}.quick-actions{display:flex;flex-wrap:wrap;gap:8px;padding:14px 18px}.quick-actions a{display:inline-flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid var(--border-color,#e5e7eb);border-radius:8px;text-decoration:none;color:inherit;font-size:11px;font-weight:600;background:var(--surface,#fff)}.dash-loading{min-height:180px;display:flex;align-items:center;justify-content:center;gap:9px;border:1px solid var(--border-color,#e5e7eb);border-radius:14px;color:var(--text-muted,#667085);font-size:12px;background:var(--surface,#fff)}.dash-spinner{width:15px;height:15px;border:2px solid var(--border-color,#d0d5dd);border-top-color:var(--primary,#4f46e5);border-radius:50%;animation:dash-spin .7s linear infinite}@keyframes dash-spin{to{transform:rotate(360deg)}}
     @media(max-width:820px){.dash-overview,.dash-main-grid,.dash-bottom{grid-template-columns:1fr}.overview-primary{border-right:0;border-bottom:1px solid var(--border-color,#e5e7eb)}}@media(max-width:560px){.dash-hero{align-items:flex-start;flex-direction:column}.dash-date{display:none}.mini-stats{grid-template-columns:1fr}.mini-stats a+a{border-left:0;border-top:1px solid var(--border-color,#eef0f3)}}
   `],
-})})
+})
 export class DashboardComponent implements OnInit {
   stats: DashboardStats | null = null;
   loading = true;
