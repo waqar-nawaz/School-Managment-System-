@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { Op } from "sequelize";
+import { likeOp } from "../../utils/search";
 import { sequelize } from "../../database/sequelize";
 import { authenticate } from "../../middlewares/authenticate";
 import { authorize } from "../../middlewares/authorize";
@@ -24,6 +25,17 @@ router.use(authenticate);
 const base = createCrudController<BookIssue>({
   model: BookIssue,
   searchable: ["status", "requestedFor"],
+  toSearchWhere: (q: string) => ({
+    [Op.or]: [
+      { status: { [likeOp]: `%${q}%` } },
+      { requestedFor: { [likeOp]: `%${q}%` } },
+      { "$bookCopy.accessionNo$": { [likeOp]: `%${q}%` } },
+      { "$bookCopy.book.title$": { [likeOp]: `%${q}%` } },
+      { "$borrower.firstName$": { [likeOp]: `%${q}%` } },
+      { "$borrower.lastName$": { [likeOp]: `%${q}%` } },
+      { "$borrower.email$": { [likeOp]: `%${q}%` } },
+    ],
+  }),
   defaultSort: [["issueDate", "DESC"]],
   scopeWhere: async (req: any) => {
     const role = req.user?.role;
@@ -47,6 +59,8 @@ const base = createCrudController<BookIssue>({
     p.accessionNo = p.bookCopy?.accessionNo ?? "";
     p.bookTitle = p.bookCopy?.book?.title ?? "";
     p.isOverdue = OPEN_STATUSES.includes(p.status) && p.dueDate && new Date(p.dueDate) < new Date();
+    // Keep the UI accurate even when the optional production cron has not run yet.
+    if (p.status === "issued" && p.isOverdue) p.status = "overdue";
     return p;
   },
 });
