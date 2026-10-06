@@ -278,6 +278,9 @@ export function defineAssociations(): void {
   User.hasMany(Message, { as: "sentMessages", foreignKey: "senderId" });
   Message.belongsTo(User, { as: "sender", foreignKey: "senderId" });
   Message.belongsToMany(User, { through: MessageRecipient, as: "recipients", foreignKey: "messageId", otherKey: "recipientId" });
+  MessageRecipient.belongsTo(Message, { as: "message", foreignKey: "messageId" });
+  MessageRecipient.belongsTo(User, { as: "recipient", foreignKey: "recipientId" });
+  User.hasMany(MessageRecipient, { as: "messageRecipients", foreignKey: "recipientId" });
   User.hasMany(Notification, { as: "notifications", foreignKey: "userId" });
   Notification.belongsTo(User, { foreignKey: "userId" });
 
