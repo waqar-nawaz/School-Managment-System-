@@ -250,7 +250,8 @@ export function defineAssociations(): void {
   BookIssue.belongsTo(BookCopy, { as: "bookCopy", foreignKey: "bookCopyId" });
   BookIssue.belongsTo(User, { as: "borrower", foreignKey: "userId" });
   BookIssue.hasMany(BookFine, { as: "fines", foreignKey: "bookIssueId" });
-  BookFine.belongsTo(BookIssue, { foreignKey: "bookIssueId" });
+  BookFine.belongsTo(BookIssue, { foreignKey: "bookIssueId", as: "bookIssue" });
+  BookFine.belongsTo(User, { as: "user", foreignKey: "userId" });
 
   // Transport
   Route.hasMany(RouteStop, { as: "stops", foreignKey: "routeId" });
