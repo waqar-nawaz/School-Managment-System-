@@ -238,7 +238,9 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
       p.availableBeds = beds.filter((b: any) => b.status === "available").length;
       p.occupiedBeds = beds.filter((b: any) => b.status === "occupied").length;
       p.bedOccupancy = `${p.occupiedBeds} occupied / ${p.bedCount} beds`;
-      // p.status is the stored (synced) status, so "maintenance" is preserved.
+      // Bed summary: individual bed statuses as a compact string for inline display.
+      // Format: "B1:available B2:occupied B3:available" — frontend renders as badges.
+      p.bedSummary = beds.map((b: any) => ({ bedNo: b.bedNo ?? `B${b.id}`, status: b.status ?? "available" }));
       p.roomLabel = `Room ${p.roomNo} — ${p.hostelName}`;
       return p;
     },
