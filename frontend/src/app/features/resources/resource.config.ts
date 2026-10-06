@@ -4,6 +4,9 @@ export interface FieldConfig {
   type: 'text' | 'textarea' | 'number' | 'date' | 'dateonly' | 'select' | 'bool' | 'ref';
   options?: Array<{ label: string; value: string }>;
   ref?: { api: string; labelKey: string; secondaryKey?: string };
+  /** When set, the ref dropdown only loads rows where this column equals this value.
+   *  Example: { field: 'employeeType', value: 'hostel_warden' } → only wardens show up. */
+  refFilter?: { field: string; value: string };
   required?: boolean;
   hint?: string;
 }
@@ -15,9 +18,10 @@ function refField(
   api: string,
   labelKey: string,
   secondaryKey?: string,
-  required = false
+  required = false,
+  refFilter?: { field: string; value: string }
 ): FieldConfig {
-  return { key, label, type: 'ref', ref: { api, labelKey, secondaryKey }, required };
+  return { key, label, type: 'ref', ref: { api, labelKey, secondaryKey }, required, refFilter };
 }
 
 export interface ColumnConfig {
@@ -345,7 +349,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
     key: 'hostels', label: 'Hostels', api: '/hostels',
     subtitle: 'Manage hostel buildings. Rooms and beds are managed separately.',
     columns: [nameCol('name', 'Hostel'), nameCol('gender', 'Type'), { key: 'roomCount', label: 'Rooms', type: 'number' }, { key: 'totalBeds', label: 'Beds', type: 'number' }, { key: 'occupancy', label: 'Occupied / Beds', type: 'text' }, { key: 'availableBeds', label: 'Free', type: 'number' }, nameCol('wardenName', 'Warden'), boolCol('isActive', 'Active')],
-    fields: fields([{ key: 'name', label: 'Hostel name', required: true }, { key: 'gender', label: 'Type', type: 'select', options: STATUS_OPTIONS(['boys', 'girls', 'coed']) }, refField('wardenId', 'Warden', '/staff', 'firstName', 'employeeType'), { key: 'address', label: 'Address', type: 'textarea' }, { key: 'isActive', label: 'Active', type: 'bool', hint: 'Turn off to retire a hostel (not possible while students live in it).' }]),
+    fields: fields([{ key: 'name', label: 'Hostel name', required: true }, { key: 'gender', label: 'Type', type: 'select', options: STATUS_OPTIONS(['boys', 'girls', 'coed']) }, refField('wardenId', 'Warden', '/staff', 'firstName', 'employeeType', false, { field: 'employeeType', value: 'hostel_warden' }), { key: 'address', label: 'Address', type: 'textarea' }, { key: 'isActive', label: 'Active', type: 'bool', hint: 'Turn off to retire a hostel (not possible while students live in it).' }]),
   },
   rooms: {
     key: 'rooms', label: 'Rooms', api: '/rooms',

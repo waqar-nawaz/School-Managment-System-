@@ -683,6 +683,11 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
       if (!this.editingId) params['filter[status]'] = 'available';
     }
 
+    // Apply refFilter if declared (e.g. only show hostel_warden employees in the warden dropdown).
+    if (field.refFilter) {
+      params[`filter[${field.refFilter.field}]`] = field.refFilter.value;
+    }
+
     this.api.get<Record<string, unknown>[]>(api, params).subscribe({
       next: (res) => {
         if (loadVersion !== this.refLoadVersion) return;
