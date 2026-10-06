@@ -39,6 +39,7 @@ export interface ResourceConfig {
   fields: FieldConfig[];
   canCreate?: boolean;
   createLabel?: string;
+  filters?: Array<{ key: string; label: string; type: 'select' | 'ref'; options?: Array<{ label: string; value: string }>; ref?: { api: string; labelKey: string } }>;
   subtitle?: string;
 }
 
@@ -53,7 +54,7 @@ const BADGE_COMMON: Record<string, string> = {
   rejected: 'danger', paid: 'success', partial: 'warning', overdue: 'danger',
   cancelled: '', present: 'success', absent: 'danger', late: 'warning',
   complete: 'success', completed: 'success', draft: '',
-  issued: 'success', returned: 'info', available: 'success', occupied: 'info',
+  issued: 'success', returned: 'info', available: 'success', occupied: 'danger',
   in_use: 'success', maintenance: 'warning',
   // additional badges for library / transport / finance / admissions flows
   requested: 'info', lost: 'danger', successful: 'success', failed: 'danger',
@@ -361,8 +362,9 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
     key: 'beds', label: 'Beds', api: '/beds',
     subtitle: 'Beds are auto-created from room capacity. Status is controlled by allocations.',
     canCreate: false,
-    columns: [nameCol('bedNo', 'Bed'), nameCol('roomNo', 'Room'), nameCol('hostelName', 'Hostel'), { key: 'bedLabel', label: 'Location', type: 'text' }, statusCol()],
+    columns: [nameCol('bedNo', 'Bed'), nameCol('roomNo', 'Room'), nameCol('hostelName', 'Hostel'), { key: 'hostelGender', label: 'Type', type: 'badge', badgeMap: { boys: 'info', girls: 'warning', coed: 'success' } }, statusCol()],
     fields: fields([refField('roomId', 'Room', '/rooms', 'roomLabel', undefined, true), { key: 'bedNo', label: 'Bed number', required: true }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available', 'maintenance']), hint: 'Occupied is set automatically when a student is allocated.' }]),
+    filters: [{ key: 'hostelId', label: 'Hostel', type: 'ref', ref: { api: '/hostels', labelKey: 'name' } }],
   },
   events: {
     key: 'events', label: 'Events', api: '/events',
