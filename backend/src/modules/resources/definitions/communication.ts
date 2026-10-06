@@ -38,8 +38,11 @@ export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
       if (branchId != null && Number(sender.branchId) !== Number(branchId)) throw ApiError.badRequest("Sender does not belong to your branch");
       const kind = String(body.kind ?? "direct").trim().toLowerCase();
       if (!["direct", "broadcast", "group"].includes(kind)) throw ApiError.badRequest("Invalid message kind");
+      const subject = String(body.subject ?? "").trim();
       const messageBody = String(body.body ?? "").trim();
+      if (!subject) throw ApiError.badRequest("Message subject is required");
       if (!messageBody) throw ApiError.badRequest("Message body is required");
+      if (subject.length > 180) throw ApiError.badRequest("Message subject cannot exceed 180 characters");
       // Capture recipientIds before they reach model.create (which would reject unknown column).
       const rawRecipientIds = Array.isArray(body.recipientIds)
         ? body.recipientIds
@@ -70,6 +73,7 @@ export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
           throw ApiError.badRequest("One or more recipients are inactive, missing, or outside your branch");
         }
       }
+      body.subject = subject;
       body.senderId = senderId;
       body.branchId = branchId;
       body.kind = kind;
