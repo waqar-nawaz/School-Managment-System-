@@ -77,6 +77,20 @@ export const routes: Routes = [
           import('./features/reports/reports.component').then((m) => m.ReportsComponent),
       },
       {
+        path: 'audit-logs',
+        data: { permission: 'audit-logs:read' },
+        canActivate: [PermissionGuard],
+        loadComponent: () =>
+          import('./features/audit-logs/audit-logs.component').then((m) => m.AuditLogsComponent),
+      },
+      {
+        path: 'permissions',
+        data: { permission: 'permissions:read' },
+        canActivate: [PermissionGuard],
+        loadComponent: () =>
+          import('./features/permissions/permissions.component').then((m) => m.PermissionsComponent),
+      },
+      {
         path: 'students',
         data: { permission: 'students:read' },
         canActivate: [PermissionGuard],
