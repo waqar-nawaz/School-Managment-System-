@@ -71,7 +71,7 @@ const NO_EXPORT = new Set([
           @if (canExport && rows.length) {
             <button class="btn btn-ghost" (click)="exportCsv()"><app-icon name="download" [size]="15" /> Export CSV</button>
           }
-          @if (config.canCreate !== false && canCreate) {
+          @if (config.canCreate !== false && canCreate && !(resourceKey === 'leaves' && canApproveLeaves)) {
             <button class="btn btn-primary" (click)="openCreate()">
               <app-icon name="plus" [size]="15" /> {{ config.createLabel ?? 'Add new' }}
             </button>
