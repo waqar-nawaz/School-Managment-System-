@@ -7,6 +7,7 @@ import { ApiResponse } from "../../utils/ApiResponse";
 import {
   Student, Teacher, Staff, SchoolClass, Invoice, Attendance,
   Event, LeaveRequest, AdmissionApplication, Enrolment,
+  HostelAllocation, Bed,
 } from "../../models";
 
 const router = Router();
@@ -35,6 +36,9 @@ router.get(
       pendingLeaves,
       admissionApplications,
       activeEnrolments,
+      activeHostelResidents,
+      freeBeds,
+      occupiedBeds,
     ] = await Promise.all([
       Student.count({ where: { ...branchFilter, isActive: true } }),
       Teacher.count({ where: { ...branchFilter, isActive: true } }),
@@ -46,6 +50,9 @@ router.get(
       LeaveRequest.count({ where: { ...branchFilter, status: "pending" } }),
       AdmissionApplication.count({ where: { ...branchFilter, status: ["enquiry", "applied"] } }),
       Enrolment.count({ where: { ...branchFilter, status: "active" } }),
+      HostelAllocation.count({ where: { ...branchFilter, status: "active" } }),
+      Bed.count({ where: { ...branchFilter, status: "available" } }),
+      Bed.count({ where: { ...branchFilter, status: "occupied" } }),
     ]);
 
     ApiResponse.success(res, 200, "Dashboard stats", {
@@ -59,6 +66,9 @@ router.get(
       pendingLeaves,
       admissionApplications,
       activeEnrolments,
+      activeHostelResidents,
+      freeBeds,
+      occupiedBeds,
     });
   })
 );
