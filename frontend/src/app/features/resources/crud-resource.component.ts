@@ -236,16 +236,15 @@ const NO_EXPORT = new Set([
                                   @if (rowEditable) { <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit due date</button> }
                                 }
                               } @else if (resourceKey === 'leaves') {
+                                <button type="button" class="row-menu-item" (click)="openView(row); openMenuId = null"><app-icon name="eye" [size]="15" /> View details</button>
                                 @if (row['status'] === 'pending') {
                                   @if (canApproveLeaves) {
                                     <button type="button" class="row-menu-item" (click)="leaveAction(row, 'approved'); openMenuId = null"><app-icon name="check" [size]="15" /> Approve</button>
                                     <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'rejected'); openMenuId = null"><app-icon name="x" [size]="15" /> Reject</button>
                                   } @else {
-                                    <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit dates/reason</button>
+                                    <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit request</button>
                                     <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'cancelled'); openMenuId = null"><app-icon name="x" [size]="15" /> Cancel request</button>
                                   }
-                                } @else {
-                                  <button type="button" class="row-menu-item" (click)="openView(row); openMenuId = null"><app-icon name="eye" [size]="15" /> View</button>
                                 }
                               } @else {
                                 @if (rowEditable) { <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit</button> }
@@ -284,7 +283,7 @@ const NO_EXPORT = new Set([
       </div>
     }
 
-    @if (showForm && config) {
+    @if (showForm && config && !(resourceKey === 'leaves' && formReadOnly)) {
       <div class="modal-backdrop">
         <div class="modal modal-lg">
           <div class="modal-head">
@@ -396,6 +395,100 @@ const NO_EXPORT = new Set([
               }
             </div>
           </form>
+        </div>
+      </div>
+    }
+
+    @if (showForm && config && resourceKey === 'leaves' && formReadOnly) {
+      <div class="modal-backdrop leave-view-backdrop">
+        <div class="modal leave-view-modal" role="dialog" aria-modal="true" aria-labelledby="leave-view-title">
+          <div class="leave-view-head">
+            <div class="leave-view-person">
+              <div class="leave-avatar">{{ leaveInitials }}</div>
+              <div>
+                <div class="leave-view-eyebrow">Leave request #{{ editingId }}</div>
+                <h2 id="leave-view-title">{{ leaveEmployeeName }}</h2>
+                <div class="leave-view-role">{{ leaveUserRole || 'Employee' }}</div>
+              </div>
+            </div>
+            <div class="leave-view-head-actions">
+              <span class="badge badge-{{ leaveStatusBadgeClass(formValues['status']) }}">{{ leaveStatusLabel }}</span>
+              <button type="button" class="modal-close" (click)="closeForm()" aria-label="Close">
+                <app-icon name="x" [size]="16" />
+              </button>
+            </div>
+          </div>
+
+          <div class="leave-view-body">
+            <div class="leave-summary-grid">
+              <div class="leave-summary-item">
+                <span class="leave-summary-label">Leave type</span>
+                <strong>{{ leaveTypeLabel }}</strong>
+              </div>
+              <div class="leave-summary-item">
+                <span class="leave-summary-label">Duration</span>
+                <strong>{{ formValues['days'] || '—' }} day{{ Number(formValues['days'] ?? 0) === 1 ? '' : 's' }}</strong>
+              </div>
+              <div class="leave-summary-item">
+                <span class="leave-summary-label">Start date</span>
+                <strong>{{ leaveDate(formValues['startDate']) }}</strong>
+              </div>
+              <div class="leave-summary-item">
+                <span class="leave-summary-label">End date</span>
+                <strong>{{ leaveDate(formValues['endDate']) }}</strong>
+              </div>
+            </div>
+
+            <div class="leave-detail-section">
+              <div class="leave-section-title">Request details</div>
+              <div class="leave-detail-card">
+                <div class="leave-detail-row">
+                  <span>Reason</span>
+                  <p>{{ formValues['reason'] || 'No reason provided.' }}</p>
+                </div>
+              </div>
+            </div>
+
+            @if (formValues['processedBy'] || formValues['processedByUserName'] || formValues['adminComment']) {
+              <div class="leave-detail-section">
+                <div class="leave-section-title">Review</div>
+                <div class="leave-review-card">
+                  <div class="leave-review-top">
+                    <div class="leave-review-icon"><app-icon name="check" [size]="16" /></div>
+                    <div>
+                      <strong>{{ formValues['processedByUserName'] || 'Processed by administrator' }}</strong>
+                      <span>{{ formValues['status'] === 'rejected' ? 'Rejection reason' : 'Administrator note' }}</span>
+                    </div>
+                  </div>
+                  @if (formValues['adminComment']) {
+                    <p>{{ formValues['adminComment'] }}</p>
+                  } @else {
+                    <p class="muted">No administrator note was added.</p>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+
+          <div class="modal-actions leave-view-actions">
+            <button type="button" class="btn btn-ghost" (click)="closeForm()">
+              <app-icon name="x" [size]="14" /> Close
+            </button>
+            @if (formValues['status'] === 'pending') {
+              @if (canApproveLeaves) {
+                <button type="button" class="btn btn-danger" (click)="closeForm(); leaveAction(formValues, 'rejected')">
+                  <app-icon name="x" [size]="14" /> Reject
+                </button>
+                <button type="button" class="btn btn-primary" (click)="closeForm(); leaveAction(formValues, 'approved')">
+                  <app-icon name="check" [size]="14" /> Approve
+                </button>
+              } @else {
+                <button type="button" class="btn btn-primary" (click)="closeForm(); openEdit(formValues)">
+                  <app-icon name="edit" [size]="14" /> Edit request
+                </button>
+              }
+            }
+          </div>
         </div>
       </div>
     }
@@ -540,6 +633,46 @@ const NO_EXPORT = new Set([
     .beds-empty strong { font-size:13px; color:var(--text); }
     .beds-empty span { font-size:12px; }
     .beds-empty-icon { display:flex; align-items:center; justify-content:center; width:42px; height:42px; margin-bottom:3px; border-radius:50%; background:var(--neutral-100); }
+    .leave-view-backdrop { align-items: center; }
+    .leave-view-modal { width:min(680px, calc(100vw - 32px)); max-width:680px; overflow:hidden; }
+    .leave-view-head { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:20px 22px; border-bottom:1px solid var(--border); background:var(--surface); }
+    .leave-view-person { display:flex; align-items:center; gap:12px; min-width:0; }
+    .leave-avatar { width:44px; height:44px; flex:0 0 44px; display:flex; align-items:center; justify-content:center; border-radius:12px; background:color-mix(in srgb, var(--primary) 14%, var(--surface)); color:var(--primary); font-size:14px; font-weight:800; }
+    .leave-view-eyebrow { margin-bottom:2px; font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; }
+    .leave-view-person h2 { margin:0; color:var(--text); font-size:18px; line-height:1.25; }
+    .leave-view-role { margin-top:3px; color:var(--text-muted); font-size:12px; text-transform:capitalize; }
+    .leave-view-head-actions { display:flex; align-items:center; gap:12px; flex:0 0 auto; }
+    .leave-view-body { padding:20px 22px 4px; background:var(--surface); max-height:min(62vh, 620px); overflow:auto; }
+    .leave-summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+    .leave-summary-item { min-width:0; padding:13px 14px; border:1px solid var(--border); border-radius:10px; background:var(--neutral-50); }
+    .leave-summary-label { display:block; margin-bottom:5px; font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.055em; }
+    .leave-summary-item strong { display:block; color:var(--text); font-size:13px; font-weight:700; text-transform:capitalize; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .leave-detail-section { margin-top:20px; }
+    .leave-section-title { margin-bottom:8px; font-size:12px; font-weight:800; color:var(--text); text-transform:uppercase; letter-spacing:.055em; }
+    .leave-detail-card, .leave-review-card { border:1px solid var(--border); border-radius:10px; background:var(--surface); }
+    .leave-detail-row { padding:14px 16px; }
+    .leave-detail-row > span { display:block; margin-bottom:6px; font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; }
+    .leave-detail-row p, .leave-review-card p { margin:0; color:var(--text); font-size:13px; line-height:1.6; white-space:pre-wrap; word-break:break-word; }
+    .leave-review-card { padding:14px 16px; }
+    .leave-review-top { display:flex; align-items:center; gap:10px; }
+    .leave-review-icon { width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:9px; background:var(--neutral-100); color:var(--primary); }
+    .leave-review-top strong { display:block; color:var(--text); font-size:13px; }
+    .leave-review-top span { display:block; margin-top:2px; color:var(--text-muted); font-size:11px; }
+    .leave-review-card p { margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+    .leave-review-card p.muted { color:var(--text-muted); }
+    .leave-view-actions { border-top:1px solid var(--border); background:var(--surface); }
+    @media (max-width:700px) {
+      .leave-view-head { align-items:flex-start; }
+      .leave-view-head-actions { gap:7px; }
+      .leave-summary-grid { grid-template-columns:repeat(2,1fr); }
+    }
+    @media (max-width:480px) {
+      .leave-view-head { padding:16px; }
+      .leave-view-body { padding:16px 16px 4px; }
+      .leave-summary-grid { grid-template-columns:1fr 1fr; gap:8px; }
+      .leave-summary-item { padding:11px 12px; }
+      .leave-view-person h2 { font-size:16px; }
+    }
     .leave-comment-intro { color: var(--text-muted, #667085); margin: 0 0 12px; font-size: 13px; line-height: 1.5; }
     .leave-comment-text { width: 100%; min-height: 96px; resize: vertical; }
     .leave-comment-hint { display: block; margin-top: 8px; color: var(--danger, #dc2626); }
@@ -1053,6 +1186,40 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.refOpenKey = null;
     this.formTitle = `View ${this.config?.label.replace(/s$/, '')}`;
     this.showForm = true;
+  }
+
+  get leaveEmployeeName(): string {
+    const direct = String(this.formValues['userName'] ?? '').trim();
+    if (direct) return direct;
+    const first = String(this.formValues['user']?.firstName ?? '').trim();
+    const last = String(this.formValues['user']?.lastName ?? '').trim();
+    return [first, last].filter(Boolean).join(' ') || `User #${this.formValues['userId'] ?? '—'}`;
+  }
+
+  get leaveUserRole(): string {
+    return String(this.formValues['userRole'] ?? this.formValues['user']?.role ?? '').replace(/_/g, ' ');
+  }
+
+  get leaveInitials(): string {
+    const parts = this.leaveEmployeeName.split(/\s+/).filter(Boolean);
+    return parts.slice(0, 2).map(p => p[0]?.toUpperCase() ?? '').join('') || 'LR';
+  }
+
+  get leaveTypeLabel(): string {
+    return String(this.formValues['leaveType'] ?? '—').replace(/_/g, ' ')
+      .replace(/\b\w/g, m => m.toUpperCase());
+  }
+
+  get leaveStatusLabel(): string {
+    return String(this.formValues['status'] ?? '—').replace(/_/g, ' ')
+      .replace(/\b\w/g, m => m.toUpperCase());
+  }
+
+  leaveDate(value: unknown): string {
+    if (!value) return '—';
+    const d = new Date(String(value));
+    if (!Number.isFinite(d.getTime())) return String(value);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
   toggleRowMenu(id: number | undefined, event: Event): void {
