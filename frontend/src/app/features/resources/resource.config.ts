@@ -289,8 +289,23 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   leaves: {
     key: 'leaves', label: 'Leave Requests', api: '/leaves',
-    columns: [{ key: 'userId', label: 'User', type: 'number' }, nameCol('leaveType', 'Type'), { key: 'startDate', label: 'From', type: 'date' }, { key: 'endDate', label: 'To', type: 'date' }, statusCol()],
-    fields: fields([{ key: 'leaveType', label: 'Leave type', type: 'select', options: STATUS_OPTIONS(['sick', 'casual', 'annual', 'unpaid', 'maternity']), required: true }, { key: 'startDate', label: 'Start date', type: 'dateonly', required: true }, { key: 'endDate', label: 'End date', type: 'dateonly', required: true }, { key: 'reason', label: 'Reason', type: 'textarea' }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['pending', 'approved', 'rejected', 'cancelled']) }]),
+    subtitle: 'Request and approve leave. Teachers and staff can apply; admins approve.',
+    columns: [
+      nameCol('userName', 'Employee'),
+      { key: 'leaveType', label: 'Type', type: 'badge', badgeMap: { sick: 'danger', casual: 'warning', annual: 'info', unpaid: '', maternity: 'success' } },
+      { key: 'startDate', label: 'From', type: 'date' },
+      { key: 'endDate', label: 'To', type: 'date' },
+      { key: 'days', label: 'Days', type: 'number' },
+      statusCol(),
+    ],
+    fields: fields([
+      { key: 'leaveType', label: 'Leave type', type: 'select', options: STATUS_OPTIONS(['sick', 'casual', 'annual', 'unpaid', 'maternity']), required: true, hint: 'Sick = medical, Casual = personal, Annual = planned vacation, Unpaid = without pay, Maternity = parental' },
+      { key: 'startDate', label: 'Start date', type: 'dateonly', required: true },
+      { key: 'endDate', label: 'End date', type: 'dateonly', required: true, hint: 'Inclusive — a 3-day leave from 1st to 3rd counts as 3 days.' },
+      { key: 'reason', label: 'Reason', type: 'textarea', hint: 'Brief reason for the leave request.' },
+      { key: 'adminComment', label: 'Admin comment', type: 'textarea', hint: 'Approver notes (optional).' },
+      { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['pending', 'approved', 'rejected', 'cancelled']), hint: 'Requesters can only cancel pending requests. Approvers can approve or reject.' },
+    ]),
   },
   books: {
     key: 'books', label: 'Books', api: '/books',

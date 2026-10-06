@@ -10,7 +10,7 @@ import {
   User,
 } from "../../../models";
 import { getPermissionsForRole } from "../../../services/rbac.service";
-import { ResourceDefinition } from "./shared";
+import { ResourceDefinition, plain } from "./shared";
 import { findPersonDuplicate } from "../../payroll/payroll.util";
 
 export const HR_RESOURCES: ResourceDefinition[] = [
@@ -181,6 +181,16 @@ export const HR_RESOURCES: ResourceDefinition[] = [
   },
   {
     path: "leaves", model: LeaveRequest, searchable: ["leaveType", "status"], permission: "leaves",
+    allowedFilters: ["status", "leaveType", "userId"],
+    includes: [
+      { association: "user", attributes: ["id", "firstName", "lastName", "username", "role"] },
+    ],
+    decorate: (row) => {
+      const p = plain(row);
+      p.userName = p.user ? `${p.user.firstName} ${p.user.lastName}`.trim() : `#${p.userId}`;
+      p.userRole = p.user?.role ?? "";
+      return p;
+    },
     // Everyone sees only their own leaves except school management (who approve them).
     scopeWhere: (req) => ["super_admin", "admin", "principal"].includes(String(req.user?.role ?? "")) ? {} : { userId: req.user?.id },
     beforeCreate: async (body, req) => {
