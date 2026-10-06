@@ -68,7 +68,7 @@ router.get("/:id", authorize("payments:read"), (req, res, next) => base.getOne(r
 
 router.post("/:id/refund", authorize("refunds:create"), asyncHandler(async (req, res) => {
   const amount = Number(req.body.amount ?? 0);
-  if (!(amount > 0)) throw ApiError.badRequest("Refund amount must be positive");
+  if (!Number.isFinite(amount) || !(amount > 0)) throw ApiError.badRequest("Refund amount must be positive");
   const callerBranch = req.user!.branchId;
   // Creating a refund and approving it are separate controls: approve:true needs refunds:approve.
   if (req.body.approve) {
@@ -97,6 +97,9 @@ router.post("/:id/refund", authorize("refunds:create"), asyncHandler(async (req,
     const refundable = Number(payment.amount) - Number(prior || 0);
     if (amount > refundable) throw ApiError.badRequest(`Refund exceeds refundable payment balance of ${refundable}`);
 
+    const refundedOn = req.body.refundedOn ? new Date(req.body.refundedOn) : new Date();
+    if (!Number.isFinite(refundedOn.getTime())) throw ApiError.badRequest("Refund date is not valid");
+
     const refund = await Refund.create({
       paymentId: payment.id,
       invoiceId: payment.invoiceId,
@@ -104,7 +107,7 @@ router.post("/:id/refund", authorize("refunds:create"), asyncHandler(async (req,
       amount,
       method: req.body.method || "bank",
       reason: req.body.reason || "",
-      refundedOn: req.body.refundedOn || new Date(),
+      refundedOn,
       status: req.body.approve ? "processed" : "pending",
       approvedBy: req.body.approve ? req.user!.id : null,
     }, { transaction: t });
@@ -132,7 +135,7 @@ router.post("/:id/refund", authorize("refunds:create"), asyncHandler(async (req,
       branchId: payment.branchId,
       ip: req.ip,
       newData: { paymentId: payment.id, amount, approved: !!req.body.approve },
-    });
+    }, t);
 
     await t.commit();
     ApiResponse.success(res, 201, "Refund recorded", refund);
@@ -188,7 +191,7 @@ router.patch("/:id/refunds/:refundId/approve", authorize("refunds:approve"), asy
       ip: req.ip,
       oldData: { status: "pending" },
       newData: { status: "processed", amount: refund.amount },
-    });
+    }, t);
 
     await t.commit();
     ApiResponse.success(res, 200, "Refund approved", refund);
