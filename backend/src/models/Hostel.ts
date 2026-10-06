@@ -1,7 +1,8 @@
-import { Table, Column, DataType, Index, ForeignKey } from "sequelize-typescript";
+import { Table, Column, DataType, Index, ForeignKey, BelongsTo } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { Student } from "./Student";
 import { Branch } from "./Branch";
+import { Staff } from "./Staff";
 
 @Table({ tableName: "hostels" })
 export class Hostel extends BaseModel {
@@ -20,8 +21,12 @@ export class Hostel extends BaseModel {
   @Column({ type: DataType.INTEGER.UNSIGNED, defaultValue: 0 })
   capacity!: number;
 
-  @Column({ type: DataType.STRING(120) })
-  wardenName!: string;
+  @ForeignKey(() => Staff)
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  wardenId!: number;
+
+  @BelongsTo(() => Staff, { as: "warden", foreignKey: "wardenId" })
+  warden!: Staff;
 
   @Index
   @Column({ type: DataType.BOOLEAN, defaultValue: true })
