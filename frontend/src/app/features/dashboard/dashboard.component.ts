@@ -15,6 +15,9 @@ interface DashboardStats {
   pendingLeaves: number;
   admissionApplications: number;
   activeEnrolments: number;
+  activeHostelResidents: number;
+  freeBeds: number;
+  occupiedBeds: number;
 }
 
 @Component({
@@ -72,6 +75,18 @@ interface DashboardStats {
         <a class="stat-card stat-ok" routerLink="/enrolments">
           <span class="stat-icon"><app-icon name="link" [size]="18" /></span>
           <span class="stat-label">Active Enrolments</span><span class="stat-value">{{ stats?.activeEnrolments ?? 0 }}</span>
+        </a>
+        <a class="stat-card" routerLink="/hostel-allocations">
+          <span class="stat-icon"><app-icon name="bed" [size]="18" /></span>
+          <span class="stat-label">Hostel Residents</span><span class="stat-value">{{ stats?.activeHostelResidents ?? 0 }}</span>
+        </a>
+        <a class="stat-card stat-ok" routerLink="/beds">
+          <span class="stat-icon"><app-icon name="check-square" [size]="18" /></span>
+          <span class="stat-label">Free Beds</span><span class="stat-value">{{ stats?.freeBeds ?? 0 }}</span>
+        </a>
+        <a class="stat-card stat-warn" routerLink="/beds">
+          <span class="stat-icon"><app-icon name="bed" [size]="18" /></span>
+          <span class="stat-label">Occupied Beds</span><span class="stat-value">{{ stats?.occupiedBeds ?? 0 }}</span>
         </a>
       </div>
 
