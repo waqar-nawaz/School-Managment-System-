@@ -7,6 +7,7 @@ import { runSeeders } from "./database/seeders";
 import { startJobs } from "./jobs";
 import { reconcileHostelState, ensureHostelIndexes } from "./modules/hostel/hostel.service";
 import { backfillEmployeeProfiles } from "./modules/employees/employees.service";
+import { attachNotificationSocket } from "./services/notification.socket";
 
 async function bootstrap(): Promise<void> {
   defineAssociations();
@@ -53,6 +54,7 @@ async function bootstrap(): Promise<void> {
       logger.info(`Swagger docs on http://localhost:${env.port}/api-docs`);
     }
   });
+  attachNotificationSocket(server);
 
   const shutdown = async (signal: string) => {
     logger.info(`${signal} received, shutting down gracefully...`);
