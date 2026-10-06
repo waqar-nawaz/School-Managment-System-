@@ -87,6 +87,14 @@ const NO_EXPORT = new Set([
               <button type="button" class="btn btn-sm" [class.btn-primary]="studentStatus === 'inactive'" [class.btn-ghost]="studentStatus !== 'inactive'" (click)="setStudentStatus('inactive')">Inactive</button>
             </div>
           }
+          @if (resourceKey === 'leaves') {
+            <select class="form-control leave-status-filter" [(ngModel)]="leaveStatusFilter" (ngModelChange)="onLeaveStatusFilter()" aria-label="Filter leave requests by status">
+              <option value="">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          }
           @if (resourceKey === 'book-issues') {
             <select class="form-control" style="max-width:160px;margin-right:12px" [(ngModel)]="bookIssueStatusFilter" (ngModelChange)="onBookIssueStatusFilter()">
               <option value="">All statuses</option>
@@ -695,6 +703,8 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     // Reset all view state so switching between resources starts clean.
     this.search = '';
     this.searchText = '';
+    this.leaveStatusFilter = '';
+    this.bookIssueStatusFilter = '';
     this.page = 1;
     this.rows = [];
     this.total = 0;
@@ -830,6 +840,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   libraryActionAmount = 1;
   libraryActionSaving = false;
   bookIssueStatusFilter = '';
+  leaveStatusFilter = '';
 
   openLibraryAction(row: Row, type: 'return' | 'lost'): void {
     this.libraryAction = { row, type };
@@ -866,6 +877,11 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         this.toasts.error(err?.error?.message || 'Library action failed');
       },
     });
+  }
+
+  onLeaveStatusFilter(): void {
+    this.page = 1;
+    this.load();
   }
 
   onBookIssueStatusFilter(): void {
