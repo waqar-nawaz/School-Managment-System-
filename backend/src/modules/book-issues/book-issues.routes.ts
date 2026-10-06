@@ -80,6 +80,9 @@ router.post("/", authorize("book-issues:create"), asyncHandler(async (req, res) 
     let copy = bookCopyId
       ? await BookCopy.findByPk(bookCopyId, { transaction, lock: transaction.LOCK.UPDATE })
       : null;
+    if (copy && bookId && Number(copy.bookId) !== Number(bookId)) {
+      throw ApiError.badRequest("Selected book does not match the selected copy");
+    }
     if (!copy && bookId) {
       // Scope the available-copy lookup by branch so we don't pick a copy from another branch.
       const branchScope = branchOf(req) != null ? { branchId: branchOf(req) } : {};
@@ -88,16 +91,26 @@ router.post("/", authorize("book-issues:create"), asyncHandler(async (req, res) 
     if (!copy || copy.status !== "available") throw ApiError.badRequest("No available copy for this book");
     assertBranch(copy, req, "Book copy");
 
+    const book = await Book.findByPk(copy.bookId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!book || (branchOf(req) != null && Number(book.branchId) !== branchOf(req))) {
+      throw ApiError.badRequest("Book does not belong to your branch");
+    }
+    if (!book.isActive) throw ApiError.badRequest("This book is inactive and cannot be issued");
+
     let borrowerId = userId;
     // Portal users can only ever borrow for themselves.
     if (OWN_ONLY_ROLES.has(req.user!.role)) borrowerId = req.user!.id;
     else if (!borrowerId && studentId) {
       const student = await Student.findByPk(studentId, { transaction });
-      borrowerId = student?.userId;
+      if (!student || (branchOf(req) != null && Number(student.branchId) !== branchOf(req))) {
+        throw ApiError.badRequest("Student does not belong to your branch");
+      }
+      borrowerId = student.userId;
     }
     const borrower = borrowerId ? await User.findByPk(borrowerId, { transaction }) : null;
     assertBranch(borrower, req, "Borrower");
     if (!borrower) throw ApiError.badRequest("Borrower not found: provide a valid userId or studentId");
+    if (!borrower.isActive) throw ApiError.badRequest("Borrower account is inactive");
 
     const days = Number(dueInDays);
     if (!Number.isInteger(days) || days < 1 || days > 365) throw ApiError.badRequest("dueInDays must be between 1 and 365");
