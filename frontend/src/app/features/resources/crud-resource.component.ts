@@ -87,6 +87,12 @@ const NO_EXPORT = new Set([
               <button type="button" class="btn btn-sm" [class.btn-primary]="studentStatus === 'inactive'" [class.btn-ghost]="studentStatus !== 'inactive'" (click)="setStudentStatus('inactive')">Inactive</button>
             </div>
           }
+          @if (resourceKey === 'beds') {
+            <select class="form-control" style="max-width:180px;margin-right:12px" [(ngModel)]="bedHostelFilter" (ngModelChange)="onBedHostelFilter()">
+              <option value="">All hostels</option>
+              @for (h of bedHostelOptions; track h.id) { <option [value]="h.id">{{ h.name }}</option> }
+            </select>
+          }
           <div class="search-box">
             <input
               type="text"
@@ -372,6 +378,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   formTitle = 'Create';
   formValues: Record<string, unknown> = {};
   saving = false;
+  loading = false;
   fieldErrors: Record<string, string> = {};
   refOptions: Record<string, Array<{ value: unknown; label: string }> | undefined> = {};
   refSearch: Record<string, string> = {};
@@ -421,6 +428,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.canEdit = this.perms.hasPermission(`${base}:update`);
     this.canDelete = this.perms.hasPermission(`${base}:delete`);
     this.canExport = this.perms.hasPermission('reports:export') && !NO_EXPORT.has(this.resourceKey);
+    if (this.resourceKey === 'beds') this.loadBedHostelOptions();
   }
 
   get searchPlaceholder(): string {
@@ -457,6 +465,33 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
 
   trackRow(index: number, row: Row): number | string {
     return row.id ?? index;
+  }
+
+  // Beds hostel filter
+  bedHostelFilter = '';
+  bedHostelOptions: Array<{ id: number; name: string }> = [];
+
+  onBedHostelFilter(): void {
+    const params: Record<string, unknown> = { page: 1, limit: this.pageSize };
+    if (this.bedHostelFilter) params['filter[hostelId]'] = this.bedHostelFilter;
+    this.loading = true;
+    const api = this.config?.api;
+    if (!api) return;
+    this.api.get<Row[]>(api, params).subscribe({
+      next: (res) => {
+        this.rows = (res?.data as Row[]) ?? [];
+        this.total = res?.meta?.total ?? this.rows.length;
+        this.loading = false;
+      },
+      error: () => { this.loading = false; },
+    });
+  }
+
+  private loadBedHostelOptions(): void {
+    this.api.get<Array<{ id: number; name: string; isActive: boolean }>>('/hostels', { limit: 100 }).subscribe({
+      next: (r) => { this.bedHostelOptions = (r?.data ?? []).filter(h => h.isActive); },
+      error: () => {},
+    });
   }
 
   setPageSize(size: number): void {
@@ -931,7 +966,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   bedStatusClass(value: unknown): string {
     const status = String(value ?? '');
     if (status === 'available') return 'success';
-    if (status === 'occupied') return 'info';
+    if (status === 'occupied') return 'danger';
     if (status === 'maintenance') return 'warning';
     return '';
   }
