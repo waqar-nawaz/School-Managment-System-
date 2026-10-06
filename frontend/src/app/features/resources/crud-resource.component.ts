@@ -1101,6 +1101,9 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         ? '/book-issues/overdue/list'
         : this.config.api;
     const params: Record<string, unknown> = { page: this.page, limit: this.pageSize, q: this.search };
+    if (this.resourceKey === 'leaves' && this.leaveStatusFilter) {
+      params['filter[status]'] = this.leaveStatusFilter;
+    }
     if (this.resourceKey === 'book-issues' && this.bookIssueStatusFilter && this.bookIssueStatusFilter !== 'overdue') {
       params['filter[status]'] = this.bookIssueStatusFilter;
     }
