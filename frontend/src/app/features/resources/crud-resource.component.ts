@@ -475,6 +475,13 @@ const NO_EXPORT = new Set([
     }
   `,
   styles: [`
+    .library-action-modal { max-width:520px; }
+    .library-action-modal .modal-subtitle { margin-top:4px; font-size:12px; color:var(--text-muted); }
+    .library-action-body { padding:20px 24px 4px; }
+    .library-action-body .form-group { display:flex; flex-direction:column; gap:7px; }
+    .library-action-body .form-group > span { font-size:13px; font-weight:600; color:var(--text); }
+    .library-action-body .form-control { width:100%; }
+    .library-action-body .form-hint { line-height:1.45; }
     .beds-view { padding: 4px 0 2px; }
     .beds-view-head { display:flex; align-items:center; justify-content:space-between; gap:18px; margin:0 0 16px; }
     .beds-view-title { font-size:15px; font-weight:700; letter-spacing:-.01em; }
