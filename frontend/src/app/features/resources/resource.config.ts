@@ -334,7 +334,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   'book-fines': {
     key: 'book-fines', label: 'Book Fines', api: '/book-fines',
     subtitle: 'Fines are linked to a completed circulation event and keep a traceable payment or waiver state.',
-    columns: [nameCol('bookTitle', 'Book'), nameCol('accessionNo', 'Copy'), nameCol('borrowerName', 'Borrower'), { key: 'amount', label: 'Amount', type: 'money' }, statusCol()],
+    columns: [nameCol('bookTitle', 'Book'), nameCol('accessionNo', 'Copy'), nameCol('borrowerName', 'Borrower'), { key: 'amount', label: 'Amount', type: 'money' }, statusCol(), nameCol('receiptNo', 'Receipt'), { key: 'paidAt', label: 'Paid', type: 'date' }],
     fields: fields([
       refField('bookIssueId', 'Book issue', '/book-issues', 'id', undefined, true),
       refField('userId', 'Borrower', '/users', 'firstName', 'email', true, { field: 'isActive', value: 'true' }),
