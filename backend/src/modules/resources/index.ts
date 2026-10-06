@@ -84,12 +84,31 @@ function buildRouter(def: ResourceDefinition): Router {
       try {
         const where: any = { senderId: req.user?.id };
         if (req.user?.branchId != null) where.branchId = req.user.branchId;
-        const rows = await Message.findAll({ where, order: [["createdAt","DESC"]], limit: Math.min(Number(req.query.limit) || 50, 100) });
+        // Include the sender association so the response carries senderName + senderRole,
+        // matching the shape of /messages/inbox. Without this the frontend detail modal
+        // shows 'Unknown' for the sender name (and initials() crashed on undefined).
+        const rows = await Message.findAll({
+          where,
+          include: [{ association: "sender", attributes: ["id", "firstName", "lastName", "email", "role"] }],
+          order: [["createdAt", "DESC"]],
+          limit: Math.min(Number(req.query.limit) || 50, 100),
+        });
         const ids = rows.map((m: any) => Number(m.id));
-        const recipients = ids.length ? await MessageRecipient.findAll({ where: { messageId: ids, isDeleted: false }, attributes: ["messageId","recipientId","readAt"] }) : [];
+        const recipients = ids.length ? await MessageRecipient.findAll({ where: { messageId: ids, isDeleted: false }, attributes: ["messageId", "recipientId", "readAt"] }) : [];
         const readBy = new Map<number, number>();
         for (const rr of recipients) if (rr.readAt) readBy.set(Number(rr.messageId), (readBy.get(Number(rr.messageId)) ?? 0) + 1);
-        res.status(200).json({ success: true, data: rows.map((m: any) => ({ ...m.toJSON(), recipientCount: recipients.filter((rr: any) => Number(rr.messageId) === Number(m.id)).length, readCount: readBy.get(Number(m.id)) ?? 0 })) });
+        res.status(200).json({
+          success: true,
+          data: rows.map((m: any) => {
+            const senderName = m.sender ? `${m.sender.firstName ?? ""} ${m.sender.lastName ?? ""}`.trim() : "Unknown";
+            const senderRole = m.sender?.role ?? "";
+            // Strip the nested association object so the payload stays flat — the client
+            // only needs the readable name + role.
+            const plain: any = m.toJSON();
+            delete plain.sender;
+            return { ...plain, senderName, senderRole, recipientCount: recipients.filter((rr: any) => Number(rr.messageId) === Number(m.id)).length, readCount: readBy.get(Number(m.id)) ?? 0 };
+          }),
+        });
       } catch (err) { next(err); }
     });
     router.patch("/:id/read", authorize("messages:read"), async (req, res, next) => {

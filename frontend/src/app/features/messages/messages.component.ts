@@ -60,7 +60,7 @@ interface MessageRow {
           <div class="message-list">
             @for (m of filtered; track m.id) {
               <button class="message-row" [class.unread]="folder==='inbox' && !m.readAt" (click)="openMessage(m)">
-                <div class="message-avatar">{{ initials(folder==='inbox' ? m.senderName : userLabel(m)) }}</div>
+                <div class="message-avatar">{{ initials(folder==='inbox' ? m.senderName : m.senderName) }}</div>
                 <div class="message-row-main">
                   <div class="message-row-top">
                     <strong>{{ folder==='inbox' ? m.senderName : (m.subject || 'No subject') }}</strong>
@@ -89,8 +89,14 @@ interface MessageRow {
             <button class="modal-close" (click)="selected=null"><app-icon name="x" [size]="16"/></button>
           </div>
           <div class="message-detail-meta">
-            <div class="message-avatar large">{{ initials(selected.senderName) }}</div>
-            <div><strong>{{ selected.senderName }}</strong><span>{{ selected.senderRole | titlecase }} · {{ selected.createdAt | date:'MMM d, y, h:mm a' }}</span></div>
+            <div class="message-avatar large">{{ initials(folder==='sent' ? 'You' : selected.senderName) }}</div>
+            <div>
+              <strong>{{ folder==='sent' ? 'You' : (selected.senderName || 'Unknown') }}</strong>
+              <span>{{ folder==='sent' ? ('Sent to ' + (selected.recipientCount ?? 0) + ' recipient' + ((selected.recipientCount ?? 0) === 1 ? '' : 's')) : (selected.senderRole ? (selected.senderRole | titlecase) + ' · ' : '') + (selected.createdAt | date:'MMM d, y, h:mm a') }}</span>
+              @if (folder==='sent') {
+                <span style="display:block;font-size:10px;color:var(--text-muted);margin-top:2px">{{ selected.createdAt | date:'MMM d, y, h:mm a' }} · {{ selected.readCount ?? 0 }}/{{ selected.recipientCount ?? 0 }} read</span>
+              }
+            </div>
           </div>
           <div class="message-body">{{ selected.body }}</div>
           <div class="message-detail-actions">
@@ -161,6 +167,11 @@ export class MessagesComponent implements OnInit {
   addRecipient(r:Recipient){if(!this.selectedRecipients.some(x=>x.id===r.id))this.selectedRecipients.push(r);this.recipientQuery='';this.recipientOptions=[];}
   removeRecipient(id:number){this.selectedRecipients=this.selectedRecipients.filter(x=>x.id!==id);}
   send(){if(this.sending||!this.draft.body.trim()||(this.draft.kind!=='broadcast'&&!this.selectedRecipients.length))return;this.sending=true;const body={subject:this.draft.subject.trim(),body:this.draft.body.trim(),kind:this.draft.kind,recipientIds:this.selectedRecipients.map(r=>r.id)};this.api.post('/messages',body).subscribe({next:()=>{this.sending=false;this.toasts.success('Message sent');this.closeCompose();if(this.folder==='sent')this.load();},error:e=>{this.sending=false;this.toasts.error(e?.error?.message||'Could not send message');}})}
-  initials(name:string){return name.split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]?.toUpperCase()??'').join('')||'U';}
+  initials(name:string|undefined|null){
+    // Guard against undefined/null (sent messages used to crash here because the
+    // backend response didn't include senderName).
+    if(!name || typeof name!=='string') return 'U';
+    return name.split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]?.toUpperCase()??'').join('')||'U';
+  }
   userLabel(m:MessageRow){return 'You';}
 }
