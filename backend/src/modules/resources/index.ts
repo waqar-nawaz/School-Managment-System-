@@ -39,7 +39,7 @@ function buildRouter(def: ResourceDefinition): Router {
   );
   // Needs BOTH the export right and read access to this very resource.
   router.get("/export", authorize(`reports:export`), authorize(`${perm}:read`), exportCsv(def.model, def.path, ctrl));
-  router.get("/:id", authorize(`${perm}:read`), (req, res, next) =>
+  router.get("/:id", canRead, (req, res, next) =>
     ctrl.getOne(req, res).catch(next)
   );
 
