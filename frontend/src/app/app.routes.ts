@@ -42,6 +42,18 @@ export const routes: Routes = [
           import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
       },
       {
+        path: 'messages',
+        data: { permission: 'messages:read' },
+        canActivate: [PermissionGuard],
+        loadComponent: () => import('./features/messages/messages.component').then((m) => m.MessagesComponent),
+      },
+      {
+        path: 'notifications',
+        data: { permission: 'notifications:read' },
+        canActivate: [PermissionGuard],
+        loadComponent: () => import('./features/notifications/notifications.component').then((m) => m.NotificationsComponent),
+      },
+      {
         path: 'users',
         data: { permission: 'users:read' },
         canActivate: [PermissionGuard],
