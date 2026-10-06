@@ -324,13 +324,24 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   'book-copies': {
     key: 'book-copies', label: 'Book Copies', api: '/book-copies',
-    columns: [nameCol('accessionNo', 'Accession No'), { key: 'bookId', label: 'Book', type: 'number' }, statusCol()],
-    fields: fields([{ key: 'accessionNo', label: 'Accession number', required: true }, refField('bookId', 'Book', '/books', 'title', undefined, true), { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available','issued','reserved','damaged','lost']) }]),
+    columns: [nameCol('accessionNo', 'Accession No'), nameCol('bookTitle', 'Book'), statusCol()],
+    fields: fields([
+      { key: 'accessionNo', label: 'Accession number', required: true, hint: 'Unique physical copy identifier / barcode.' },
+      refField('bookId', 'Book', '/books', 'title', undefined, true),
+      { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available','damaged']), hint: 'Issued and lost are controlled by circulation actions.' },
+    ]),
   },
   'book-fines': {
     key: 'book-fines', label: 'Book Fines', api: '/book-fines',
-    columns: [{ key: 'bookIssueId', label: 'Issue', type: 'number' }, { key: 'userId', label: 'User', type: 'number' }, { key: 'amount', label: 'Amount', type: 'money' }, statusCol()],
-    fields: fields([refField('bookIssueId', 'Book issue', '/book-issues', 'id', undefined, true), refField('userId', 'User', '/users', 'firstName', 'email', true), { key: 'amount', label: 'Amount', type: 'number', required: true }, { key: 'reason', label: 'Reason' }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['pending','paid','waived']) }]),
+    subtitle: 'Fines are linked to a completed circulation event and keep a traceable payment or waiver state.',
+    columns: [nameCol('bookTitle', 'Book'), nameCol('accessionNo', 'Copy'), nameCol('borrowerName', 'Borrower'), { key: 'amount', label: 'Amount', type: 'money' }, statusCol()],
+    fields: fields([
+      refField('bookIssueId', 'Book issue', '/book-issues', 'id', undefined, true),
+      refField('userId', 'Borrower', '/users', 'firstName', 'email', true),
+      { key: 'amount', label: 'Amount', type: 'number', required: true },
+      { key: 'reason', label: 'Reason', type: 'textarea' },
+      { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['pending','paid','waived']) },
+    ]),
   },
   routes: {
     key: 'routes', label: 'Transport Routes', api: '/routes',
@@ -494,12 +505,14 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   'book-issues': {
     key: 'book-issues', label: 'Book Issues', api: '/book-issues',
+    subtitle: 'Issue, return and track circulation. Returned and lost records remain in history.',
     columns: [{ key: 'bookTitle', label: 'Book', type: 'text' }, { key: 'accessionNo', label: 'Copy', type: 'text' }, { key: 'borrowerName', label: 'Borrower', type: 'text' }, { key: 'issueDate', label: 'Issued', type: 'date' }, { key: 'dueDate', label: 'Due', type: 'date' }, statusCol()],
     fields: fields([
       refField('bookCopyId', 'Book copy', '/book-copies', 'accessionNo', undefined, true),
-      refField('studentId', 'Student', '/students', 'firstName', 'admissionNo'),
-      { key: 'dueInDays', label: 'Due in (days)', type: 'number' },
-      { key: 'requestedFor', label: 'Requested for', type: 'select', options: STATUS_OPTIONS(['student', 'teacher', 'staff']) },
+      refField('userId', 'Borrower', '/users', 'firstName', 'email', true),
+      { key: 'dueInDays', label: 'Loan period (days)', type: 'number', hint: '1–365 days. Used when issuing a new loan.' },
+      { key: 'dueDate', label: 'Due date', type: 'dateonly', hint: 'Only used when editing an open loan.' },
+      { key: 'requestedFor', label: 'Borrower type', type: 'select', options: STATUS_OPTIONS(['student', 'teacher', 'staff']) },
     ]),
   },
   payments: {
