@@ -26,7 +26,7 @@ function dateParam(value: unknown, fallback: Date, endOfDay = false): Date {
   const raw = String(value).trim();
   // Date-only filters must include the entire selected day. Use UTC explicitly so
   // the API behaves consistently on Render and local development machines.
-  const d = /^\\d{4}-\\d{2}-\\d{2}$/.test(raw)
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(raw)
     ? new Date(`${raw}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`)
     : new Date(raw);
   return Number.isNaN(d.getTime()) ? fallback : d;
