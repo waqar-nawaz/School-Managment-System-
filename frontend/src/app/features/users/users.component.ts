@@ -38,14 +38,14 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
         <span class="summary-icon"><app-icon name="check-square" [size]="18" /></span>
         <div class="summary-copy">
           <strong>{{ activeCount }}</strong>
-          <small>Active</small>
+          <small>Active on this page</small>
         </div>
       </div>
       <div class="summary-tile summary-tile-danger">
         <span class="summary-icon"><app-icon name="x" [size]="18" /></span>
         <div class="summary-copy">
           <strong>{{ total - activeCount }}</strong>
-          <small>Disabled</small>
+          <small>Disabled on this page</small>
         </div>
       </div>
       <div class="summary-tile summary-tile-neutral">
@@ -73,7 +73,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           @for (r of ROLES; track r) { <option [value]="r">{{ r | titlecase }}</option> }
         </select>
         <select class="form-control users-filter" [(ngModel)]="activeFilter" (ngModelChange)="onFilterChange()">
-          <option value="">All status</option>
+          <option value="">All statuses</option>
           <option value="true">Active</option>
           <option value="false">Disabled</option>
         </select>
@@ -160,7 +160,11 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
       }
 
       <div class="pagination-bar">
-        <span class="pagination-count">Page {{ page }} of {{ totalPages || 1 }} · {{ total }} total</span>
+        <div class="users-list-summary">
+          <span>Showing {{ users.length }} of {{ total }} users</span>
+          @if (hasFilters) { <span class="filter-state"><app-icon name="filter" [size]="12" /> Filters applied</span> }
+        </div>
+        <span class="pagination-count">Page {{ page }} of {{ totalPages || 1 }}</span>
         <div class="page-actions">
           <button class="btn btn-sm btn-ghost" [disabled]="page <= 1" (click)="prevPage()">
             <app-icon name="chevron-left" [size]="14" /> Prev
@@ -352,7 +356,11 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     body.dark-theme .summary-tile-danger .summary-icon { background: rgba(192,57,43,.22); color: #fca5a5; }
 
     /* Toolbar */
-    .users-toolbar { gap: 10px; }
+    .users-toolbar { gap: 10px; align-items: center; padding: 12px 14px; }
+    .users-toolbar::before { content: 'Directory'; font-size: 12px; font-weight: 700; color: var(--text); margin-right: 2px; }
+    .users-list-summary { display:flex; align-items:center; gap:12px; padding:9px 16px; border-top:1px solid var(--border); background:var(--neutral-50); color:var(--text-muted); font-size:11px; }
+    .filter-state { display:inline-flex; align-items:center; gap:4px; color:var(--primary); font-weight:600; }
+    body.dark-theme .users-list-summary { background:rgba(255,255,255,.025); }
     .users-search { flex: 1; position: relative; }
     .search-leading { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
     .users-search .form-control { padding-left: 32px; }
@@ -363,6 +371,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     .user-row { display: grid; grid-template-columns: 44px 1fr 130px 56px; align-items: center; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--border); transition: background .15s; }
     .user-row:last-child { border-bottom: 0; }
     .user-row:hover { background: var(--row-hover); }
+    .user-row:focus-within { background: var(--row-hover); box-shadow: inset 3px 0 0 var(--primary); }
     .user-row-disabled { opacity: .65; }
 
     .avatar { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; text-transform: uppercase; letter-spacing: .02em; }
@@ -370,8 +379,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     .avatar-super_admin { background: #6c3483; }
     .avatar-principal { background: #145374; }
     .avatar-teacher { background: #1f6feb; }
-    .avatar-staff { background: #5d6d7e; }
-    .avatar-student { background: #16a34a; }
+        .avatar-student { background: #16a34a; }
     .avatar-parent { background: #d97706; }
     .avatar-accountant { background: #0e7490; }
     .avatar-librarian { background: #b03a2e; }
@@ -395,13 +403,15 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     .meta-item app-icon { flex-shrink: 0; }
     .meta-username { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11px; }
 
-    .user-row-role { display: flex; justify-content: flex-end; }
+    .user-row-role { display: flex; justify-content: flex-start; }
+    .user-row-role::before { content: 'Role'; display:block; position:absolute; margin-top:-26px; font-size:9px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); }
+    .user-row-role { position:relative; padding-top:8px; }
     .role-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; text-transform: capitalize; }
     .role-badge-admin { background: rgba(192,57,43,.12); color: #c0392b; }
     .role-badge-super_admin { background: rgba(108,52,131,.14); color: #6c3483; }
     .role-badge-principal { background: var(--primary-light); color: var(--primary); }
     .role-badge-teacher { background: rgba(31,111,235,.12); color: #1f6feb; }
-    .role-badge-staff { background: var(--neutral-100); color: var(--text-muted); }
+    
     .role-badge-student { background: rgba(22,163,74,.12); color: #16a34a; }
     .role-badge-parent { background: rgba(217,119,6,.12); color: #d97706; }
     .role-badge-accountant { background: rgba(14,116,144,.12); color: #0e7490; }
@@ -476,7 +486,7 @@ export class UsersComponent implements OnInit {
   roleFilter = '';
   activeFilter = '';
   loading = true;
-  private readonly EMPLOYEE_ROLES = ['teacher', 'staff', 'accountant', 'librarian', 'hostel_warden', 'transport_manager', 'receptionist', 'principal'];
+  private readonly EMPLOYEE_ROLES = ['teacher', 'accountant', 'librarian', 'hostel_warden', 'transport_manager', 'receptionist', 'principal'];
   isEmployeeRole(role: string): boolean { return this.EMPLOYEE_ROLES.includes(role); }
   showForm = false;
   editing: boolean | null = null;
@@ -515,7 +525,9 @@ export class UsersComponent implements OnInit {
   ngOnInit(): void {
     this.api.get<Array<{ name: string }>>('/roles', { limit: 100 }).subscribe({
       next: (r) => {
-        const names = (r?.data ?? []).map((x) => x.name).filter((n) => n && n !== 'super_admin' || this.isSuperAdmin);
+        const names = (r?.data ?? [])
+          .map((x) => x.name)
+          .filter((n) => n && n !== 'staff' && (n !== 'super_admin' || this.isSuperAdmin));
         if (names.length) this.ROLES = names;
       },
       error: () => {},
@@ -542,7 +554,7 @@ export class UsersComponent implements OnInit {
   /** Map a role string to a CSS color token used by both avatar and role-badge classes.
    *  Falls back to 'default' for unknown roles so the UI never breaks for custom roles. */
   roleColor(role: string): string {
-    const known = ['super_admin', 'admin', 'principal', 'teacher', 'staff', 'student', 'parent', 'accountant', 'librarian', 'hostel_warden', 'transport_manager', 'receptionist'];
+    const known = ['super_admin', 'admin', 'principal', 'teacher', 'student', 'parent', 'accountant', 'librarian', 'hostel_warden', 'transport_manager', 'receptionist'];
     return known.includes(role) ? role : 'default';
   }
 
