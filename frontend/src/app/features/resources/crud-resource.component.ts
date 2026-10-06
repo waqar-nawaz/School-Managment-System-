@@ -220,6 +220,12 @@ const NO_EXPORT = new Set([
                                 @if (rowEditable) { <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit</button> }
                                 @if (row['isActive'] && canDelete) { <button type="button" class="row-menu-item danger" (click)="askStatusChange(row, 'deactivate'); openMenuId = null"><app-icon name="x" [size]="15" /> Deactivate</button> }
                                 @if (!row['isActive'] && canEdit) { <button type="button" class="row-menu-item" (click)="askStatusChange(row, 'activate'); openMenuId = null"><app-icon name="check" [size]="15" /> Activate</button> }
+                              } @else if (resourceKey === 'book-issues') {
+                                @if (['issued', 'overdue'].includes(row['status'])) {
+                                  <button type="button" class="row-menu-item" (click)="openLibraryAction(row, 'return'); openMenuId = null"><app-icon name="check" [size]="15" /> Return book</button>
+                                  <button type="button" class="row-menu-item danger" (click)="openLibraryAction(row, 'lost'); openMenuId = null"><app-icon name="x" [size]="15" /> Mark lost</button>
+                                  @if (rowEditable) { <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit due date</button> }
+                                }
                               } @else if (resourceKey === 'leaves') {
                                 @if (row['status'] === 'pending') {
                                   @if (canApproveLeaves) {
@@ -414,6 +420,43 @@ const NO_EXPORT = new Set([
         </div>
       </div>
     }
+    @if (libraryAction) {
+      <div class="modal-backdrop">
+        <div class="modal library-action-modal">
+          <div class="modal-head">
+            <div>
+              <div class="modal-title">{{ libraryAction.type === 'return' ? 'Return book' : 'Mark book as lost' }}</div>
+              <div class="modal-subtitle">{{ libraryAction.row.bookTitle || 'Book' }} · {{ libraryAction.row.accessionNo || 'Copy' }} · {{ libraryAction.row.borrowerName || 'Borrower' }}</div>
+            </div>
+            <button type="button" class="modal-close" (click)="closeLibraryAction()" aria-label="Close">
+              <app-icon name="x" [size]="16" />
+            </button>
+          </div>
+          <div class="library-action-body">
+            @if (libraryAction.type === 'return') {
+              <label class="form-group">
+                <span>Fine per late day</span>
+                <input type="number" class="form-control" min="0" step="0.01" [(ngModel)]="libraryActionAmount" />
+                <small class="form-hint">Leave the default unless your library uses a different rate for this return. No fine is created when the book is not late.</small>
+              </label>
+            } @else {
+              <label class="form-group">
+                <span>Lost-book charge</span>
+                <input type="number" class="form-control" min="0" step="0.01" [(ngModel)]="libraryActionAmount" />
+                <small class="form-hint">This is added to the book value when the copy is marked lost.</small>
+              </label>
+            }
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" (click)="closeLibraryAction()">Cancel</button>
+            <button type="button" class="btn" [class.btn-danger]="libraryAction.type === 'lost'" [class.btn-primary]="libraryAction.type === 'return'" [disabled]="libraryActionSaving" (click)="doLibraryAction()">
+              <app-icon name="check" [size]="14" /> {{ libraryActionSaving ? 'Saving…' : (libraryAction.type === 'return' ? 'Return book' : 'Mark lost') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
     @if (statusConfirm && config && resourceKey === 'students') {
       <app-confirm-dialog
         [title]="statusConfirm.action === 'activate' ? 'Activate student' : 'Deactivate student'"
