@@ -384,7 +384,7 @@ const NO_EXPORT = new Set([
     .beds-view { padding: 4px 0 2px; }
     .beds-view-head { display:flex; align-items:center; justify-content:space-between; gap:18px; margin:0 0 16px; }
     .beds-view-title { font-size:15px; font-weight:700; letter-spacing:-.01em; }
-    .beds-view-subtitle { margin-top:3px; font-size:12px; color:var(--text-muted, #667085); }
+    .beds-view-subtitle { margin-top:3px; font-size:12px; color:var(--text-muted); }
     .beds-view-legend { display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:var(--text-muted, #667085); }
     .beds-view-legend span { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
     .beds-dot, .beds-chip-status { width:7px; height:7px; border-radius:50%; display:inline-block; flex:0 0 auto; }
@@ -392,30 +392,30 @@ const NO_EXPORT = new Set([
     .beds-dot.occupied, .beds-chip-danger .beds-chip-status { background:#dc2626; }
     .beds-dot.maintenance, .beds-chip-warning .beds-chip-status { background:#d97706; }
     .beds-room-list { display:grid; gap:12px; }
-    .beds-room-card { border:1px solid var(--border-color, #e5e7eb); border-radius:12px; background:var(--surface, #fff); overflow:visible; }
-    .beds-room-head { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:14px 16px 12px; border-bottom:1px solid var(--border-color, #eef0f3); }
+    .beds-room-card { border:1px solid var(--border); border-radius:12px; background:var(--surface); overflow:visible; }
+    .beds-room-head { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:14px 16px 12px; border-bottom:1px solid var(--border); }
     .beds-room-location { min-width:180px; }
-    .beds-hostel-name { font-size:13px; font-weight:700; color:var(--text, #111827); }
+    .beds-hostel-name { font-size:13px; font-weight:700; color:var(--text); }
     .beds-room-name { margin-top:3px; font-size:12px; color:var(--text-muted, #667085); }
     .beds-room-occupancy { width:190px; max-width:35%; }
     .beds-occupancy-label { display:flex; justify-content:space-between; gap:8px; margin-bottom:6px; font-size:11px; color:var(--text-muted, #667085); }
-    .beds-progress { height:5px; overflow:hidden; border-radius:999px; background:#eef0f3; }
-    .beds-progress span { display:block; height:100%; border-radius:inherit; background:#64748b; transition:width .2s ease; }
+    .beds-progress { height:5px; overflow:hidden; border-radius:999px; background:var(--neutral-300); }
+    .beds-progress span { display:block; height:100%; border-radius:inherit; background:var(--primary); transition:width .2s ease; }
     .beds-room-body { padding:14px 16px 16px; }
     .beds-chip-list { display:flex; flex-wrap:wrap; gap:9px; }
-    .beds-chip { position:relative; min-width:128px; display:flex; align-items:center; gap:9px; padding:9px 8px 9px 11px; border:1px solid var(--border-color, #e5e7eb); border-radius:9px; background:#fafafa; }
-    .beds-chip-success { border-color:#bbf7d0; background:#f7fdf8; }
-    .beds-chip-danger { border-color:#fecaca; background:#fff8f8; }
-    .beds-chip-warning { border-color:#fde68a; background:#fffbeb; }
+    .beds-chip { position:relative; min-width:128px; display:flex; align-items:center; gap:9px; padding:9px 8px 9px 11px; border:1px solid var(--border); border-radius:9px; background:var(--neutral-50); color:var(--text); }
+    .beds-chip-success { border-color:rgba(34,197,94,.38); background:rgba(34,197,94,.10); }
+    .beds-chip-danger { border-color:rgba(239,68,68,.38); background:rgba(239,68,68,.10); }
+    .beds-chip-warning { border-color:rgba(245,158,11,.38); background:rgba(245,158,11,.10); }
     .beds-chip-copy { min-width:0; display:flex; flex-direction:column; gap:2px; }
-    .beds-chip-copy strong { font-size:12px; line-height:1.2; color:var(--text, #111827); }
-    .beds-chip-copy small { font-size:10px; line-height:1.2; text-transform:capitalize; color:var(--text-muted, #667085); }
-    .beds-chip-menu { margin-left:auto; width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:6px; background:transparent; color:var(--text-muted, #667085); cursor:pointer; }
-    .beds-chip-menu:hover { background:rgba(0,0,0,.05); color:var(--text, #111827); }
-    .beds-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:180px; border:1px dashed var(--border-color, #d9dde4); border-radius:12px; color:var(--text-muted, #667085); }
-    .beds-empty strong { font-size:13px; color:var(--text, #111827); }
+    .beds-chip-copy strong { font-size:12px; line-height:1.2; color:var(--text); }
+    .beds-chip-copy small { font-size:10px; line-height:1.2; text-transform:capitalize; color:var(--text-muted); }
+    .beds-chip-menu { margin-left:auto; width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:6px; background:transparent; color:var(--text-muted); cursor:pointer; }
+    .beds-chip-menu:hover { background:var(--neutral-100); color:var(--text); }
+    .beds-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:180px; border:1px dashed var(--border); border-radius:12px; color:var(--text-muted); }
+    .beds-empty strong { font-size:13px; color:var(--text); }
     .beds-empty span { font-size:12px; }
-    .beds-empty-icon { display:flex; align-items:center; justify-content:center; width:42px; height:42px; margin-bottom:3px; border-radius:50%; background:#f3f4f6; }
+    .beds-empty-icon { display:flex; align-items:center; justify-content:center; width:42px; height:42px; margin-bottom:3px; border-radius:50%; background:var(--neutral-100); }
     @media (max-width: 760px) {
       .beds-view-head, .beds-room-head { align-items:flex-start; flex-direction:column; }
       .beds-room-occupancy { width:100%; max-width:none; }
