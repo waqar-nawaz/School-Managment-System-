@@ -299,60 +299,82 @@ const NO_EXPORT = new Set([
             <div class="form-grid">
               @for (field of formFields; track field.key) {
                 <div class="form-group" [class.form-group-full]="field.type === 'textarea'">
-                  @if (field.type !== 'bool') {
-                    <label>{{ field.label }} @if (field.required && !formReadOnly) {<span class="text-danger"> *</span>}</label>
-                  }
-                  @switch (field.type) {
-                    @case ('textarea') {
-                      <textarea class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly"></textarea>
-                    }
-                    @case ('number') {
-                      <input type="number" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly" />
-                    }
-                    @case ('bool') {
-                      <label class="form-check"><input type="checkbox" class="form-checkbox" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly" /> {{ field.label }} @if (field.required && !formReadOnly) {<span class="text-danger"> *</span>}</label>
-                    }
-                    @case ('select') {
-                      <select class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly">
-                        <option [ngValue]="null">— select —</option>
-                        @for (opt of field.options ?? []; track opt.value) {
-                          <option [ngValue]="opt.value">{{ opt.label }}</option>
+                  @if (formReadOnly) {
+                    <label class="form-label-static">{{ field.label }}</label>
+                    <div class="form-read-value" [class.form-read-value-badge]="field.type === 'select'">
+                      @switch (field.type) {
+                        @case ('bool') {
+                          @if (formValues[field.key]) { <span class="badge badge-success">Yes</span> }
+                          @else { <span class="badge">No</span> }
                         }
-                      </select>
-                    }
-                    @case ('ref') {
-                      <div class="ref-box">
-                        <input
-                          type="text"
-                          class="form-control"
-                          placeholder="Type to search…"
-                          autocomplete="off"
-                          [value]="refLabel(field.key)"
-                          (input)="onRefInput(field, $event)"
-                          (focus)="openRef(field)"
-                          (blur)="onRefBlur(field.key)" />
-                        @if (refOpenKey === field.key) {
-                          <div class="ref-list">
-                            @for (opt of refOptions[field.key] ?? []; track opt.value) {
-                              <button type="button" class="ref-item" (mousedown)="selectRef(field.key, opt)">
-                                {{ opt.label }}
-                              </button>
-                            } @empty {
-                              <div class="ref-empty">No matches</div>
-                            }
-                          </div>
+                        @case ('select') {
+                          @if (field.key === 'status' && formValues[field.key]) {
+                            <span class="badge badge-{{ leaveStatusBadgeClass(formValues[field.key]) }}">{{ displayFieldValue(field) }}</span>
+                          } @else {
+                            <span>{{ displayFieldValue(field) }}</span>
+                          }
                         }
-                      </div>
+                        @default {
+                          <span>{{ displayFieldValue(field) }}</span>
+                        }
+                      }
+                    </div>
+                  } @else {
+                    @if (field.type !== 'bool') {
+                      <label>{{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</label>
                     }
-                    @case ('date') { <input type="date" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly" /> }
-                    @case ('dateonly') { <input type="date" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly" /> }
-                    @default {
-                      <input type="text" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly" />
+                    @switch (field.type) {
+                      @case ('textarea') {
+                        <textarea class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]"></textarea>
+                      }
+                      @case ('number') {
+                        <input type="number" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
+                      }
+                      @case ('bool') {
+                        <label class="form-check"><input type="checkbox" class="form-checkbox" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" /> {{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</label>
+                      }
+                      @case ('select') {
+                        <select class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]">
+                          <option [ngValue]="null">— select —</option>
+                          @for (opt of field.options ?? []; track opt.value) {
+                            <option [ngValue]="opt.value">{{ opt.label }}</option>
+                          }
+                        </select>
+                      }
+                      @case ('ref') {
+                        <div class="ref-box">
+                          <input
+                            type="text"
+                            class="form-control"
+                            placeholder="Type to search…"
+                            autocomplete="off"
+                            [value]="refLabel(field.key)"
+                            (input)="onRefInput(field, $event)"
+                            (focus)="openRef(field)"
+                            (blur)="onRefBlur(field.key)" />
+                          @if (refOpenKey === field.key) {
+                            <div class="ref-list">
+                              @for (opt of refOptions[field.key] ?? []; track opt.value) {
+                                <button type="button" class="ref-item" (mousedown)="selectRef(field.key, opt)">
+                                  {{ opt.label }}
+                                </button>
+                              } @empty {
+                                <div class="ref-empty">No matches</div>
+                              }
+                            </div>
+                          }
+                        </div>
+                      }
+                      @case ('date') { <input type="date" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" /> }
+                      @case ('dateonly') { <input type="date" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" /> }
+                      @default {
+                        <input type="text" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
+                      }
                     }
                   }
                   @if (fieldErrors[field.key]) {
                     <div class="field-error">{{ fieldErrors[field.key] }}</div>
-                  } @else if (field.hint) {
+                  } @else if (field.hint && !formReadOnly) {
                     <small class="form-hint">{{ field.hint }}</small>
                   }
                 </div>
@@ -362,7 +384,10 @@ const NO_EXPORT = new Set([
               <p class="form-hint">This module is read-only.</p>
             }
             @if (formReadOnly) {
-              <p class="form-hint">This leave request has been processed and can no longer be edited. The admin comment is shown above.</p>
+              <div class="form-read-note">
+                <app-icon name="eye" [size]="14" />
+                <span>This leave request has been processed and can no longer be edited.</span>
+              </div>
             }
             <div class="modal-actions">
               <button type="button" class="btn btn-ghost" (click)="closeForm()"><app-icon name="x" [size]="14" /> {{ formReadOnly ? 'Close' : 'Cancel' }}</button>
@@ -520,6 +545,11 @@ const NO_EXPORT = new Set([
     .leave-comment-intro { color: var(--text-muted, #667085); margin: 0 0 12px; font-size: 13px; line-height: 1.5; }
     .leave-comment-text { width: 100%; min-height: 96px; resize: vertical; }
     .leave-comment-hint { display: block; margin-top: 8px; color: var(--danger, #dc2626); }
+    .form-label-static { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted, #667085); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .form-read-value { padding: 9px 12px; border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: var(--neutral-50, #f9fafb); font-size: 14px; color: var(--text, #111827); min-height: 40px; display: flex; align-items: center; word-break: break-word; line-height: 1.45; }
+    .form-read-value-badge { background: transparent; border: 0; padding: 0; min-height: 0; }
+    .form-read-value textarea { white-space: pre-wrap; }
+    .form-read-note { display: flex; align-items: center; gap: 8px; margin-top: 16px; padding: 10px 14px; border-radius: 8px; background: var(--neutral-50, #f3f4f6); color: var(--text-muted, #667085); font-size: 13px; line-height: 1.4; }
     @media (max-width: 760px) {
       .beds-view-head, .beds-room-head { align-items:flex-start; flex-direction:column; }
       .beds-room-occupancy { width:100%; max-width:none; }
@@ -1347,6 +1377,46 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     const s = String(value);
     if (col.badgeMap) return col.badgeMap[s] ? s.replace(/_/g, ' ') : s.replace(/_/g, ' ');
     return s.replace(/_/g, ' ');
+  }
+
+  /** Human-readable value for a form field shown in the read-only View modal.
+   *  Mirrors the form input types so dates, selects, booleans, refs, and text
+   *  all render as clean text instead of greyed-out disabled inputs. */
+  displayFieldValue(field: FieldConfig): string {
+    const raw = this.formValues[field.key];
+    if (raw === null || raw === undefined || raw === '') return '—';
+    switch (field.type) {
+      case 'date':
+      case 'dateonly': {
+        const d = new Date(raw as string);
+        if (!Number.isFinite(d.getTime())) return String(raw);
+        return d.toLocaleDateString('en-CA');
+      }
+      case 'select': {
+        const v = String(raw);
+        const opt = field.options?.find(o => o.value === v);
+        return opt ? opt.label : v.replace(/_/g, ' ');
+      }
+      case 'ref':
+        return this.refLabel(field.key) || String(raw);
+      case 'number':
+        return String(raw);
+      default:
+        return String(raw);
+    }
+  }
+
+  /** Maps a leave status value to the badge color used in the read-only view,
+    so the status field visually matches the table badge. */
+  leaveStatusBadgeClass(value: unknown): string {
+    const v = String(value ?? '');
+    switch (v) {
+      case 'approved': return 'success';
+      case 'rejected': return 'danger';
+      case 'cancelled': return 'warning';
+      case 'pending': return 'info';
+      default: return '';
+    }
   }
 
   money(value: unknown): string {
