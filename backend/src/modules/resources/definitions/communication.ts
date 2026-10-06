@@ -133,7 +133,7 @@ export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
           recipientIds,
           row.subject?.trim() || "New message",
           `You have a new message from user #${Number(row.senderId)}.`,
-          { type: "message", messageId: Number(row.id) }
+          { type: "message", messageId: Number(row.id), route: "/messages" }
         );
       }
     },
