@@ -88,6 +88,27 @@ const NO_EXPORT = new Set([
             </div>
           }
           @if (resourceKey === 'beds') {
+            <select class="form-control" style="max-width:180px;margin-right:12px" [(ngModel)]="bedHostelFilter" (ngModelChange)="onBedHostelFilter()">
+              <option value="">All hostels</option>
+              @for (h of bedHostelOptions; track h.id) { <option [value]="h.id">{{ h.name }}</option> }
+            </select>
+          }
+          <div class="search-box">
+            <input
+              type="text"
+              class="form-control"
+              [placeholder]="searchPlaceholder"
+              [value]="searchText"
+              (input)="onSearch($event)" />
+            @if (searchText) {
+              <button type="button" class="search-clear" (click)="clearSearch()" aria-label="Clear search">
+                <app-icon name="x" [size]="14" />
+              </button>
+            }
+          </div>
+        </div>
+
+        @if (resourceKey === 'beds') {
           <div class="beds-view">
             <div class="beds-view-head">
               <div>
@@ -100,7 +121,6 @@ const NO_EXPORT = new Set([
                 <span><i class="beds-dot maintenance"></i> Maintenance</span>
               </div>
             </div>
-
             <div class="beds-room-list">
               @for (group of bedGroups; track group.key) {
                 <section class="beds-room-card">
@@ -119,7 +139,6 @@ const NO_EXPORT = new Set([
                       </div>
                     </div>
                   </div>
-
                   <div class="beds-room-body">
                     <div class="beds-chip-list">
                       @for (row of group.rows; track row.id) {
@@ -159,7 +178,6 @@ const NO_EXPORT = new Set([
             </div>
           </div>
         } @else {
-          <div class="table-responsive">
             <table class="table">
               <thead>
                 <tr>
