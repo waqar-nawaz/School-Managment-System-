@@ -188,6 +188,7 @@ async function ensureBranchScopedNameIndexes(): Promise<void> {
     { table: "classes", name: "uq_class_branch_name", fields: ["name", "branchId"] },
     { table: "sections", name: "uq_section_class_name", fields: ["name", "classId"] },
     { table: "academic_years", name: "uq_academic_year_branch_name", fields: ["name", "branchId"] },
+    { table: "books", name: "uq_book_branch_isbn", fields: ["isbn", "branchId"] },
   ];
 
   for (const target of targets) {
@@ -213,7 +214,7 @@ async function ensureBranchScopedNameIndexes(): Promise<void> {
                   SELECT string_agg(a.attname, ',' ORDER BY u.ordinality)
                   FROM unnest(c.conkey) WITH ORDINALITY u(attnum, ordinality)
                   JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = u.attnum
-                ) = 'name'
+                ) = '${target.fields[0]}'
             LOOP
               EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I', '${target.table}', r.conname);
             END LOOP;
@@ -224,7 +225,7 @@ async function ensureBranchScopedNameIndexes(): Promise<void> {
       const indexes = await qi.showIndex(target.table);
       for (const index of indexes as any[]) {
         const fields = (index.fields || []).map((f: any) => f.attribute || f.name).filter(Boolean);
-        if (index.unique && fields.length === 1 && fields[0] === "name") {
+        if (index.unique && fields.length === 1 && fields[0] === target.fields[0]) {
           try { await qi.removeIndex(target.table, index.name); } catch { /* already removed as a constraint */ }
           logger.info(`Removed stale single-column unique index ${target.table}.${index.name}`);
         }
