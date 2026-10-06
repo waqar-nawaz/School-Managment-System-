@@ -53,6 +53,14 @@ function buildRouter(def: ResourceDefinition): Router {
         })) });
       } catch (err) { next(err); }
     });
+    router.get("/unread-count", authorize("messages:read"), async (req, res, next) => {
+      try {
+        const where: any = { recipientId: req.user?.id, isDeleted: false, readAt: null };
+        if (req.user?.branchId != null) where.branchId = req.user.branchId;
+        const count = await MessageRecipient.count({ where });
+        res.status(200).json({ success: true, data: { count } });
+      } catch (err) { next(err); }
+    });
     router.get("/inbox", authorize("messages:read"), async (req, res, next) => {
       try {
         const where: any = { recipientId: req.user?.id, isDeleted: false };
