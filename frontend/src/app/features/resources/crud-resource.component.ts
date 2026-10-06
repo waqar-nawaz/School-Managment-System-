@@ -223,12 +223,17 @@ const NO_EXPORT = new Set([
                                 @if (row['isActive'] && canDelete) { <button type="button" class="row-menu-item danger" (click)="askStatusChange(row, 'deactivate'); openMenuId = null"><app-icon name="x" [size]="15" /> Deactivate</button> }
                                 @if (!row['isActive'] && canEdit) { <button type="button" class="row-menu-item" (click)="askStatusChange(row, 'activate'); openMenuId = null"><app-icon name="check" [size]="15" /> Activate</button> }
                               } @else if (resourceKey === 'leaves') {
-                                @if (row['status'] === 'pending' && canEdit) {
-                                  <button type="button" class="row-menu-item" (click)="leaveAction(row, 'approved'); openMenuId = null"><app-icon name="check" [size]="15" /> Approve</button>
-                                  <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'rejected'); openMenuId = null"><app-icon name="x" [size]="15" /> Reject</button>
+                                @if (row['status'] === 'pending') {
+                                  @if (canApproveLeaves) {
+                                    <button type="button" class="row-menu-item" (click)="leaveAction(row, 'approved'); openMenuId = null"><app-icon name="check" [size]="15" /> Approve</button>
+                                    <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'rejected'); openMenuId = null"><app-icon name="x" [size]="15" /> Reject</button>
+                                  } @else {
+                                    <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit dates/reason</button>
+                                    <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'cancelled'); openMenuId = null"><app-icon name="x" [size]="15" /> Cancel request</button>
+                                  }
+                                } @else if (rowEditable && canApproveLeaves) {
+                                  <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit</button>
                                 }
-                                @if (row['status'] === 'pending' && canDelete) { <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'cancelled'); openMenuId = null"><app-icon name="x" [size]="15" /> Cancel</button> }
-                                @if (rowEditable) { <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit</button> }
                               } @else if (rowDeletable) {
                                 <button type="button" class="row-menu-item danger" (click)="askDelete(row); openMenuId = null"><app-icon name="trash" [size]="15" /> Delete</button>
                               }
@@ -662,14 +667,33 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   get formFields(): FieldConfig[] {
     const fields = this.config?.fields ?? [];
     if (this.resourceKey !== "leaves") return fields;
-    const requester = this.perms.isRole("student", "teacher", "parent");
-    if (!requester) return fields;
-    // Requesters can submit a leave, but cannot approve/reject it. On edit they may only cancel.
-    return fields
-      .filter((field) => field.key !== "status" || !!this.editingId)
-      .map((field) => field.key === "status" && this.editingId
-        ? { ...field, options: [{ label: "cancelled", value: "cancelled" }] }
-        : field);
+
+    const isApprover = this.canApproveLeaves;
+    const isRequester = this.perms.isRole("student", "teacher", "parent", "staff", "librarian", "hostel_warden", "transport_manager", "receptionist", "accountant");
+
+    if (isApprover) {
+      // Approvers editing a leave: show adminComment + status, hide status on create
+      if (!this.editingId) {
+        return fields.filter(f => f.key !== "status" && f.key !== "adminComment");
+      }
+      // On edit: show only adminComment + status (approve/reject)
+      return fields.filter(f => f.key === "adminComment" || f.key === "status");
+    }
+
+    if (isRequester) {
+      // Requesters: can submit leave (all fields except status/adminComment)
+      // On edit: can only change dates/reason, cancel via menu
+      if (!this.editingId) {
+        return fields.filter(f => f.key !== "status" && f.key !== "adminComment" && f.key !== "processedBy");
+      }
+      return fields.filter(f => ["startDate", "endDate", "leaveType", "reason"].includes(f.key));
+    }
+
+    return fields;
+  }
+
+  get canApproveLeaves(): boolean {
+    return this.perms.hasPermission('leaves:approve') || this.perms.isRole('super_admin', 'admin', 'principal');
   }
 
   get rowEditable(): boolean {
