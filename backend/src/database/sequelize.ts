@@ -1,7 +1,7 @@
 import { Sequelize, ModelCtor, DataType } from "sequelize-typescript";
 import env from "../config";
 import { logger } from "../config/logger";
-import { models, Section, SchoolClass } from "../models";
+import { models, Section, SchoolClass, Permission } from "../models";
 
 const commonOptions = {
   timezone: "+00:00",
@@ -149,6 +149,17 @@ async function ensureColumns(): Promise<void> {
 /** Data/enum fixes that need the tables to exist, so they run AFTER sync(). Idempotent. */
 async function postSyncPatches(): Promise<void> {
   const qi = sequelize.getQueryInterface();
+
+  // Keep newly introduced permissions available even when the one-time seed marker
+  // is already set in an existing production database.
+  try {
+    await Permission.findOrCreate({
+      where: { key: "leaves:approve" },
+      defaults: { key: "leaves:approve", label: "leaves:approve", category: "leaves" },
+    });
+  } catch (err) {
+    logger.warn(`Could not ensure leaves:approve permission: ${(err as Error).message}`);
+  }
   // Backfill enrolments created before they carried a branch (capacity checks, rosters and
   // the /enrolments list all filter on enrolments.branchId).
   try {
