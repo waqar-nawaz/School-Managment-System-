@@ -5,7 +5,7 @@ import env from "../config";
 import { logger } from "../config/logger";
 
 interface JwtPayload { sub?: string; }
-interface SocketClient { socket: import("net").Socket; userId: number; buffer: Buffer; }
+interface SocketClient { socket: import("stream").Duplex; userId: number; buffer: Buffer; }
 const clients = new Map<number, Set<SocketClient>>();
 
 function acceptKey(key: string): string {
