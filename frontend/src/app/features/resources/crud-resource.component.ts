@@ -204,6 +204,13 @@ const NO_EXPORT = new Set([
                               @if (resourceKey === 'students') {
                                 @if (row['isActive'] && canDelete) { <button type="button" class="row-menu-item danger" (click)="askStatusChange(row, 'deactivate'); openMenuId = null"><app-icon name="x" [size]="15" /> Deactivate</button> }
                                 @if (!row['isActive'] && canEdit) { <button type="button" class="row-menu-item" (click)="askStatusChange(row, 'activate'); openMenuId = null"><app-icon name="check" [size]="15" /> Activate</button> }
+                              } @else if (resourceKey === 'leaves') {
+                                @if (row['status'] === 'pending' && canEdit) {
+                                  <button type="button" class="row-menu-item" (click)="leaveAction(row, 'approved'); openMenuId = null"><app-icon name="check" [size]="15" /> Approve</button>
+                                  <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'rejected'); openMenuId = null"><app-icon name="x" [size]="15" /> Reject</button>
+                                }
+                                @if (row['status'] === 'pending' && canDelete) { <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'cancelled'); openMenuId = null"><app-icon name="x" [size]="15" /> Cancel</button> }
+                                @if (rowEditable) { <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit</button> }
                               } @else if (rowDeletable) {
                                 <button type="button" class="row-menu-item danger" (click)="askDelete(row); openMenuId = null"><app-icon name="trash" [size]="15" /> Delete</button>
                               }
@@ -334,6 +341,15 @@ const NO_EXPORT = new Set([
         (close)="confirm = null" />
     }
 
+    @if (leaveConfirm) {
+      <app-confirm-dialog
+        title="{{ leaveConfirm.action === 'approved' ? 'Approve leave' : leaveConfirm.action === 'rejected' ? 'Reject leave' : 'Cancel leave' }}"
+        [message]="'Are you sure you want to ' + (leaveConfirm.action === 'approved' ? 'approve' : leaveConfirm.action === 'rejected' ? 'reject' : 'cancel') + ' this leave request?'"
+        [confirmLabel]="leaveConfirm.action === 'approved' ? 'Approve' : leaveConfirm.action === 'rejected' ? 'Reject' : 'Cancel'"
+        [danger]="leaveConfirm.action !== 'approved'"
+        (confirm)="doLeaveAction()"
+        (close)="leaveConfirm = null" />
+    }
     @if (statusConfirm && config && resourceKey === 'students') {
       <app-confirm-dialog
         [title]="statusConfirm.action === 'activate' ? 'Activate student' : 'Deactivate student'"
@@ -393,6 +409,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   canExport = false;
   studentStatus: 'active' | 'inactive' = 'active';
   statusConfirm: { row: Row; action: 'activate' | 'deactivate' } | null = null;
+  leaveConfirm: { row: Row; action: string } | null = null;
 
   private search$ = new Subject<string>();
   private destroy$ = new Subject<void>();
@@ -537,6 +554,28 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         this.load();
       },
       error: () => { this.statusConfirm = null; },
+    });
+  }
+
+  leaveAction(row: Row, action: string): void {
+    const labels: Record<string, string> = { approved: 'Approve', rejected: 'Reject', cancelled: 'Cancel' };
+    this.leaveConfirm = { row, action };
+  }
+
+  doLeaveAction(): void {
+    const pending = this.leaveConfirm;
+    if (!pending || pending.row.id === undefined) return;
+    const id = pending.row.id;
+    this.api.put(`/leaves/${id}`, { status: pending.action }).subscribe({
+      next: () => {
+        this.leaveConfirm = null;
+        this.toasts.success(`Leave ${pending.action}`);
+        this.load();
+      },
+      error: (err) => {
+        this.leaveConfirm = null;
+        this.toasts.error(err?.error?.message || `Could not ${pending.action} leave`);
+      },
     });
   }
 

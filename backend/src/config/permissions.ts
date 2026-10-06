@@ -118,6 +118,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "payroll:read", "payroll:create", "payroll:update",
     "payslips:read", "payslips:create",
     "reports:read", "reports:export",
+    "leaves:approve",
     "notifications:read",
   ],
 
