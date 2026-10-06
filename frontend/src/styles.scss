@@ -364,3 +364,8 @@ body.dark-theme .stat-icon { color: #93c5fd; }
 
 /* ---------- Utility ---------- */
 code { background: var(--neutral-100); padding: 0.15rem 0.35rem; border-radius: 0.3rem; font-size: 0.85rem; }
+
+
+// Hostel bed summary inline badges (Rooms tab)
+.bed-summary { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.badge-sm { font-size: .7rem; padding: 2px 6px; min-width: 28px; text-align: center; }

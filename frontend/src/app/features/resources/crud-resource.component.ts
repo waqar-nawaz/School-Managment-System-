@@ -173,6 +173,15 @@ const NO_EXPORT = new Set([
                           @case ('money') { <span>{{ money(row[col.key]) }}</span> }
                           @case ('bool') { @if (row[col.key]) {<span class="badge badge-success">Yes</span>} @else {<span class="badge">No</span>} }
                           @case ('badge') { <span class="badge badge-{{ badgeClass(col, row[col.key]) }}">{{ display(col, row[col.key]) }}</span> }
+                          @case ('bedSummary') {
+                            <span class="bed-summary">
+                              @if (row[col.key] && isArray(row[col.key])) {
+                                @for (b of row[col.key]; track b.bedNo) {
+                                  <span class="badge badge-sm badge-{{ b.status === 'available' ? 'success' : b.status === 'occupied' ? 'danger' : 'warning' }}" title="{{ b.bedNo }}: {{ b.status }}">{{ b.bedNo }}</span>
+                                }
+                              }
+                            </span>
+                          }
                           @default { <span>{{ cell(col, row) }}</span> }
                         }
                       </td>

@@ -27,7 +27,7 @@ function refField(
 export interface ColumnConfig {
   key: string;
   label: string;
-  type: 'text' | 'date' | 'datetime' | 'number' | 'money' | 'badge' | 'bool';
+  type: 'text' | 'date' | 'datetime' | 'number' | 'money' | 'badge' | 'bool' | 'bedSummary';
   badgeMap?: Record<string, string>;
 }
 
@@ -354,12 +354,12 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   rooms: {
     key: 'rooms', label: 'Rooms', api: '/rooms',
     subtitle: 'Each room has a bed capacity. Beds are created automatically from the capacity.',
-    columns: [{ key: 'roomLabel', label: 'Room', type: 'text' }, { key: 'bedSummary', label: 'Beds', type: 'text' }, { key: 'bedOccupancy', label: 'Summary', type: 'text' }, statusCol()],
+    columns: [{ key: 'roomLabel', label: 'Room', type: 'text' }, { key: 'bedSummary', label: 'Beds', type: 'bedSummary' }, { key: 'bedOccupancy', label: 'Summary', type: 'text' }, statusCol()],
     fields: fields([refField('hostelId', 'Hostel', '/hostels', 'name', undefined, true), { key: 'roomNo', label: 'Room number', required: true }, { key: 'capacity', label: 'Bed capacity', type: 'number', required: true }, { key: 'floor', label: 'Floor' }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available', 'maintenance']), hint: '“Full” is set automatically when every bed is taken.' }]),
   },
   beds: {
     key: 'beds', label: 'Beds', api: '/beds',
-    subtitle: 'Beds belong to a room. Occupied status is controlled automatically by student allocations.',
+    subtitle: 'Beds are auto-created from room capacity. Occupied status is controlled by allocations.', canCreate: false,
     columns: [nameCol('hostelName', 'Hostel'), nameCol('roomNo', 'Room'), nameCol('bedNo', 'Bed'), statusCol()],
     fields: fields([refField('roomId', 'Room', '/rooms', 'roomLabel', undefined, true), { key: 'bedNo', label: 'Bed number', required: true }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available', 'maintenance']), hint: '“Occupied” is set automatically when a student is allocated.' }]),
   },
