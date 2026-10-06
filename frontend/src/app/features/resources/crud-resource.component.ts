@@ -243,6 +243,12 @@ const NO_EXPORT = new Set([
                                   <button type="button" class="row-menu-item danger" (click)="openLibraryAction(row, 'lost'); openMenuId = null"><app-icon name="x" [size]="15" /> Mark lost</button>
                                   @if (rowEditable) { <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit due date</button> }
                                 }
+                              } @else if (resourceKey === 'notifications') {
+                                @if (!row['readAt']) {
+                                  <button type="button" class="row-menu-item" (click)="markNotificationRead(row); openMenuId = null"><app-icon name="check" [size]="15" /> Mark as read</button>
+                                } @else {
+                                  <span class="notification-read-state"><app-icon name="check" [size]="14" /> Read</span>
+                                }
                               } @else if (resourceKey === 'leaves') {
                                 <button type="button" class="row-menu-item" (click)="openView(row); openMenuId = null"><app-icon name="eye" [size]="15" /> View details</button>
                                 @if (row['status'] === 'pending') {
@@ -926,7 +932,23 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
 
   get hasActions(): boolean {
     if (this.resourceKey === 'students') return this.rowEditable || this.canDelete;
+    if (this.resourceKey === 'notifications') return this.perms.hasPermission('notifications:update');
     return this.rowEditable || this.rowDeletable;
+  }
+
+  get canMarkNotificationRead(): boolean {
+    return this.resourceKey === 'notifications' && this.perms.hasPermission('notifications:update');
+  }
+
+  markNotificationRead(row: Row): void {
+    if (!this.canMarkNotificationRead || row.id === undefined || row['readAt']) return;
+    this.api.patch(`/notifications/${row.id}/read`, {}).subscribe({
+      next: () => {
+        this.toasts.success('Notification marked as read');
+        this.load();
+      },
+      error: (err) => this.toasts.error(err?.error?.message || 'Could not mark notification as read'),
+    });
   }
 
   setStudentStatus(status: 'active' | 'inactive'): void {
