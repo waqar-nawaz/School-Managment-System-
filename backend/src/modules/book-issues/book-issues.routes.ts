@@ -11,6 +11,7 @@ import { BookCopy, Book, BookIssue, BookFine, User, Student } from "../../models
 import { createCrudController } from "../../utils/crudFactory";
 import { ownStudentIds } from "../../utils/access";
 import { writeAuditLog } from "../../services/audit.service";
+import { parsePagination, buildPaginationMeta } from "../../utils/pagination";
 
 const router = Router();
 // A book stays "open" from issue until it is returned or lost. The nightly job flips late ones to
@@ -69,12 +70,44 @@ router.get("/", authorize("library:read", "book-issues:read"), (req, res, next) 
 // IMPORTANT: /overdue/list MUST come before /:id, otherwise Express matches "overdue" as an id param
 // and the route becomes unreachable (returns 400 "Invalid id").
 router.get("/overdue/list", authorize("book-issues:update", "library:update"), asyncHandler(async (req, res) => {
-  const issues = await BookIssue.findAll({
-    where: { status: OPEN_STATUSES, dueDate: { [Op.lt]: new Date() }, ...(branchOf(req) != null ? { branchId: branchOf(req) } : {}) },
-    include: [{ association: "borrower", attributes: ["id", "firstName", "lastName", "email"] }],
+  const p = parsePagination(req);
+  const q = req.query.q ? String(req.query.q).trim() : "";
+  const where: any = {
+    status: OPEN_STATUSES,
+    dueDate: { [Op.lt]: new Date() },
+    ...(branchOf(req) != null ? { branchId: branchOf(req) } : {}),
+  };
+  if (q) {
+    where[Op.or] = [
+      { "$bookCopy.accessionNo$": { [likeOp]: `%${q}%` } },
+      { "$bookCopy.book.title$": { [likeOp]: `%${q}%` } },
+      { "$borrower.firstName$": { [likeOp]: `%${q}%` } },
+      { "$borrower.lastName$": { [likeOp]: `%${q}%` } },
+      { "$borrower.email$": { [likeOp]: `%${q}%` } },
+    ];
+  }
+  const { count, rows } = await BookIssue.findAndCountAll({
+    where,
+    limit: p.limit,
+    offset: p.offset,
     order: [["dueDate", "ASC"]],
+    distinct: true,
+    include: [
+      { association: "borrower", attributes: ["id", "firstName", "lastName", "email"] },
+      { association: "bookCopy", attributes: ["id", "accessionNo"], include: [{ association: "book", attributes: ["id", "title", "isbn"] }] },
+    ],
   });
-  ApiResponse.success(res, 200, "Overdue books", issues);
+  const meta = buildPaginationMeta(p.page, p.limit, count);
+  const data = rows.map((row: any) => {
+    const plain = row.get({ plain: true });
+    plain.borrowerName = plain.borrower ? `${plain.borrower.firstName} ${plain.borrower.lastName}`.trim() : "";
+    plain.accessionNo = plain.bookCopy?.accessionNo ?? "";
+    plain.bookTitle = plain.bookCopy?.book?.title ?? "";
+    plain.isOverdue = true;
+    plain.status = "overdue";
+    return plain;
+  });
+  ApiResponse.success(res, 200, "Overdue books", data, meta);
 }));
 router.get("/:id", authorize("library:read", "book-issues:read"), (req, res, next) => base.getOne(req, res).catch(next));
 // DELETE on book-issues is intentionally disabled — issues have linked BookFine records (financial history).
