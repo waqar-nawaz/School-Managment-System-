@@ -184,11 +184,19 @@ export const HR_RESOURCES: ResourceDefinition[] = [
     allowedFilters: ["status", "leaveType", "userId"],
     includes: [
       { association: "user", attributes: ["id", "firstName", "lastName", "username", "role"] },
+      { association: "processor", attributes: ["id", "firstName", "lastName", "username", "role"] },
     ],
     decorate: (row) => {
       const p = plain(row);
       p.userName = p.user ? `${p.user.firstName} ${p.user.lastName}`.trim() : `#${p.userId}`;
       p.userRole = p.user?.role ?? "";
+      // Expose the approver's name (not just the id) so requesters can see who processed the leave.
+      const approver = (p as any).processor;
+      p.processedByUserName = approver
+        ? `${approver.firstName ?? ""} ${approver.lastName ?? ""}`.trim() || `#${p.processedBy}`
+        : (p.processedBy ? `#${p.processedBy}` : "");
+      // Remove the nested association object before sending — the client only needs the readable name.
+      delete (p as any).processor;
       return p;
     },
     // Everyone sees only their own leaves except school management (who approve them).
@@ -237,6 +245,19 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       if (!approver && body.status !== undefined && String(body.status).toLowerCase() !== "cancelled") throw ApiError.forbidden("You can only cancel your own pending leave request");
       if (approver && body.status !== undefined && !["pending","approved","rejected"].includes(String(body.status).toLowerCase())) throw ApiError.badRequest("Approver can only set leave status to pending, approved, or rejected");
       if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw ApiError.badRequest("Leave request does not belong to your branch");
+
+      // Security: requesters must never set approver-only fields.
+      // Approver comment is the admin's voice — a student editing dates cannot overwrite it.
+      if (!approver) {
+        delete body.adminComment;
+        delete body.processedBy;
+      } else {
+        // Approver editing: normalize the comment. Empty string when none provided so
+        // the column reads cleanly in the UI (NULL looks like "—" otherwise).
+        const comment = String(body.adminComment ?? "").trim();
+        body.adminComment = comment;
+      }
+
       const startDate = body.startDate !== undefined ? new Date(body.startDate) : new Date(current.startDate);
       const endDate = body.endDate !== undefined ? new Date(body.endDate) : new Date(current.endDate);
       // Days always follow the dates (previously editing the dates left a stale day count).
@@ -270,7 +291,11 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       if (status !== "pending") {
         body.processedBy = req.user?.id;
       } else {
-        delete body.processedBy;
+        // Reverting to pending (approver only): wipe the approver's trail so the
+        // request starts clean again. Without this, a stale adminComment / processedBy
+        // would linger on a "pending" row and confuse the next approver.
+        body.processedBy = null;
+        if (approver) body.adminComment = "";
       }
       body.status = status;
       return body;

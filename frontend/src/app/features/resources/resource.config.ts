@@ -296,6 +296,8 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
       { key: 'startDate', label: 'From', type: 'date' },
       { key: 'endDate', label: 'To', type: 'date' },
       { key: 'days', label: 'Days', type: 'number' },
+      nameCol('reason', 'Reason'),
+      nameCol('adminComment', 'Admin comment'),
       statusCol(),
     ],
     fields: fields([

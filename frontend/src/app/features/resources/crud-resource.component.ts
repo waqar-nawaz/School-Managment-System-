@@ -231,6 +231,8 @@ const NO_EXPORT = new Set([
                                   }
                                 } @else if (rowEditable && canApproveLeaves) {
                                   <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit</button>
+                                } @else if (rowEditable) {
+                                  <button type="button" class="row-menu-item" (click)="openView(row); openMenuId = null"><app-icon name="eye" [size]="15" /> View</button>
                                 }
                               } @else {
                                 @if (rowEditable) { <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit</button> }
@@ -283,20 +285,20 @@ const NO_EXPORT = new Set([
               @for (field of formFields; track field.key) {
                 <div class="form-group" [class.form-group-full]="field.type === 'textarea'">
                   @if (field.type !== 'bool') {
-                    <label>{{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</label>
+                    <label>{{ field.label }} @if (field.required && !formReadOnly) {<span class="text-danger"> *</span>}</label>
                   }
                   @switch (field.type) {
                     @case ('textarea') {
-                      <textarea class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]"></textarea>
+                      <textarea class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly"></textarea>
                     }
                     @case ('number') {
-                      <input type="number" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
+                      <input type="number" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly" />
                     }
                     @case ('bool') {
-                      <label class="form-check"><input type="checkbox" class="form-checkbox" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" /> {{ field.label }} @if (field.required) {<span class="text-danger"> *</span>}</label>
+                      <label class="form-check"><input type="checkbox" class="form-checkbox" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly" /> {{ field.label }} @if (field.required && !formReadOnly) {<span class="text-danger"> *</span>}</label>
                     }
                     @case ('select') {
-                      <select class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]">
+                      <select class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly">
                         <option [ngValue]="null">— select —</option>
                         @for (opt of field.options ?? []; track opt.value) {
                           <option [ngValue]="opt.value">{{ opt.label }}</option>
@@ -327,10 +329,10 @@ const NO_EXPORT = new Set([
                         }
                       </div>
                     }
-                    @case ('date') { <input type="date" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" /> }
-                    @case ('dateonly') { <input type="date" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" /> }
+                    @case ('date') { <input type="date" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly" /> }
+                    @case ('dateonly') { <input type="date" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly" /> }
                     @default {
-                      <input type="text" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" />
+                      <input type="text" class="form-control" name="{{ field.key }}" [(ngModel)]="formValues[field.key]" [disabled]="formReadOnly" />
                     }
                   }
                   @if (fieldErrors[field.key]) {
@@ -344,11 +346,16 @@ const NO_EXPORT = new Set([
             @if (config.fields.length === 0) {
               <p class="form-hint">This module is read-only.</p>
             }
+            @if (formReadOnly) {
+              <p class="form-hint">This leave request has been processed and can no longer be edited. The admin comment is shown above.</p>
+            }
             <div class="modal-actions">
-              <button type="button" class="btn btn-ghost" (click)="closeForm()"><app-icon name="x" [size]="14" /> Cancel</button>
-              <button type="submit" class="btn btn-primary" [disabled]="saving">
-                <app-icon name="check" [size]="14" /> {{ saving ? 'Saving…' : 'Save' }}
-              </button>
+              <button type="button" class="btn btn-ghost" (click)="closeForm()"><app-icon name="x" [size]="14" /> {{ formReadOnly ? 'Close' : 'Cancel' }}</button>
+              @if (!formReadOnly) {
+                <button type="submit" class="btn btn-primary" [disabled]="saving">
+                  <app-icon name="check" [size]="14" /> {{ saving ? 'Saving…' : 'Save' }}
+                </button>
+              }
             </div>
           </form>
         </div>
@@ -371,6 +378,41 @@ const NO_EXPORT = new Set([
         [danger]="leaveConfirm.action !== 'approved'"
         (confirm)="doLeaveAction()"
         (close)="leaveConfirm = null" />
+    }
+
+    @if (leaveComment) {
+      <div class="modal-backdrop">
+        <div class="modal">
+          <div class="modal-head">
+            <div class="modal-title">{{ leaveComment.action === 'approved' ? 'Approve leave' : 'Reject leave' }}</div>
+            <button type="button" class="modal-close" (click)="leaveComment = null" aria-label="Close">
+              <app-icon name="x" [size]="16" />
+            </button>
+          </div>
+          <p class="leave-comment-intro">{{ leaveComment.action === 'approved'
+            ? 'Optionally add a note for the requester (visible to them in their list).'
+            : 'Add a reason for rejecting this leave — the requester will see it.' }}</p>
+          <textarea
+            class="form-control leave-comment-text"
+            name="leaveComment"
+            [(ngModel)]="leaveComment.comment"
+            rows="4"
+            [placeholder]="leaveComment.action === 'approved' ? 'e.g. Approved — enjoy your time off.' : 'e.g. Leave conflicts with mid-term exams; please reschedule.'"></textarea>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" (click)="leaveComment = null"><app-icon name="x" [size]="14" /> Cancel</button>
+            <button
+              type="button"
+              [class]="leaveComment.action === 'rejected' ? 'btn btn-danger' : 'btn btn-primary'"
+              (click)="doLeaveAction()"
+              [disabled]="leaveComment.action === 'rejected' && !(leaveComment.comment || '').trim()">
+              <app-icon name="check" [size]="14" /> {{ leaveComment.action === 'approved' ? 'Approve' : 'Reject' }}
+            </button>
+          </div>
+          @if (leaveComment.action === 'rejected' && !(leaveComment.comment || '').trim()) {
+            <small class="form-hint leave-comment-hint">A reason is required when rejecting a leave request.</small>
+          }
+        </div>
+      </div>
     }
     @if (statusConfirm && config && resourceKey === 'students') {
       <app-confirm-dialog
@@ -416,6 +458,9 @@ const NO_EXPORT = new Set([
     .beds-empty strong { font-size:13px; color:var(--text); }
     .beds-empty span { font-size:12px; }
     .beds-empty-icon { display:flex; align-items:center; justify-content:center; width:42px; height:42px; margin-bottom:3px; border-radius:50%; background:var(--neutral-100); }
+    .leave-comment-intro { color: var(--text-muted, #667085); margin: 0 0 12px; font-size: 13px; line-height: 1.5; }
+    .leave-comment-text { width: 100%; min-height: 96px; resize: vertical; }
+    .leave-comment-hint { display: block; margin-top: 8px; color: var(--danger, #dc2626); }
     @media (max-width: 760px) {
       .beds-view-head, .beds-room-head { align-items:flex-start; flex-direction:column; }
       .beds-room-occupancy { width:100%; max-width:none; }
@@ -434,6 +479,9 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.rows = [];
     this.total = 0;
     this.showForm = false;
+    this.formReadOnly = false;
+    this.leaveConfirm = null;
+    this.leaveComment = null;
     this.openMenuId = null;
     this.fieldErrors = {};
     this.refOptions = {};
@@ -474,6 +522,12 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   studentStatus: 'active' | 'inactive' = 'active';
   statusConfirm: { row: Row; action: 'activate' | 'deactivate' } | null = null;
   leaveConfirm: { row: Row; action: string } | null = null;
+  // Approver-only dialog: collects an optional approve note OR a required reject reason.
+  // Approve sends an empty string when none provided; Reject is disabled until a reason is typed.
+  leaveComment: { row: Row; action: 'approved' | 'rejected'; comment: string } | null = null;
+  // When true, the form modal renders as read-only (no Save button, all inputs disabled).
+  // Used by non-approvers viewing a processed leave so they can see the admin's comment.
+  formReadOnly = false;
 
   private search$ = new Subject<string>();
   private destroy$ = new Subject<void>();
@@ -622,25 +676,58 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   }
 
   leaveAction(row: Row, action: string): void {
-    const labels: Record<string, string> = { approved: 'Approve', rejected: 'Reject', cancelled: 'Cancel' };
+    // Approvers go through the comment dialog (with optional/required comment).
+    // Requesters cancelling their own pending leave get the simple ConfirmDialog instead.
+    if (this.canApproveLeaves && (action === 'approved' || action === 'rejected')) {
+      this.leaveComment = {
+        row,
+        action: action as 'approved' | 'rejected',
+        comment: '',
+      };
+      return;
+    }
     this.leaveConfirm = { row, action };
   }
 
   doLeaveAction(): void {
-    const pending = this.leaveConfirm;
-    if (!pending || pending.row.id === undefined) return;
-    const id = pending.row.id;
-    this.api.put(`/leaves/${id}`, { status: pending.action }).subscribe({
-      next: () => {
-        this.leaveConfirm = null;
-        this.toasts.success(`Leave ${pending.action}`);
-        this.load();
-      },
-      error: (err) => {
-        this.leaveConfirm = null;
-        this.toasts.error(err?.error?.message || `Could not ${pending.action} leave`);
-      },
-    });
+    const approverDialog = this.leaveComment;
+    const requesterDialog = this.leaveConfirm;
+    if (approverDialog) {
+      const id = approverDialog.row.id;
+      if (id === undefined) return;
+      const payload: Record<string, unknown> = { status: approverDialog.action };
+      // Always send the comment (trimmed). The backend stores "" when none is provided.
+      // For rejections, the UI prevents submitting without a comment, but we still send
+      // the trimmed string here so the backend is the source of truth.
+      payload['adminComment'] = (approverDialog.comment || '').trim();
+      this.api.put(`/leaves/${id}`, payload).subscribe({
+        next: () => {
+          this.leaveComment = null;
+          this.toasts.success(`Leave ${approverDialog.action}`);
+          this.load();
+        },
+        error: (err) => {
+          this.leaveComment = null;
+          this.toasts.error(err?.error?.message || `Could not ${approverDialog.action} leave`);
+        },
+      });
+      return;
+    }
+    if (requesterDialog) {
+      const id = requesterDialog.row.id;
+      if (id === undefined) return;
+      this.api.put(`/leaves/${id}`, { status: requesterDialog.action }).subscribe({
+        next: () => {
+          this.leaveConfirm = null;
+          this.toasts.success(`Leave ${requesterDialog.action}`);
+          this.load();
+        },
+        error: (err) => {
+          this.leaveConfirm = null;
+          this.toasts.error(err?.error?.message || `Could not ${requesterDialog.action} leave`);
+        },
+      });
+    }
   }
 
   get canUpload(): boolean {
@@ -666,6 +753,12 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   get formFields(): FieldConfig[] {
     const fields = this.config?.fields ?? [];
     if (this.resourceKey !== "leaves") return fields;
+
+    // Read-only view (requester looking at a processed leave): show every field so they can see
+    // the dates, reason, admin comment, and status — but every input is disabled.
+    if (this.formReadOnly) {
+      return fields.filter(f => f.key !== "processedBy");
+    }
 
     const isApprover = this.canApproveLeaves;
     const isRequester = this.perms.isRole("student", "teacher", "parent", "staff", "librarian", "hostel_warden", "transport_manager", "receptionist", "accountant");
@@ -768,6 +861,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   openCreate(): void {
     this.editingId = null;
     this.formValues = {};
+    this.formReadOnly = false;
     // A newly admitted student must start in the Active list.
     if (this.resourceKey === 'students') this.formValues['isActive'] = true;
     this.fieldErrors = {};
@@ -782,6 +876,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   openEdit(row: Row): void {
     this.editingId = row.id as number ?? null;
     this.formValues = { ...row };
+    this.formReadOnly = false;
     this.fieldErrors = {};
     this.refOptions = {};
     this.refSearch = {};
@@ -793,6 +888,21 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     for (const field of this.config?.fields ?? []) {
       if (field.type === 'ref') this.loadRefOptions(field, '');
     }
+  }
+
+  /** Read-only view for a processed leave: requester sees the admin's comment,
+   *  dates, reason, and approver name — but cannot edit any field. */
+  openView(row: Row): void {
+    this.editingId = row.id as number ?? null;
+    this.formValues = { ...row };
+    this.formReadOnly = true;
+    this.fieldErrors = {};
+    this.refOptions = {};
+    this.refSearch = {};
+    this.refSelectedLabel = {};
+    this.refOpenKey = null;
+    this.formTitle = `View ${this.config?.label.replace(/s$/, '')}`;
+    this.showForm = true;
   }
 
   toggleRowMenu(id: number | undefined, event: Event): void {
