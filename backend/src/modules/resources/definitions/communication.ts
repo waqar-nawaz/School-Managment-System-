@@ -12,6 +12,7 @@ import {
   MessageRecipient,
 } from "../../../models";
 import { ResourceDefinition, plain } from "./shared";
+import { notifyMany } from "../../../services/notification.service";
 
 export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
   {
@@ -123,6 +124,12 @@ export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
         recipientIds = recipientIds.filter((id) => validRecipientIds.has(id));
         await MessageRecipient.bulkCreate(
           recipientIds.map((rid) => ({ messageId: row.id, recipientId: rid, branchId: row.branchId }))
+        );
+        await notifyMany(
+          recipientIds,
+          row.subject?.trim() || "New message",
+          `You have a new message from user #${Number(row.senderId)}.`,
+          { type: "message", messageId: Number(row.id) }
         );
       }
     },
