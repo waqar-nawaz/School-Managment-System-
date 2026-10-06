@@ -90,6 +90,12 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
         <header class="topbar">
           <div class="topbar-title">{{ pageTitle }}</div>
           <div class="topbar-actions">
+            @if (canViewNotifications) {
+              <a class="notification-bell" routerLink="/notifications" aria-label="Notifications">
+                <app-icon name="bell" [size]="17" />
+                @if (notificationUnread > 0) { <span class="notification-count">{{ notificationUnread > 99 ? '99+' : notificationUnread }}</span> }
+              </a>
+            }
             <button
               class="icon-btn"
               (click)="theme.toggle()"
@@ -204,6 +210,9 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
       .topbar-title { font-weight: 800; font-size: 1rem; color: var(--heading); }
       .topbar-actions { display: flex; align-items: center; gap: 0.6rem; }
       .topbar-user { color: var(--text-muted); font-size: 0.9rem; }
+      .notification-bell { position:relative; display:grid; place-items:center; width:34px; height:34px; color:var(--text-muted); border-radius:7px; text-decoration:none; }
+      .notification-bell:hover { background:var(--neutral-50); color:var(--text); }
+      .notification-count { position:absolute; top:1px; right:0; min-width:16px; height:16px; padding:0 4px; border-radius:99px; background:var(--danger,#dc2626); color:#fff; font-size:9px; font-weight:800; display:grid; place-items:center; line-height:1; }
       .admin-content { flex: 1; padding: 1.5rem; }
 
       @media (max-width: 860px) {
@@ -237,6 +246,7 @@ export class AdminLayoutComponent {
 
   pageTitle = 'Dashboard';
   menuOpen = false;
+  notificationUnread = 0;
   collapsed = signal(localStorage.getItem('sms_sidebar_collapsed') === 'true');
   isMobile = signal(typeof window !== 'undefined' && window.innerWidth <= 860);
 
@@ -262,13 +272,17 @@ export class AdminLayoutComponent {
       group.items.push(item);
     }
     this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe(() => {
+      this.loadNotificationCount();
       const segments = this.router.url.split('?')[0].split('/').filter(Boolean);
       this.pageTitle = this.titleFromPath(segments[segments.length - 1] ?? '');
     });
+    this.loadNotificationCount();
     this.router.events.pipe(filter((e) => e instanceof NavigationStart)).subscribe(() => {
       this.menuOpen = false;
     });
   }
+
+  get canViewNotifications(): boolean { return this.perms.hasPermission('notifications:read'); }
 
   get visibleGroups(): typeof this.groups {
     return this.groups;
@@ -309,6 +323,14 @@ export class AdminLayoutComponent {
   private titleFromPath(segment: string): string {
     const hit = MENU.find((m) => m.path === `/${segment}`);
     return hit ? hit.label : segment.replace(/-/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+  }
+
+  private loadNotificationCount(): void {
+    if (!this.canViewNotifications) return;
+    this.api.get<{ count: number }>('/notifications/unread-count').subscribe({
+      next: (r) => this.notificationUnread = Number(r?.data?.count ?? 0),
+      error: () => {},
+    });
   }
 
   logout(): void {
