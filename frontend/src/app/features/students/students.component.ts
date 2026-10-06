@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -36,65 +36,101 @@ const blankForm = () => ({
     </div>
 
     @if (canManage) {
-      <div class="tabs" style="margin-bottom:.75rem">
-        <button type="button" class="btn btn-sm" [class.btn-primary]="tab === 'active'" [class.btn-ghost]="tab !== 'active'" (click)="setTab('active')">Current students</button>
-        <button type="button" class="btn btn-sm" [class.btn-primary]="tab === 'inactive'" [class.btn-ghost]="tab !== 'inactive'" (click)="setTab('inactive')">Left school / inactive</button>
+      <div class="student-tabs">
+        <button type="button" class="student-tab" [class.active]="tab === 'active'" (click)="setTab('active')">
+          <app-icon name="users" [size]="15" /> Current students
+        </button>
+        <button type="button" class="student-tab" [class.active]="tab === 'inactive'" (click)="setTab('inactive')">
+          <app-icon name="log-out" [size]="15" /> Left school / inactive
+        </button>
       </div>
     }
 
     <div class="card">
-      <div class="card-toolbar">
-        <div class="search-box">
+      <div class="card-toolbar students-toolbar">
+        <div class="search-box students-search">
+          <app-icon name="search" [size]="15" class="search-leading" />
           <input class="form-control" placeholder="Search name, admission no, guardian, phone…" [(ngModel)]="search" (ngModelChange)="searchInput$.next()" />
           @if (search) { <button type="button" class="search-clear" (click)="search = ''; reload()" aria-label="Clear search"><app-icon name="x" [size]="14" /></button> }
         </div>
-        <select class="form-control" style="max-width:170px" [(ngModel)]="classFilter" (ngModelChange)="sectionFilter = ''; reload()">
+        <select class="form-control students-filter" [(ngModel)]="classFilter" (ngModelChange)="sectionFilter = ''; reload()">
           <option value="">All classes</option>
           @for (c of classes; track c.id) { <option [value]="c.id">{{ c.name }}</option> }
         </select>
         @if (classFilter) {
-          <select class="form-control" style="max-width:130px" [(ngModel)]="sectionFilter" (ngModelChange)="reload()">
+          <select class="form-control students-filter students-filter-sm" [(ngModel)]="sectionFilter" (ngModelChange)="reload()">
             <option value="">All sections</option>
             @for (s of sectionsOf(+classFilter); track s.id) { <option [value]="s.id">Section {{ s.name }}</option> }
           </select>
         }
       </div>
 
-      <div class="table-responsive">
-        <table class="table">
-          <thead><tr><th>Student</th><th>Class</th><th>Roll</th><th>Parent / guardian</th><th>Status</th><th style="width:230px;text-align:right">Actions</th></tr></thead>
-          <tbody>
-            @for (s of rows; track s.id) {
-              <tr>
-                <td>
-                  <a href="javascript:void(0)" (click)="openProfile(s.id)" style="font-weight:600">{{ s.firstName }} {{ s.lastName }}</a>
-                  <div class="form-hint" style="margin:0">{{ s.admissionNo }}{{ s.gender ? ' · ' + (s.gender | titlecase) : '' }}</div>
-                </td>
-                <td>{{ classLabel(s) }}</td>
-                <td>{{ rollOf(s) }}</td>
-                <td>{{ s.guardianName || '—' }}<div class="form-hint" style="margin:0">{{ s.guardianPhone }}</div></td>
-                <td><span class="badge badge-{{ s.isActive ? 'success' : 'danger' }}">{{ s.isActive ? 'Active' : 'Inactive' }}</span></td>
-                <td style="text-align:right;white-space:nowrap">
-                  <button class="btn btn-sm btn-ghost" (click)="openProfile(s.id)"><app-icon name="eye" [size]="14" /> View</button>
-                  @if (canUpdate) {
-                    <button class="btn btn-sm btn-ghost" (click)="openEdit(s)"><app-icon name="edit" [size]="14" /> Edit</button>
-                    @if (s.isActive) { <button class="btn btn-sm btn-ghost" (click)="askDeactivate(s)" aria-label="Deactivate"><app-icon name="lock" [size]="14" /></button> }
-                    @else { <button class="btn btn-sm btn-primary" (click)="reactivate(s)">Reactivate</button> }
+      @if (loading) {
+        <div class="student-skel-list">
+          @for (i of [1,2,3,4,5,6,7,8]; track i) {
+            <div class="student-row-skel">
+              <div class="avatar-skel-sm"></div>
+              <div class="student-row-body">
+                <div class="line-skel line-skel-name"></div>
+                <div class="line-skel line-skel-meta"></div>
+              </div>
+              <div class="line-skel line-skel-badge"></div>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="student-list">
+          @for (s of rows; track s.id) {
+            <div class="student-row" [class.student-row-inactive]="!s.isActive">
+              <div class="student-avatar" [class.student-avatar-inactive]="!s.isActive">
+                {{ initials(s.firstName, s.lastName) }}
+              </div>
+              <div class="student-row-main">
+                <div class="student-row-head">
+                  <a href="javascript:void(0)" (click)="openProfile(s.id)" class="student-name">{{ s.firstName }} {{ s.lastName }}</a>
+                  <span class="student-admission-no">{{ s.admissionNo }}</span>
+                  @if (s.gender) { <span class="student-gender-pill">{{ s.gender | titlecase }}</span> }
+                  @if (s.isActive) {
+                    <span class="student-status-pill student-status-active">Active</span>
+                  } @else {
+                    <span class="student-status-pill student-status-inactive">Inactive</span>
                   }
-                </td>
-              </tr>
-            } @empty {
-              <tr><td colspan="6" class="empty-cell">{{ loading ? 'Loading…' : (search || classFilter ? 'No students match your filters.' : (tab === 'inactive' ? 'No inactive students.' : 'No students yet. Click “Admit student” or register an admission application.')) }}</td></tr>
-            }
-          </tbody>
-        </table>
-      </div>
+                </div>
+                <div class="student-row-meta">
+                  @if (classLabel(s)) { <span class="meta-item"><app-icon name="home" [size]="12" /> {{ classLabel(s) }}</span> }
+                  @if (rollOf(s)) { <span class="meta-item"><app-icon name="clipboard" [size]="12" /> Roll {{ rollOf(s) }}</span> }
+                  @if (s.guardianName) { <span class="meta-item"><app-icon name="users" [size]="12" /> {{ s.guardianName }}</span> }
+                  @if (s.guardianPhone) { <span class="meta-item meta-mono"><app-icon name="phone" [size]="12" /> {{ s.guardianPhone }}</span> }
+                </div>
+              </div>
+              <div class="student-row-actions">
+                <button class="btn btn-sm btn-ghost" (click)="openProfile(s.id)"><app-icon name="eye" [size]="14" /> View</button>
+                @if (canUpdate) {
+                  <button class="btn btn-sm btn-ghost" (click)="openEdit(s)"><app-icon name="edit" [size]="14" /> Edit</button>
+                  @if (s.isActive) {
+                    <button class="btn btn-sm btn-ghost" (click)="askDeactivate(s)" aria-label="Deactivate"><app-icon name="lock" [size]="14" /></button>
+                  } @else {
+                    <button class="btn btn-sm btn-primary" (click)="reactivate(s)">Reactivate</button>
+                  }
+                }
+              </div>
+            </div>
+          } @empty {
+            <div class="student-empty">
+              <div class="student-empty-icon"><app-icon name="users" [size]="28" /></div>
+              <strong>{{ hasFilters ? 'No matches' : (tab === 'inactive' ? 'No inactive students' : 'No students yet') }}</strong>
+              <span>{{ hasFilters ? 'Try adjusting the search or class filter.' : (tab === 'inactive' ? 'No students have left the school yet.' : 'Click "Admit student" or register an admission application.') }}</span>
+            </div>
+          }
+        </div>
+      }
+
       @if (total > limit) {
         <div class="pagination-bar">
-          <span>{{ total }} student(s) — page {{ page }} of {{ totalPages }}</span>
-          <div>
-            <button class="btn btn-sm btn-ghost" [disabled]="page <= 1" (click)="setPage(page - 1)"><app-icon name="chevron-left" [size]="14" /></button>
-            <button class="btn btn-sm btn-ghost" [disabled]="page >= totalPages" (click)="setPage(page + 1)"><app-icon name="chevron-right" [size]="14" /></button>
+          <span class="pagination-count">Page {{ page }} of {{ totalPages || 1 }} · {{ total }} students</span>
+          <div class="page-actions">
+            <button class="btn btn-sm btn-ghost" [disabled]="page <= 1" (click)="setPage(page - 1)"><app-icon name="chevron-left" [size]="14" /> Prev</button>
+            <button class="btn btn-sm btn-ghost" [disabled]="page >= totalPages" (click)="setPage(page + 1)">Next <app-icon name="chevron-right" [size]="14" /></button>
           </div>
         </div>
       }
@@ -264,6 +300,73 @@ const blankForm = () => ({
     .profile-line { padding: .35rem 0; border-bottom: 1px solid rgba(127,127,127,.15); }
     .profile-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .75rem; margin-top: 1rem; }
     .profile-cards .mini-card { display: flex; flex-direction: column; gap: .25rem; }
+
+    /* Tabs */
+    .student-tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .student-tab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-muted); cursor: pointer; font-size: 13px; font-weight: 600; transition: all .15s; }
+    .student-tab:hover { border-color: var(--primary); color: var(--text); }
+    .student-tab.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
+
+    /* Toolbar */
+    .students-toolbar { gap: 10px; }
+    .students-search { flex: 1; position: relative; }
+    .students-search .search-leading { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+    .students-search .form-control { padding-left: 32px; }
+    .students-filter { max-width: 180px; }
+    .students-filter-sm { max-width: 140px; }
+
+    /* Student list */
+    .student-list { display: flex; flex-direction: column; }
+    .student-row { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--border); transition: background .15s; }
+    .student-row:last-child { border-bottom: 0; }
+    .student-row:hover { background: var(--row-hover); }
+    .student-row-inactive { opacity: .65; }
+
+    .student-avatar { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; text-transform: uppercase; flex-shrink: 0; background: var(--success); }
+    .student-avatar-inactive { background: var(--neutral-500); }
+
+    .student-row-main { min-width: 0; }
+    .student-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .student-name { font-size: 14px; font-weight: 600; color: var(--text); text-decoration: none; }
+    .student-name:hover { color: var(--primary); text-decoration: underline; }
+    .student-admission-no { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--text-muted); }
+    .student-gender-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; background: var(--neutral-100); color: var(--text-muted); }
+    .student-status-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .student-status-active { background: rgba(22,163,74,.12); color: var(--success); }
+    .student-status-inactive { background: rgba(192,57,43,.12); color: var(--danger); }
+    body.dark-theme .student-status-active { background: rgba(22,163,74,.22); color: #6ee7a0; }
+    body.dark-theme .student-status-inactive { background: rgba(192,57,43,.22); color: #fca5a5; }
+
+    .student-row-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 5px; font-size: 11px; color: var(--text-muted); }
+    .meta-item { display: inline-flex; align-items: center; gap: 4px; }
+    .meta-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .student-row-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+    /* Skeleton */
+    .student-skel-list { display: flex; flex-direction: column; }
+    .student-row-skel { display: grid; grid-template-columns: 44px 1fr 80px; align-items: center; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .avatar-skel-sm { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(90deg,var(--neutral-100) 25%,var(--neutral-50) 37%,var(--neutral-100) 63%); background-size: 400% 100%; animation: students-shimmer 1.4s ease infinite; }
+    .student-row-body { display: flex; flex-direction: column; gap: 6px; }
+    .line-skel { height: 10px; border-radius: 4px; background: linear-gradient(90deg,var(--neutral-100) 25%,var(--neutral-50) 37%,var(--neutral-100) 63%); background-size: 400% 100%; animation: students-shimmer 1.4s ease infinite; }
+    .line-skel-name { width: 200px; }
+    .line-skel-meta { width: 280px; height: 9px; }
+    .line-skel-badge { width: 80px; height: 18px; border-radius: 999px; background: linear-gradient(90deg,var(--neutral-100) 25%,var(--neutral-50) 37%,var(--neutral-100) 63%); background-size: 400% 100%; animation: students-shimmer 1.4s ease infinite; }
+    @keyframes students-shimmer { 0% { background-position: 100% 0 } 100% { background-position: -100% 0 } }
+
+    /* Empty */
+    .student-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 60px 24px; text-align: center; }
+    .student-empty-icon { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--neutral-100); color: var(--text-muted); margin-bottom: 6px; }
+    .student-empty strong { font-size: 14px; color: var(--text); }
+    .student-empty span { font-size: 12px; color: var(--text-muted); max-width: 360px; line-height: 1.4; }
+
+    .pagination-count { color: var(--text-muted); font-size: 12px; }
+
+    @media (max-width: 760px) {
+      .student-row { grid-template-columns: 40px 1fr; }
+      .student-row-actions { grid-column: 1 / -1; justify-content: flex-start; margin-top: 6px; }
+      .student-row-meta .meta-mono { display: none; }
+    }
     @media (max-width: 800px) { .guardian-row { grid-template-columns: 1fr 1fr; } }
   `],
 })
@@ -310,7 +413,17 @@ export class StudentsComponent implements OnInit, OnDestroy {
   get canManage(): boolean { return this.canUpdate; }
   get canSeeMedical(): boolean { return this.perms.isRole('super_admin', 'admin', 'principal', 'parent', 'student') || this.perms.hasPermission('health-records:read'); }
   get totalPages(): number { return Math.max(1, Math.ceil(this.total / this.limit)); }
+  get hasFilters(): boolean { return !!(this.search || this.classFilter || this.sectionFilter); }
   money(v: unknown): string { return formatMoney(v); }
+
+  /** Two-letter initials for the avatar circle. */
+  initials(first: string, last: string): string {
+    const f = (first || '').trim().charAt(0);
+    const l = (last || '').trim().charAt(0);
+    if (f && l) return (f + l).toUpperCase();
+    if (f) return f.toUpperCase();
+    return '?';
+  }
 
   ngOnInit(): void {
     this.sub.push(this.searchInput$.pipe(debounceTime(300)).subscribe(() => this.reload()));
