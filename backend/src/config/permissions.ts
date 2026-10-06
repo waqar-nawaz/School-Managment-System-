@@ -39,7 +39,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "lesson-plans:read", "lesson-plans:create", "lesson-plans:update",
     "fees:read", "fee-types:read", "invoices:read", "payments:read",
     "expenses:read", "payroll:read", "payslips:read",
-    "leaves:read", "leaves:create", "leaves:update",
+    "leaves:read", "leaves:create", "leaves:update", "leaves:approve",
     "library:read", "book-issues:read", "book-fines:read",
     "routes:read", "route-stops:read", "vehicles:read", "student-transport:read",
     "hostels:read", "rooms:read", "beds:read", "hostel-allocations:read",
