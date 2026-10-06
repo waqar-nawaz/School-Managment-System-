@@ -1,8 +1,10 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
+import { NotificationSocketService, RealtimeNotification } from '../../core/services/notification-socket.service';
 
 interface NotificationRow { id:number; title:string; body:string; channel:string; data?:Record<string,unknown>; readAt:string|null; createdAt:string; }
 
@@ -40,12 +42,35 @@ interface NotificationRow { id:number; title:string; body:string; channel:string
     .unread-badge{font-size:11px;font-weight:700;color:var(--primary);background:var(--neutral-50);border:1px solid var(--border);border-radius:999px;padding:6px 10px}.notification-toolbar{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--border)}.notification-toolbar div{display:grid;gap:2px}.notification-toolbar span{font-size:10px;color:var(--text-muted)}.notification-list{display:grid}.notification-row{width:100%;display:grid;grid-template-columns:36px minmax(0,1fr) 8px;gap:11px;text-align:left;border:0;border-bottom:1px solid var(--border);background:var(--surface);color:var(--text);padding:14px 16px;cursor:pointer;font:inherit}.notification-row:hover,.notification-row.unread{background:var(--neutral-50)}.notification-row.unread{box-shadow:inset 3px 0 var(--primary)}.notification-icon{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--neutral-50);color:var(--primary)}.notification-copy{min-width:0}.notification-top{display:flex;justify-content:space-between;gap:12px}.notification-top strong{font-size:13px}.notification-top time{font-size:10px;color:var(--text-muted);white-space:nowrap}.notification-copy p{margin:4px 0;font-size:12px;line-height:1.5;color:var(--text-muted)}.notification-copy small{font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em}.notification-dot{width:8px;height:8px;border-radius:50%;background:var(--primary);align-self:center}.notification-empty{min-height:320px;display:grid;place-content:center;text-align:center;gap:7px;color:var(--text-muted);font-size:12px}.notification-empty strong{color:var(--text);font-size:14px}.empty-icon{margin:auto;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:var(--neutral-50);color:var(--primary)}@media(max-width:650px){.notification-toolbar{align-items:flex-start;gap:10px}.notification-top{display:block}.notification-top time{display:block;margin-top:3px}.notification-row{grid-template-columns:34px minmax(0,1fr) 8px;padding:12px}}
   `]
 })
-export class NotificationsComponent implements OnInit {
+export class NotificationsComponent implements OnInit, OnDestroy {
   rows:NotificationRow[]=[];loading=false;unread=0;
-  constructor(private readonly api:ApiService,private readonly toasts:ToastService){}
-  ngOnInit(){this.load();}
+  private socketSub?: Subscription;
+  constructor(
+    private readonly api:ApiService,
+    private readonly toasts:ToastService,
+    private readonly notificationSocket:NotificationSocketService
+  ){}
+  ngOnInit(){
+    this.load();
+    this.socketSub=this.notificationSocket.notification$.subscribe((n)=>{
+      if(!n || this.rows.some((x)=>x.id===n.id)) return;
+      this.rows=[this.toRow(n),...this.rows].slice(0,100);
+      if(!n.readAt)this.unread++;
+    });
+  }
+  ngOnDestroy(){this.socketSub?.unsubscribe();}
+  private toRow(n:RealtimeNotification):NotificationRow{
+    return {id:n.id,title:n.title,body:n.body,channel:n.channel,data:n.data,readAt:n.readAt??null,createdAt:n.createdAt};
+  }
   load(){this.loading=true;this.api.get<NotificationRow[]>('/notifications',{limit:100}).subscribe({next:r=>{this.rows=r?.data??[];this.unread=this.rows.filter(x=>!x.readAt).length;this.loading=false;},error:e=>{this.loading=false;this.toasts.error(e?.error?.message||'Could not load notifications');}})}
-  markRead(n:NotificationRow){if(n.readAt)return;this.api.patch(`/notifications/${n.id}/read`,{}).subscribe({next:()=>{n.readAt=new Date().toISOString();this.unread=Math.max(0,this.unread-1);},error:e=>this.toasts.error(e?.error?.message||'Could not mark notification as read')});}
+  markRead(n:NotificationRow){
+    const navigate=()=>this.notificationSocket.navigateFor(n as RealtimeNotification);
+    if(n.readAt){navigate();return;}
+    this.api.patch(`/notifications/${n.id}/read`,{}).subscribe({
+      next:()=>{n.readAt=new Date().toISOString();this.unread=Math.max(0,this.unread-1);navigate();},
+      error:e=>this.toasts.error(e?.error?.message||'Could not mark notification as read')
+    });
+  }
   markAllRead(){const pending=this.rows.filter(x=>!x.readAt);pending.forEach(n=>this.markRead(n));}
   iconFor(n:NotificationRow){const t=String(n.data?.['type']??'');return t==='leave'?'calendar':t==='message'?'mail':'bell';}
 }
