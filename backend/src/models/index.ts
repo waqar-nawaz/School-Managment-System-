@@ -261,6 +261,7 @@ export function defineAssociations(): void {
 
   // Hostel
   Hostel.hasMany(Room, { as: "rooms", foreignKey: "hostelId" });
+  Hostel.belongsTo(Staff, { as: "warden", foreignKey: "wardenId" });
   Room.belongsTo(Hostel, { as: "hostel", foreignKey: "hostelId" });
   Room.hasMany(Bed, { as: "beds", foreignKey: "roomId" });
   Bed.belongsTo(Room, { as: "room", foreignKey: "roomId" });

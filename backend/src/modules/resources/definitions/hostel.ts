@@ -2,7 +2,7 @@
 import { Request } from "express";
 import { Op } from "sequelize";
 import { ApiError } from "../../../utils/ApiError";
-import { Hostel, Room, Bed, HostelAllocation } from "../../../models";
+import { Hostel, Room, Bed, HostelAllocation, Staff } from "../../../models";
 import { ResourceDefinition, getExisting, plain } from "./shared";
 import { syncRoom, activeAllocationCount } from "../../hostel/hostel.service";
 
@@ -31,6 +31,18 @@ const validateHostel = async (body: any, req: Request) => {
     if (gender !== existing.gender && gender !== "coed" && activeCount > 0) {
       throw ApiError.badRequest("Cannot change the hostel type while students are living in it");
     }
+  }
+
+  // Validate wardenId if provided — must be an active Staff in the same branch.
+  if (body.wardenId !== undefined && body.wardenId !== null && body.wardenId !== "") {
+    const wardenId = Number(body.wardenId);
+    if (!Number.isInteger(wardenId) || wardenId <= 0) throw ApiError.badRequest("Invalid warden selected");
+    const warden = await Staff.findByPk(wardenId);
+    if (!warden || !warden.isActive) throw ApiError.badRequest("Selected warden is not an active staff member");
+    if (branchId != null && Number(warden.branchId) !== Number(branchId)) throw ApiError.badRequest("Selected warden does not belong to your branch");
+    body.wardenId = wardenId;
+  } else if (body.wardenId === "" || body.wardenId === null) {
+    body.wardenId = null; // allow clearing the warden
   }
 
   // Capacity is derived from the actual beds; keep the legacy column untouched.
@@ -166,8 +178,11 @@ async function ensureRoomBeds(row: Room): Promise<void> {
  
 export const HOSTEL_RESOURCES: ResourceDefinition[] = [
   {
-    path: "hostels", model: Hostel, searchable: ["name", "wardenName"], permission: "hostels",
-    includes: [{ association: "rooms", attributes: ["id", "roomNo", "capacity"], include: [{ association: "beds", attributes: ["id", "status"] }] }],
+    path: "hostels", model: Hostel, searchable: ["name"], permission: "hostels",
+    includes: [
+      { association: "warden", attributes: ["id", "firstName", "lastName", "employeeType"] },
+      { association: "rooms", attributes: ["id", "roomNo", "capacity"], include: [{ association: "beds", attributes: ["id", "status"] }] },
+    ],
     beforeCreate: validateHostel, beforeUpdate: validateHostel,
     beforeRemove: async (req) => {
       const hostel = await Hostel.findByPk(Number(req.params.id));
@@ -190,6 +205,8 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
       p.availableBeds = beds.filter((b: any) => b.status === "available").length;
       p.capacity = p.totalBeds;
       p.occupancy = p.totalBeds ? `${p.occupiedBeds} / ${p.totalBeds}` : "No beds yet";
+      // Derive wardenName from the Staff association so the frontend doesn't need to resolve it.
+      p.wardenName = p.warden ? `${p.warden.firstName} ${p.warden.lastName}`.trim() : "";
       return p;
     },
   },

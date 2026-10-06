@@ -345,7 +345,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
     key: 'hostels', label: 'Hostels', api: '/hostels',
     subtitle: 'Manage hostel buildings. Rooms and beds are managed separately.',
     columns: [nameCol('name', 'Hostel'), nameCol('gender', 'Type'), { key: 'roomCount', label: 'Rooms', type: 'number' }, { key: 'totalBeds', label: 'Beds', type: 'number' }, { key: 'occupancy', label: 'Occupied / Beds', type: 'text' }, { key: 'availableBeds', label: 'Free', type: 'number' }, nameCol('wardenName', 'Warden'), boolCol('isActive', 'Active')],
-    fields: fields([{ key: 'name', label: 'Hostel name', required: true }, { key: 'gender', label: 'Type', type: 'select', options: STATUS_OPTIONS(['boys', 'girls', 'coed']) }, { key: 'wardenName', label: 'Warden' }, { key: 'address', label: 'Address', type: 'textarea' }, { key: 'isActive', label: 'Active', type: 'bool', hint: 'Turn off to retire a hostel (not possible while students live in it).' }]),
+    fields: fields([{ key: 'name', label: 'Hostel name', required: true }, { key: 'gender', label: 'Type', type: 'select', options: STATUS_OPTIONS(['boys', 'girls', 'coed']) }, refField('wardenId', 'Warden', '/staff', 'firstName', 'employeeType'), { key: 'address', label: 'Address', type: 'textarea' }, { key: 'isActive', label: 'Active', type: 'bool', hint: 'Turn off to retire a hostel (not possible while students live in it).' }]),
   },
   rooms: {
     key: 'rooms', label: 'Rooms', api: '/rooms',
