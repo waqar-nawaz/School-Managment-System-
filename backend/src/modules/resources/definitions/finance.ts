@@ -114,3 +114,14 @@ const validateExpense = async (body: any, req: Request) => {
   body.approvedBy = approvedBy;
   return body;
 };
+
+export const FINANCE_RESOURCES: ResourceDefinition[] = [
+  { path: "fee-types", model: FeeType, searchable: ["name", "category"], permission: "fees", beforeCreate: validateFeeType, beforeUpdate: validateFeeType },
+  { path: "expenses", model: Expense, searchable: ["title", "category", "status"], permission: "expenses", beforeCreate: validateExpense, beforeUpdate: validateExpense,
+    beforeRemove: async (req) => {
+      const e = await Expense.findByPk(Number(req.params.id));
+      if (!e) throw ApiError.notFound("Expense not found");
+      if (["approved","paid"].includes(String(e.status))) throw ApiError.badRequest(`Cannot delete a ${e.status} expense; cancel it instead`);
+    },
+  },
+];
