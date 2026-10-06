@@ -35,7 +35,9 @@ interface DashboardStats {
     @if (loading) {
       <div class="card"><p class="form-hint">Loading…</p></div>
     } @else {
-      <div class="stat-grid">
+      <!-- People -->
+      <h3 class="dash-section-title"><app-icon name="users" [size]="16" /> People</h3>
+      <div class="stat-grid stat-grid-sm">
         <a class="stat-card" routerLink="/students">
           <span class="stat-icon"><app-icon name="users" [size]="18" /></span>
           <span class="stat-label">Students</span><span class="stat-value">{{ stats?.students ?? 0 }}</span>
@@ -48,37 +50,48 @@ interface DashboardStats {
           <span class="stat-icon"><app-icon name="briefcase" [size]="18" /></span>
           <span class="stat-label">Staff</span><span class="stat-value">{{ stats?.staff ?? 0 }}</span>
         </a>
+      </div>
+
+      <!-- Academics -->
+      <h3 class="dash-section-title"><app-icon name="book" [size]="16" /> Academics</h3>
+      <div class="stat-grid stat-grid-sm">
         <a class="stat-card" routerLink="/classes">
           <span class="stat-icon"><app-icon name="home" [size]="18" /></span>
           <span class="stat-label">Classes</span><span class="stat-value">{{ stats?.classes ?? 0 }}</span>
-        </a>
-        <a class="stat-card stat-warn" routerLink="/invoices">
-          <span class="stat-icon"><app-icon name="file-text" [size]="18" /></span>
-          <span class="stat-label">Pending Invoices</span><span class="stat-value">{{ stats?.pendingInvoices ?? 0 }}</span>
-        </a>
-        <a class="stat-card stat-ok" routerLink="/attendance">
-          <span class="stat-icon"><app-icon name="check-square" [size]="18" /></span>
-          <span class="stat-label">Present Today</span><span class="stat-value">{{ stats?.presentToday ?? 0 }}</span>
-        </a>
-        <a class="stat-card" routerLink="/events">
-          <span class="stat-icon"><app-icon name="calendar" [size]="18" /></span>
-          <span class="stat-label">Upcoming Events</span><span class="stat-value">{{ stats?.upcomingEvents ?? 0 }}</span>
-        </a>
-        <a class="stat-card stat-warn" routerLink="/leaves">
-          <span class="stat-icon"><app-icon name="clipboard" [size]="18" /></span>
-          <span class="stat-label">Pending Leave</span><span class="stat-value">{{ stats?.pendingLeaves ?? 0 }}</span>
-        </a>
-        <a class="stat-card" routerLink="/admissions">
-          <span class="stat-icon"><app-icon name="clipboard" [size]="18" /></span>
-          <span class="stat-label">Open Applications</span><span class="stat-value">{{ stats?.admissionApplications ?? 0 }}</span>
         </a>
         <a class="stat-card stat-ok" routerLink="/enrolments">
           <span class="stat-icon"><app-icon name="link" [size]="18" /></span>
           <span class="stat-label">Active Enrolments</span><span class="stat-value">{{ stats?.activeEnrolments ?? 0 }}</span>
         </a>
+        <a class="stat-card stat-ok" routerLink="/attendance">
+          <span class="stat-icon"><app-icon name="check-square" [size]="18" /></span>
+          <span class="stat-label">Present Today</span><span class="stat-value">{{ stats?.presentToday ?? 0 }}</span>
+        </a>
+        <a class="stat-card" routerLink="/admissions">
+          <span class="stat-icon"><app-icon name="clipboard" [size]="18" /></span>
+          <span class="stat-label">Open Applications</span><span class="stat-value">{{ stats?.admissionApplications ?? 0 }}</span>
+        </a>
+      </div>
+
+      <!-- Finance -->
+      <h3 class="dash-section-title"><app-icon name="dollar" [size]="16" /> Finance</h3>
+      <div class="stat-grid stat-grid-sm">
+        <a class="stat-card stat-warn" routerLink="/invoices">
+          <span class="stat-icon"><app-icon name="file-text" [size]="18" /></span>
+          <span class="stat-label">Pending Invoices</span><span class="stat-value">{{ stats?.pendingInvoices ?? 0 }}</span>
+        </a>
+        <a class="stat-card stat-warn" routerLink="/leaves">
+          <span class="stat-icon"><app-icon name="clock" [size]="18" /></span>
+          <span class="stat-label">Pending Leave</span><span class="stat-value">{{ stats?.pendingLeaves ?? 0 }}</span>
+        </a>
+      </div>
+
+      <!-- Hostel -->
+      <h3 class="dash-section-title"><app-icon name="bed" [size]="16" /> Hostel</h3>
+      <div class="stat-grid stat-grid-sm">
         <a class="stat-card" routerLink="/hostel-allocations">
           <span class="stat-icon"><app-icon name="bed" [size]="18" /></span>
-          <span class="stat-label">Hostel Residents</span><span class="stat-value">{{ stats?.activeHostelResidents ?? 0 }}</span>
+          <span class="stat-label">Residents</span><span class="stat-value">{{ stats?.activeHostelResidents ?? 0 }}</span>
         </a>
         <a class="stat-card stat-ok" routerLink="/beds">
           <span class="stat-icon"><app-icon name="check-square" [size]="18" /></span>
@@ -90,7 +103,8 @@ interface DashboardStats {
         </a>
       </div>
 
-      <div class="card">
+      <!-- Quick actions -->
+      <div class="card" style="margin-top:1.5rem">
         <h3 class="card-title">Quick actions</h3>
         <div class="page-actions" style="justify-content:flex-start;flex-wrap:wrap">
           <a class="btn btn-outline" routerLink="/admissions"><app-icon name="plus" [size]="15" /> New admission</a>

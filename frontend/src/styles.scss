@@ -369,3 +369,13 @@ code { background: var(--neutral-100); padding: 0.15rem 0.35rem; border-radius: 
 // Hostel bed summary inline badges (Rooms tab)
 .bed-summary { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .badge-sm { font-size: .7rem; padding: 2px 6px; min-width: 28px; text-align: center; }
+
+
+// Dashboard section headers
+.dash-section-title {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.95rem; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  margin: 1.5rem 0 0.75rem 0;
+}
+.dash-section-title:first-child { margin-top: 0; }
