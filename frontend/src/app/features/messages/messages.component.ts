@@ -3,6 +3,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
+import { PermissionService } from '../../core/services/permission.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 
 interface Recipient { id:number; name:string; username:string; email:string; role:string; }
@@ -144,13 +145,14 @@ interface MessageRow {
 })
 export class MessagesComponent implements OnInit {
   folder:'inbox'|'sent'='inbox'; rows:MessageRow[]=[]; loading=false; search=''; unread=0; selected:MessageRow|null=null;
-  composeOpen=false; sending=false; canCompose=true; recipientQuery=''; recipientOptions:Recipient[]=[]; selectedRecipients:Recipient[]=[];
+  composeOpen=false; sending=false;  recipientQuery=''; recipientOptions:Recipient[]=[]; selectedRecipients:Recipient[]=[];
   draft={subject:'',body:'',kind:'direct'};
-  constructor(private readonly api:ApiService,private readonly toasts:ToastService){}
+  constructor(private readonly api:ApiService,private readonly toasts:ToastService,private readonly perms:PermissionService){}
+  get canCompose(){return this.perms.hasPermission('messages:create');}
   ngOnInit(){this.load();this.loadUnread();}
   get filtered(){const q=this.search.trim().toLowerCase(); return q?this.rows.filter(m=>[m.subject,m.body,m.senderName].some(v=>String(v??'').toLowerCase().includes(q))):this.rows;}
   load(){this.loading=true;const endpoint=this.folder==='inbox'?'/messages/inbox':'/messages/sent';this.api.get<MessageRow[]>(endpoint,{limit:100}).subscribe({next:r=>{this.rows=r?.data??[];this.loading=false;},error:e=>{this.loading=false;this.toasts.error(e?.error?.message||'Could not load messages');}})}
-  loadUnread(){this.api.get<{count:number}>('/notifications/unread-count').subscribe({next:r=>this.unread=Number(r?.data?.count??0),error:()=>{}})}
+  loadUnread(){this.api.get<{count:number}>('/messages/unread-count').subscribe({next:r=>this.unread=Number(r?.data?.count??0),error:()=>{}})}
   openMessage(m:MessageRow){this.selected=m;if(this.folder==='inbox'&&!m.readAt)this.markRead(m);}
   markRead(m:MessageRow){this.api.patch(`/messages/${m.id}/read`,{}).subscribe({next:()=>{m.readAt=new Date().toISOString();this.unread=Math.max(0,this.unread-1);},error:e=>this.toasts.error(e?.error?.message||'Could not mark message as read')});}
   openCompose(){this.composeOpen=true;this.draft={subject:'',body:'',kind:'direct'};this.selectedRecipients=[];this.recipientQuery='';this.recipientOptions=[];}
