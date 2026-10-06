@@ -85,6 +85,8 @@ const validateBookFine = async (body: any, req: Request) => {
     if (!["returned", "lost"].includes(String(issue.status))) {
       throw ApiError.badRequest("A fine can only be created for a returned or lost book issue");
     }
+    const duplicateFine = await BookFine.findOne({ where: { bookIssueId: issueId } });
+    if (duplicateFine) throw ApiError.badRequest("A fine already exists for this book issue");
   } else {
     if (Number(existing.bookIssueId) !== issueId || Number(existing.userId) !== userId) {
       throw ApiError.badRequest("Book issue and borrower cannot be changed after a fine is created");
