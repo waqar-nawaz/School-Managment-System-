@@ -1191,13 +1191,15 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   get leaveEmployeeName(): string {
     const direct = String(this.formValues['userName'] ?? '').trim();
     if (direct) return direct;
-    const first = String(this.formValues['user']?.firstName ?? '').trim();
-    const last = String(this.formValues['user']?.lastName ?? '').trim();
+    const user = this.formValues['user'] as Record<string, unknown> | undefined;
+    const first = String(user?.['firstName'] ?? '').trim();
+    const last = String(user?.['lastName'] ?? '').trim();
     return [first, last].filter(Boolean).join(' ') || `User #${this.formValues['userId'] ?? '—'}`;
   }
 
   get leaveUserRole(): string {
-    return String(this.formValues['userRole'] ?? this.formValues['user']?.role ?? '').replace(/_/g, ' ');
+    const user = this.formValues['user'] as Record<string, unknown> | undefined;
+    return String(this.formValues['userRole'] ?? user?.['role'] ?? '').replace(/_/g, ' ');
   }
 
   get leaveInitials(): string {
