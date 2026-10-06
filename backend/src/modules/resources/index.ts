@@ -5,6 +5,7 @@ import { createCrudController, CrudOptions } from "../../utils/crudFactory";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { RESOURCES, ResourceDefinition } from "./resourceDefinitions";
 import { exportCsv } from "../../utils/csvExport";
+import { ApiError } from "../../utils/ApiError";
 
 function buildRouter(def: ResourceDefinition): Router {
   const router = Router();
@@ -42,6 +43,26 @@ function buildRouter(def: ResourceDefinition): Router {
   router.get("/:id", canRead, (req, res, next) =>
     ctrl.getOne(req, res).catch(next)
   );
+
+  // Notifications are intentionally read-only as a resource, but the recipient
+  // still needs a narrow endpoint to acknowledge an item as read.
+  if (def.path === "notifications") {
+    router.patch("/:id/read", authorize("notifications:update"), async (req, res, next) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id)) throw ApiError.badRequest("Invalid id");
+        const branchId = req.user?.branchId;
+        const where: Record<string, unknown> = { id, userId: req.user?.id };
+        if (branchId != null) where.branchId = branchId;
+        const row = await def.model.findOne({ where });
+        if (!row) throw ApiError.notFound("Notification not found");
+        await row.update({ readAt: new Date() });
+        res.status(200).json({ success: true, message: "Notification marked as read", data: row });
+      } catch (err) {
+        next(err);
+      }
+    });
+  }
 
   if (!def.readonly) {
     router.post("/", authorize(`${perm}:create`), (req, res, next) =>
