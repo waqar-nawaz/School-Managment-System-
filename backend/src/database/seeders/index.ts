@@ -22,7 +22,7 @@ const PERMISSIONS = [
   "invoices:read", "invoices:create", "invoices:update", "invoices:delete", "payments:read",
   "payments:create", "receipts:read", "receipts:create", "refunds:create", "expenses:read",
   "expenses:create", "expenses:update", "payroll:read", "payroll:create", "leaves:read",
-  "leaves:create", "leaves:update", "library:read", "library:create", "book-issues:read",
+  "leaves:create", "leaves:update", "leaves:approve", "library:read", "library:create", "book-issues:read",
   "book-issues:create", "book-issues:update", "book-fines:read", "book-fines:create",
   "routes:read", "routes:create", "routes:update", "vehicles:read", "vehicles:create",
   "hostels:read", "hostels:create", "hostels:update", "rooms:read", "rooms:create",
