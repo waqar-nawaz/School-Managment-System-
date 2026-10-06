@@ -409,12 +409,19 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   messages: {
     key: 'messages', label: 'Messages', api: '/messages',
-    columns: [nameCol('subject'), { key: 'senderName', label: 'Sender', type: 'text' }, nameCol('kind'), boolCol('isArchived', 'Archived')],
-    fields: fields([{ key: 'subject', label: 'Subject' }, { key: 'body', label: 'Message', type: 'textarea', required: true }, { key: 'kind', label: 'Kind', type: 'select', options: STATUS_OPTIONS(['direct', 'broadcast', 'group']) }, { key: 'recipientIds', label: 'Recipients (comma-separated user IDs)', hint: 'For broadcast, leave blank' }]),
+    subtitle: 'Private internal communication between active school users.',
+    columns: [nameCol('subject', 'Subject'), { key: 'senderName', label: 'From', type: 'text' }, nameCol('kind', 'Type'), { key: 'createdAt', label: 'Sent', type: 'datetime' }, boolCol('isArchived', 'Archived')],
+    fields: fields([
+      { key: 'subject', label: 'Subject' },
+      { key: 'body', label: 'Message', type: 'textarea', required: true },
+      { key: 'kind', label: 'Message type', type: 'select', options: STATUS_OPTIONS(['direct', 'broadcast', 'group']) },
+      { key: 'recipientIds', label: 'Recipients (user IDs)', hint: 'For direct/group messages, enter active user IDs separated by commas. Broadcast sends to all active users in your branch.' },
+    ]),
   },
   notifications: {
     key: 'notifications', label: 'Notifications', api: '/notifications',
-    columns: [{ key: 'userId', label: 'User', type: 'number' }, nameCol('channel'), nameCol('title'), { key: 'readAt', label: 'Read', type: 'datetime' }],
+    subtitle: 'Your personal system notifications. Only your own notifications are visible.',
+    columns: [nameCol('title', 'Notification'), nameCol('channel', 'Channel'), { key: 'readAt', label: 'Read at', type: 'datetime' }, { key: 'createdAt', label: 'Received', type: 'datetime' }],
     fields: [],
     canCreate: false,
   },
