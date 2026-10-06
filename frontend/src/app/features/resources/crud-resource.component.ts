@@ -87,6 +87,15 @@ const NO_EXPORT = new Set([
               <button type="button" class="btn btn-sm" [class.btn-primary]="studentStatus === 'inactive'" [class.btn-ghost]="studentStatus !== 'inactive'" (click)="setStudentStatus('inactive')">Inactive</button>
             </div>
           }
+          @if (resourceKey === 'book-issues') {
+            <select class="form-control" style="max-width:160px;margin-right:12px" [(ngModel)]="bookIssueStatusFilter" (ngModelChange)="onBookIssueStatusFilter()">
+              <option value="">All statuses</option>
+              <option value="issued">Issued</option>
+              <option value="overdue">Overdue</option>
+              <option value="returned">Returned</option>
+              <option value="lost">Lost</option>
+            </select>
+          }
           @if (resourceKey === 'beds') {
             <select class="form-control" style="max-width:180px;margin-right:12px" [(ngModel)]="bedHostelFilter" (ngModelChange)="onBedHostelFilter()">
               <option value="">All hostels</option>
@@ -652,6 +661,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   libraryAction: { type: 'return' | 'lost'; row: Row } | null = null;
   libraryActionAmount = 1;
   libraryActionSaving = false;
+  bookIssueStatusFilter = '';
 
   openLibraryAction(row: Row, type: 'return' | 'lost'): void {
     this.libraryAction = { row, type };
@@ -688,6 +698,11 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         this.toasts.error(err?.error?.message || 'Library action failed');
       },
     });
+  }
+
+  onBookIssueStatusFilter(): void {
+    this.page = 1;
+    this.load();
   }
 
   onBedHostelFilter(): void {
@@ -899,8 +914,12 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     const api = this.resourceKey === 'students' && this.studentStatus === 'inactive'
       ? '/students/inactive'
       : this.config.api;
+    const params: Record<string, unknown> = { page: this.page, limit: this.pageSize, q: this.search };
+    if (this.resourceKey === 'book-issues' && this.bookIssueStatusFilter) {
+      params['filter[status]'] = this.bookIssueStatusFilter;
+    }
     this.api
-      .get<Row[]>(api, { page: this.page, limit: this.pageSize, q: this.search })
+      .get<Row[]>(api, params)
       .subscribe({
         next: (res) => {
           this.rows = (res?.data as Row[]) ?? [];
