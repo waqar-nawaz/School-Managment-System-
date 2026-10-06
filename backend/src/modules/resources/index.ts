@@ -28,10 +28,13 @@ function buildRouter(def: ResourceDefinition): Router {
 
   router.use(authenticate);
 
-  router.get("/", authorize(`${perm}:read`), (req, res, next) =>
+  const canRead = def.path === "leaves" ? authorize(`${perm}:read`, `${perm}:approve`) : authorize(`${perm}:read`);
+  const canUpdate = def.path === "leaves" ? authorize(`${perm}:update`, `${perm}:approve`) : authorize(`${perm}:update`);
+
+  router.get("/", canRead, (req, res, next) =>
     ctrl.list(req, res).catch(next)
   );
-  router.get("/count", authorize(`${perm}:read`), (req, res, next) =>
+  router.get("/count", canRead), (req, res, next) =>
     ctrl.count(req, res).catch(next)
   );
   // Needs BOTH the export right and read access to this very resource.
@@ -44,7 +47,7 @@ function buildRouter(def: ResourceDefinition): Router {
     router.post("/", authorize(`${perm}:create`), (req, res, next) =>
       ctrl.create(req, res).catch(next)
     );
-    router.put("/:id", authorize(`${perm}:update`), (req, res, next) =>
+    router.put("/:id", canUpdate), (req, res, next) =>
       ctrl.update(req, res).catch(next)
     );
     router.delete("/:id", authorize(`${perm}:delete`), (req, res, next) =>
