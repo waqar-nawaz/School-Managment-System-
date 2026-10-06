@@ -382,7 +382,7 @@ export const HR_RESOURCES: ResourceDefinition[] = [
           ? `Your ${row.leaveType ?? ""} leave request has been approved.`
           : `Your ${row.leaveType ?? ""} leave request was rejected. ${String(row.adminComment ?? "").trim()}`.trim(),
         channel: "system",
-        data: { type: "leave", leaveId: Number(row.id), status },
+        data: { type: "leave", leaveId: Number(row.id), status, route: "/leaves" },
       });
     },
 
