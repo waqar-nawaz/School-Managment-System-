@@ -67,7 +67,14 @@ export class NotificationsComponent implements OnInit, OnDestroy {
     const navigate=()=>this.notificationSocket.navigateFor(n as RealtimeNotification);
     if(n.readAt){navigate();return;}
     this.api.patch(`/notifications/${n.id}/read`,{}).subscribe({
-      next:()=>{n.readAt=new Date().toISOString();this.unread=Math.max(0,this.unread-1);navigate();},
+      next:()=>{
+        n.readAt=new Date().toISOString();
+        this.unread=Math.max(0,this.unread-1);
+        // Tell the bell (in admin-layout) to decrement too — without this the
+        // header badge stayed stale until the next navigation triggered a refresh.
+        this.notificationSocket.markRead(Number(n.id));
+        navigate();
+      },
       error:e=>this.toasts.error(e?.error?.message||'Could not mark notification as read')
     });
   }

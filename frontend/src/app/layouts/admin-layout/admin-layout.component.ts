@@ -1,12 +1,14 @@
-import { Component, HostListener, signal } from '@angular/core';
+import { Component, HostListener, OnDestroy, signal } from '@angular/core';
 import { RouterOutlet, Router, RouterLink, RouterLinkActive, NavigationEnd, NavigationStart } from '@angular/router';
 import { filter } from 'rxjs/operators';
+import { Subscription } from 'rxjs';
 import { MENU } from '../../config/menu';
 import { ApiService } from '../../core/services/api.service';
 import { setCurrencyCode } from '../../core/utils/currency';
 import { PermissionService } from '../../core/services/permission.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
+import { NotificationSocketService } from '../../core/services/notification-socket.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 
 @Component({
@@ -241,8 +243,9 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     `,
   ],
 })
-export class AdminLayoutComponent {
+export class AdminLayoutComponent implements OnDestroy {
   private readonly groups: Array<{ name: string; items: typeof MENU }> = [];
+  private socketSub?: Subscription;
 
   pageTitle = 'Dashboard';
   menuOpen = false;
@@ -255,7 +258,8 @@ export class AdminLayoutComponent {
     private readonly perms: PermissionService,
     private readonly auth: AuthService,
     private readonly router: Router,
-    private readonly api: ApiService
+    private readonly api: ApiService,
+    private readonly notificationSocket: NotificationSocketService,
   ) {
     // School-wide currency (public setting "currency"); falls back to the environment default.
     this.api.get<Record<string, string>>('/settings/public').subscribe({
@@ -280,6 +284,23 @@ export class AdminLayoutComponent {
     this.router.events.pipe(filter((e) => e instanceof NavigationStart)).subscribe(() => {
       this.menuOpen = false;
     });
+    // Live bell — increment immediately when a realtime notification arrives via websocket,
+    // so the user sees the badge update without a page navigation. Without this the bell
+    // stayed stale until the next NavigationEnd fired loadNotificationCount().
+    this.socketSub = this.notificationSocket.notification$.subscribe((n) => {
+      if (!n) return;
+      this.notificationUnread = (this.notificationUnread || 0) + 1;
+    });
+    // When the user marks a notification as read on the notifications page, the page
+    // emits the id on read$ — decrement the bell without a full refresh round-trip.
+    this.socketSub.add(this.notificationSocket.read$.subscribe((id) => {
+      if (id == null) return;
+      this.notificationUnread = Math.max(0, (this.notificationUnread || 0) - 1);
+    }));
+  }
+
+  ngOnDestroy(): void {
+    this.socketSub?.unsubscribe();
   }
 
   get canViewNotifications(): boolean { return this.perms.hasPermission('notifications:read'); }

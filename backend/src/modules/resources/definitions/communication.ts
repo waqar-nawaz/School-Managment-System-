@@ -14,6 +14,17 @@ import {
 import { ResourceDefinition, plain } from "./shared";
 import { notifyMany } from "../../../services/notification.service";
 
+/** Fetch all active user ids in a branch (excludes the actor so they don't notify
+ *  themselves about their own creation). Used for school-wide alerts like events,
+ *  notices, and announcements — these are public and meant to reach everyone. */
+async function activeUserIds(branchId: number | null | undefined, excludeUserId: number): Promise<number[]> {
+  const users = await User.findAll({
+    where: { isActive: true, ...(branchId != null ? { branchId } : {}) },
+    attributes: ["id"],
+  });
+  return users.map((u) => Number(u.id)).filter((id) => id !== excludeUserId);
+}
+
 export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
   {
     path: "messages", model: Message, searchable: ["subject"], permission: "messages",
@@ -181,6 +192,21 @@ export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
       body.title = title; body.category = category; body.startAt = startAt; body.endAt = endAt;
       return body;
     },
+    afterCreate: async (row: any, req: Request) => {
+      // Notify every active user in the branch about the new event so it shows up in
+      // their notification feed + bell badge in real time. (Previously creating an
+      // event was silent — students/teachers never learned about it unless they
+      // opened the Events page themselves.)
+      const ids = await activeUserIds(row.branchId, Number(req.user?.id));
+      if (!ids.length) return;
+      const when = new Date(row.startAt).toLocaleDateString();
+      await notifyMany(
+        ids,
+        `New event: ${row.title}`,
+        `Event scheduled on ${when}${row.venue ? ` at ${row.venue}` : ""}.`,
+        { type: "event", eventId: Number(row.id), route: "/events" }
+      );
+    },
   },
   {
     path: "notices", model: Notice, searchable: ["title", "type"], permission: "notices",
@@ -216,6 +242,19 @@ export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
       body.title = title; body.body = bodyText; body.type = type; body.publishDate = publishDate; body.expiryDate = expiryDate;
       return body;
     },
+    afterCreate: async (row: any, req: Request) => {
+      // Broadcast notices to every active user in the branch (urgent notices especially
+      // need to reach parents/teachers immediately, not just sit in the Notices page).
+      const ids = await activeUserIds(row.branchId, Number(req.user?.id));
+      if (!ids.length) return;
+      const prefix = row.type === "urgent" ? "URGENT: " : (row.type === "circular" ? "Circular: " : "Notice: ");
+      await notifyMany(
+        ids,
+        `${prefix}${row.title}`,
+        String(row.body ?? "").slice(0, 160),
+        { type: "notice", noticeId: Number(row.id), route: "/notices" }
+      );
+    },
   },
   {
     path: "announcements", model: Announcement, searchable: ["title", "priority"], permission: "announcements",
@@ -250,6 +289,18 @@ export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
       delete body.createdBy; delete body.branchId;
       body.title = title; body.body = bodyText; body.priority = priority; body.startsAt = startsAt; body.endsAt = endsAt;
       return body;
+    },
+    afterCreate: async (row: any, req: Request) => {
+      // Push announcements to active users in the branch; critical ones especially.
+      const ids = await activeUserIds(row.branchId, Number(req.user?.id));
+      if (!ids.length) return;
+      const prefix = row.priority === "critical" ? "CRITICAL: " : (row.priority === "important" ? "Important: " : "");
+      await notifyMany(
+        ids,
+        `${prefix}${row.title}`,
+        String(row.body ?? "").slice(0, 160),
+        { type: "announcement", announcementId: Number(row.id), route: "/announcements" }
+      );
     },
   },
 ];

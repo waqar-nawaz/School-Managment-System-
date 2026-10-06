@@ -23,9 +23,13 @@ export class NotificationSocketService {
   private started = false;
   private readonly notificationSubject = new BehaviorSubject<RealtimeNotification | null>(null);
   private readonly unreadSubject = new BehaviorSubject<number>(0);
+  private readonly readSubject = new BehaviorSubject<number | null>(null);
 
   readonly notification$: Observable<RealtimeNotification | null> = this.notificationSubject.asObservable();
   readonly unread$: Observable<number> = this.unreadSubject.asObservable();
+  /** Emits the id of a notification the user just marked as read, so the bell
+   *  in the layout can decrement without needing a full count refresh. */
+  readonly read$: Observable<number | null> = this.readSubject.asObservable();
 
   constructor(
     private readonly storage: StorageService,
@@ -51,6 +55,13 @@ export class NotificationSocketService {
 
   markSeen(): void {
     this.unreadSubject.next(0);
+  }
+
+  /** Called by the notifications page when the user marks one notification as read.
+   *  Broadcasts the id on read$ so the bell (and any other subscriber) can
+   *  decrement its own copy of the count without a fresh API round-trip. */
+  markRead(id: number): void {
+    this.readSubject.next(id);
   }
 
   navigateFor(notification: RealtimeNotification): void {
