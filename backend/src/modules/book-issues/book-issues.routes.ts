@@ -193,7 +193,16 @@ router.put("/:id", authorize("book-issues:update"), asyncHandler(async (req, res
   }
   const { dueDate, status, requestedFor } = req.body;
   if (status !== undefined && status !== issue.status) throw ApiError.badRequest("Use the return or mark-lost action to change status");
-  if (dueDate !== undefined && Number.isNaN(new Date(dueDate).getTime())) throw ApiError.badRequest("Invalid dueDate");
+  if (requestedFor !== undefined && !["student", "teacher", "staff"].includes(String(requestedFor))) {
+    throw ApiError.badRequest("requestedFor must be one of: student, teacher, staff");
+  }
+  if (dueDate !== undefined) {
+    const parsedDueDate = new Date(dueDate);
+    if (Number.isNaN(parsedDueDate.getTime())) throw ApiError.badRequest("Invalid dueDate");
+    if (parsedDueDate.getTime() <= new Date(issue.issueDate).getTime()) {
+      throw ApiError.badRequest("dueDate must be after issueDate");
+    }
+  }
   await issue.update({
     ...(dueDate !== undefined ? { dueDate } : {}),
     ...(requestedFor !== undefined ? { requestedFor } : {}),
