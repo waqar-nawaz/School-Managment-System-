@@ -46,7 +46,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "events:read", "events:create", "notices:read", "notices:create",
     "announcements:read", "announcements:create",
     "messages:read", "messages:create", "messages:send",
-    "notifications:read",
+    "notifications:read", "notifications:update",
     "certificates:read", "certificates:create", "certificates:update",
     "health-records:read", "discipline-records:read", "discipline-records:update",
     "complaints:read", "complaints:create", "complaints:update",
@@ -70,7 +70,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "notices:read", "events:read", "announcements:read", "report-cards:read",
     "library:read", "book-issues:read",
     "leaves:read", "leaves:create", "leaves:update",
-    "notifications:read",
+    "notifications:read", "notifications:update",
   ],
 
   parent: [
@@ -88,7 +88,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "complaints:read", "complaints:create",
     "timetable:read", "events:read",
     "certificates:read", "library:read", "book-issues:read",
-    "notifications:read",
+    "notifications:read", "notifications:update",
   ],
 
   student: [
@@ -103,7 +103,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "timetable:read", "events:read",
     "library:read", "book-issues:read",
     "leaves:read", "leaves:create", "leaves:update",
-    "notifications:read",
+    "notifications:read", "notifications:update",
   ],
 
   accountant: [
@@ -119,7 +119,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "payslips:read", "payslips:create",
     "reports:read", "reports:export",
     "leaves:approve",
-    "notifications:read",
+    "notifications:read", "notifications:update",
   ],
 
   librarian: [
@@ -129,7 +129,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "book-issues:read", "book-issues:create", "book-issues:update",
     "book-fines:read", "book-fines:create", "book-fines:update",
     "notices:read", "events:read",
-    "notifications:read",
+    "notifications:read", "notifications:update",
   ],
 
   transport_manager: [
@@ -141,7 +141,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "driver-assignments:read", "driver-assignments:create",
     "student-transport:read", "student-transport:create", "student-transport:update",
     "notices:read",
-    "notifications:read",
+    "notifications:read", "notifications:update",
   ],
 
   hostel_warden: [
@@ -153,7 +153,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "beds:read", "beds:create", "beds:update",
     "hostel-allocations:read", "hostel-allocations:create", "hostel-allocations:update",
     "notices:read",
-    "notifications:read",
+    "notifications:read", "notifications:update",
   ],
 
   receptionist: [
@@ -165,7 +165,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "certificates:read", "certificates:create",
     "messages:read", "messages:create", "messages:send",
     "notices:read", "events:read",
-    "notifications:read",
+    "notifications:read", "notifications:update",
   ],
 
   // Generic support staff: read-only school info + own leaves/messages.
@@ -174,7 +174,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "notices:read", "events:read", "announcements:read", "timetable:read",
     "leaves:read", "leaves:create", "leaves:update",
     "messages:read", "messages:create", "messages:send",
-    "notifications:read",
+    "notifications:read", "notifications:update",
   ],
 };
 
