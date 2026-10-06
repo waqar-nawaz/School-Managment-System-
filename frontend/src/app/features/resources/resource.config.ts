@@ -327,7 +327,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
     columns: [nameCol('accessionNo', 'Accession No'), nameCol('bookTitle', 'Book'), statusCol()],
     fields: fields([
       { key: 'accessionNo', label: 'Accession number', required: true, hint: 'Unique physical copy identifier / barcode.' },
-      refField('bookId', 'Book', '/books', 'title', undefined, true),
+      refField('bookId', 'Book', '/books', 'title', undefined, true, { field: 'isActive', value: 'true' }),
       { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available','damaged']), hint: 'Issued and lost are controlled by circulation actions.' },
     ]),
   },
@@ -337,7 +337,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
     columns: [nameCol('bookTitle', 'Book'), nameCol('accessionNo', 'Copy'), nameCol('borrowerName', 'Borrower'), { key: 'amount', label: 'Amount', type: 'money' }, statusCol()],
     fields: fields([
       refField('bookIssueId', 'Book issue', '/book-issues', 'id', undefined, true),
-      refField('userId', 'Borrower', '/users', 'firstName', 'email', true),
+      refField('userId', 'Borrower', '/users', 'firstName', 'email', true, { field: 'isActive', value: 'true' }),
       { key: 'amount', label: 'Amount', type: 'number', required: true },
       { key: 'reason', label: 'Reason', type: 'textarea' },
       { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['pending','paid','waived']) },
@@ -508,8 +508,8 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
     subtitle: 'Issue, return and track circulation. Returned and lost records remain in history.',
     columns: [{ key: 'bookTitle', label: 'Book', type: 'text' }, { key: 'accessionNo', label: 'Copy', type: 'text' }, { key: 'borrowerName', label: 'Borrower', type: 'text' }, { key: 'issueDate', label: 'Issued', type: 'date' }, { key: 'dueDate', label: 'Due', type: 'date' }, statusCol()],
     fields: fields([
-      refField('bookCopyId', 'Book copy', '/book-copies', 'accessionNo', undefined, true),
-      refField('userId', 'Borrower', '/users', 'firstName', 'email', true),
+      refField('bookCopyId', 'Available book copy', '/book-copies', 'accessionNo', undefined, true, { field: 'status', value: 'available' }),
+      refField('userId', 'Borrower', '/users', 'firstName', 'email', true, { field: 'isActive', value: 'true' }),
       { key: 'dueInDays', label: 'Loan period (days)', type: 'number', hint: '1–365 days. Used when issuing a new loan.' },
       { key: 'dueDate', label: 'Due date', type: 'dateonly', hint: 'Only used when editing an open loan.' },
       { key: 'requestedFor', label: 'Borrower type', type: 'select', options: STATUS_OPTIONS(['student', 'teacher', 'staff']) },
