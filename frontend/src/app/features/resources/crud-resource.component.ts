@@ -574,11 +574,15 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   }
 
   get rowEditable(): boolean {
-    return this.config?.canCreate !== false && this.canEdit;
+    // Edit is allowed when the user has the update permission, regardless of canCreate.
+    // canCreate only controls the "Add new" button — some resources (e.g. beds) are auto-provisioned
+    // but still need to be editable (e.g. set to maintenance).
+    return this.canEdit;
   }
 
   get rowDeletable(): boolean {
-    return this.config?.canCreate !== false && this.canDelete;
+    // Delete is allowed when the user has the delete permission, regardless of canCreate.
+    return this.canDelete;
   }
 
   get totalPages(): number {

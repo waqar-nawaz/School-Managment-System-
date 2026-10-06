@@ -391,3 +391,54 @@ code { background: var(--neutral-100); padding: 0.15rem 0.35rem; border-radius: 
 .badge.badge-warning { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
 .badge.badge-info { background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); }
 .badge { font-size: 0.75rem; padding: 3px 10px; border-radius: 6px; font-weight: 600; text-transform: capitalize; }
+
+
+// Dashboard redesign — professional cards
+.dash-section { margin-bottom: 1.5rem; }
+.dash-section-title {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.85rem; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin: 0 0 0.6rem 0;
+}
+.dash-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; }
+.dash-card {
+  display: flex; align-items: center; gap: 0.75rem;
+  background: var(--surface); border-radius: 12px; padding: 1rem;
+  border: 1px solid rgba(127,127,127,0.12);
+  transition: all 0.15s ease; cursor: pointer; text-decoration: none; color: inherit;
+}
+.dash-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
+.dash-card-icon {
+  display: grid; place-items: center; width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0;
+  background: var(--primary-light); color: var(--primary-dark);
+}
+.dash-card-icon.users { background: rgba(59,130,246,0.12); color: #3b82f6; }
+.dash-card-icon.teacher { background: rgba(34,197,94,0.12); color: #22c55e; }
+.dash-card-icon.staff { background: rgba(168,85,247,0.12); color: #a855f7; }
+.dash-card-icon.class { background: rgba(245,158,11,0.12); color: #f59e0b; }
+.dash-card-icon.enrol { background: rgba(99,102,241,0.12); color: #6366f1; }
+.dash-card-icon.attend { background: rgba(34,197,94,0.12); color: #22c55e; }
+.dash-card-icon.admit { background: rgba(236,72,153,0.12); color: #ec4899; }
+.dash-card-icon.invoice { background: rgba(239,68,68,0.12); color: #ef4444; }
+.dash-card-icon.leave { background: rgba(245,158,11,0.12); color: #f59e0b; }
+.dash-card-icon.bed { background: rgba(20,184,166,0.12); color: #14b8a6; }
+.dash-card-icon.freebed { background: rgba(34,197,94,0.12); color: #22c55e; }
+.dash-card-icon.occbed { background: rgba(239,68,68,0.12); color: #ef4444; }
+.dash-card-body { display: flex; flex-direction: column; gap: 2px; }
+.dash-card-value { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+.dash-card-ok .dash-card-value { color: var(--success); }
+.dash-card-warn .dash-card-value { color: var(--danger); }
+.dash-card-label { font-size: 0.78rem; color: var(--text-muted); }
+.dash-action {
+  display: flex; align-items: center; gap: 0.5rem;
+  background: var(--surface); border-radius: 10px; padding: 0.75rem 1rem;
+  border: 1px solid rgba(127,127,127,0.12);
+  transition: all 0.15s ease; cursor: pointer; text-decoration: none; color: inherit;
+  font-size: 0.88rem; font-weight: 600;
+}
+.dash-action:hover { border-color: var(--primary); background: var(--primary-light); }
+.dash-action-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--primary-light); color: var(--primary-dark); }
+body.dark-theme .dash-card { border-color: rgba(255,255,255,0.08); }
+body.dark-theme .dash-card:hover { border-color: rgba(59,130,246,0.5); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+body.dark-theme .dash-action { border-color: rgba(255,255,255,0.08); }
