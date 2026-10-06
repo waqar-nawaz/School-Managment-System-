@@ -5,6 +5,7 @@ import { authorize } from "../../middlewares/authorize";
 import { createCrudController, CrudOptions } from "../../utils/crudFactory";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { RESOURCES, ResourceDefinition } from "./resourceDefinitions";
+import { User, Message, MessageRecipient, Notification } from "../../models";
 import { exportCsv } from "../../utils/csvExport";
 import { ApiError } from "../../utils/ApiError";
 
