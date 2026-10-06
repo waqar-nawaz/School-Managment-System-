@@ -649,6 +649,47 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   bedHostelFilter = '';
   bedHostelOptions: Array<{ id: number; name: string }> = [];
 
+  libraryAction: { type: 'return' | 'lost'; row: Row } | null = null;
+  libraryActionAmount = 1;
+  libraryActionSaving = false;
+
+  openLibraryAction(row: Row, type: 'return' | 'lost'): void {
+    this.libraryAction = { row, type };
+    this.libraryActionAmount = type === 'return' ? 1 : 10;
+    this.libraryActionSaving = false;
+  }
+
+  closeLibraryAction(): void {
+    if (this.libraryActionSaving) return;
+    this.libraryAction = null;
+  }
+
+  doLibraryAction(): void {
+    const action = this.libraryAction;
+    const amount = Number(this.libraryActionAmount);
+    if (!action || action.row.id === undefined || !Number.isFinite(amount) || amount < 0) {
+      this.toasts.error('Enter a valid non-negative amount');
+      return;
+    }
+
+    this.libraryActionSaving = true;
+    const endpoint = `/book-issues/${action.row.id}/${action.type === 'return' ? 'return' : 'mark-lost'}`;
+    const body = action.type === 'return' ? { perDayFine: amount } : { lostFine: amount };
+
+    this.api.post(endpoint, body).subscribe({
+      next: () => {
+        this.libraryActionSaving = false;
+        this.libraryAction = null;
+        this.toasts.success(action.type === 'return' ? 'Book returned' : 'Book marked lost');
+        this.load();
+      },
+      error: (err) => {
+        this.libraryActionSaving = false;
+        this.toasts.error(err?.error?.message || 'Library action failed');
+      },
+    });
+  }
+
   onBedHostelFilter(): void {
     const params: Record<string, unknown> = { page: 1, limit: this.pageSize };
     if (this.bedHostelFilter) params['filter[hostelId]'] = this.bedHostelFilter;
