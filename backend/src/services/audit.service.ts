@@ -1,4 +1,5 @@
 import { AuditLog } from "../models";
+import { Transaction } from "sequelize";
 import { logger } from "../config/logger";
 
 export type AuditAction = "create" | "update" | "delete" | "login" | "logout" | "export" | "download";
@@ -16,7 +17,7 @@ export interface AuditPayload {
   newData?: Record<string, unknown>;
 }
 
-export async function writeAuditLog(payload: AuditPayload): Promise<void> {
+export async function writeAuditLog(payload: AuditPayload, t?: Transaction): Promise<void> {
   try {
     await AuditLog.create({
       action: payload.action,
@@ -29,7 +30,7 @@ export async function writeAuditLog(payload: AuditPayload): Promise<void> {
       role: payload.role ?? null,
       oldData: payload.oldData ?? {},
       newData: payload.newData ?? {},
-    });
+    }, t ? { transaction: t } : undefined);
   } catch (err) {
     // Audit must never break the main request flow, but we MUST log the failure
     // so compliance/forensic gaps are visible to operators.

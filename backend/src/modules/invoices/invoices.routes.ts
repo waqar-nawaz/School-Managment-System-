@@ -291,41 +291,41 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],                  // terminal — cannot be reopened
 };
 router.patch("/:id/status", authorize("invoices:update"), asyncHandler(async (req, res) => {
-  const invoice = await Invoice.findByPk(req.params.id);
-  if (!invoice) throw ApiError.notFound("Invoice not found");
-  // Cross-tenant guard.
-  const callerBranch = req.user!.branchId;
-  if (callerBranch != null && Number(invoice.branchId) !== Number(callerBranch)) {
-    throw ApiError.forbidden("Invoice does not belong to your branch");
+  const t = await Invoice.sequelize!.transaction();
+  try {
+    const invoice = await Invoice.findByPk(req.params.id, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!invoice) throw ApiError.notFound("Invoice not found");
+    const callerBranch = req.user!.branchId;
+    if (callerBranch != null && Number(invoice.branchId) !== Number(callerBranch)) {
+      throw ApiError.forbidden("Invoice does not belong to your branch");
+    }
+    const oldStatus = invoice.status;
+    const nextStatus = String(req.body.status || "");
+    const allowed = INVOICE_TRANSITIONS[invoice.status] ?? [];
+    if (!allowed.includes(nextStatus)) {
+      throw ApiError.badRequest(`Cannot transition invoice from '${invoice.status}' to '${nextStatus}'`);
+    }
+    if (nextStatus === "cancelled" && Number(invoice.amountPaid) > 0) {
+      throw ApiError.badRequest("This invoice has payments. Refund them first, then cancel the invoice.");
+    }
+    if (nextStatus === "paid" && Number(invoice.amountPaid) < Number(invoice.totalDue)) {
+      throw ApiError.badRequest("Invoice cannot be marked paid before the full amount is received");
+    }
+    if (nextStatus === "partial" && Number(invoice.amountPaid) <= 0) {
+      throw ApiError.badRequest("Cannot mark invoice as partial — no payment recorded");
+    }
+    await invoice.update({ status: nextStatus }, { transaction: t });
+    await writeAuditLog({
+      action: "update", entity: "invoice", entityId: invoice.id,
+      userId: req.user!.id, role: req.user!.role, branchId: invoice.branchId,
+      oldData: { status: oldStatus }, newData: { status: nextStatus },
+    }, t);
+    await t.commit();
+    ApiResponse.success(res, 200, "Invoice updated", invoice);
+  } catch (e) {
+    await t.rollback();
+    throw e;
   }
-  const oldStatus = invoice.status;  // capture BEFORE update
-  const nextStatus = String(req.body.status || "");
-  const allowed = INVOICE_TRANSITIONS[invoice.status] ?? [];
-  if (!allowed.includes(nextStatus)) {
-    throw ApiError.badRequest(`Cannot transition invoice from '${invoice.status}' to '${nextStatus}'`);
-  }
-  if (nextStatus === "cancelled" && Number(invoice.amountPaid) > 0) {
-    throw ApiError.badRequest("This invoice has payments. Refund them first, then cancel the invoice.");
-  }
-  if (nextStatus === "paid" && Number(invoice.amountPaid) < Number(invoice.totalDue)) {
-    throw ApiError.badRequest("Invoice cannot be marked paid before the full amount is received");
-  }
-  // partial implies a payment was made; reject if amountPaid is still 0 (semantic invariant).
-  if (nextStatus === "partial" && Number(invoice.amountPaid) <= 0) {
-    throw ApiError.badRequest("Cannot mark invoice as partial — no payment recorded");
-  }
-  await invoice.update({ status: nextStatus });
-  await writeAuditLog({
-    action: "update",
-    entity: "invoice",
-    entityId: invoice.id,
-    userId: req.user!.id,
-    role: req.user!.role,
-    branchId: invoice.branchId,
-    oldData: { status: oldStatus },
-    newData: { status: nextStatus },
-  });
-  ApiResponse.success(res, 200, "Invoice updated", invoice);
 }));
 
 /** Record a payment against an invoice → updates balance, creates receipt. */
@@ -357,7 +357,9 @@ router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, r
     }
 
     const amount = Number(req.body.amount);
-    if (!(amount > 0)) throw ApiError.badRequest("amount must be positive");
+    if (!Number.isFinite(amount) || amount <= 0) throw ApiError.badRequest("amount must be positive");
+    const paidOn = req.body.paidOn ? new Date(req.body.paidOn) : new Date();
+    if (Number.isFinite(paidOn.getTime()) && paidOn.getTime() > Date.now() + 86400000) throw ApiError.badRequest("Payment date cannot be more than 1 day in the future");
     if (invoice.status === "cancelled") throw ApiError.badRequest("Cancelled invoices cannot receive payments");
     const remaining = Math.max(0, Number(invoice.totalDue) - Number(invoice.amountPaid));
     if (amount > remaining) throw ApiError.badRequest(`Payment exceeds remaining balance of ${remaining}`);
@@ -375,7 +377,7 @@ router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, r
       amount,
       method,
       reference: req.body.reference,
-      paidOn: req.body.paidOn || new Date(),
+      paidOn,
       status: "successful",
       notes: req.body.notes,
       recordedBy: req.user!.id,

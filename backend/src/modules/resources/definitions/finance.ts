@@ -26,13 +26,15 @@ const validateFeeType = async (body: any, req: Request) => {
 const validateExpense = async (body: any, req: Request) => {
   const existing=await getExisting(Expense,req); const title=String(body.title??existing?.title??"").trim(); const amount=Number(body.amount??existing?.amount);
   const expensedOn=body.expensedOn!==undefined?(body.expensedOn?new Date(body.expensedOn):null):(existing?.expensedOn?new Date(existing.expensedOn):null);
-  const status=String(body.status??existing?.status??"approved").toLowerCase(); const branchId=Number(req.user?.branchId);
+  const status=String(body.status??existing?.status??"draft").toLowerCase(); const branchId=Number(req.user?.branchId);
   if(!Number.isInteger(branchId)||branchId<=0) throw ApiError.badRequest("User is not assigned to a branch");
-  if(!title) throw ApiError.badRequest("Expense title is required"); if(title.length>200) throw ApiError.badRequest("Expense title is too long");
+  if(!title) throw ApiError.badRequest("Expense title is required"); if(title.length>180) throw ApiError.badRequest("Expense title is too long");
   if(!Number.isFinite(amount)||amount<0) throw ApiError.badRequest("Expense amount must be non-negative");
   if(expensedOn&&!Number.isFinite(expensedOn.getTime())) throw ApiError.badRequest("Invalid expensedOn");
   if(!["draft","approved","rejected","paid","cancelled"].includes(status)) throw ApiError.badRequest("Invalid expense status");
-  const createdBy=body.createdBy??existing?.createdBy, approvedBy=body.approvedBy??existing?.approvedBy;
+  const createdBy=existing?.createdBy??req.user!.id; // always the actual creator, never client-set
+  let approvedBy=existing?.approvedBy??null;
+  if(status==="approved"||status==="paid"){if(!approvedBy)approvedBy=req.user!.id;}
   if(createdBy){const u=await User.findOne({where:{id:Number(createdBy),branchId}}); if(!u) throw ApiError.badRequest("createdBy user does not belong to your branch");}
   if(approvedBy){const u=await User.findOne({where:{id:Number(approvedBy),branchId}}); if(!u) throw ApiError.badRequest("approvedBy user does not belong to your branch");}
   body.title=title; body.amount=amount; body.expensedOn=expensedOn; body.status=status; body.branchId=branchId; return body;
@@ -40,5 +42,11 @@ const validateExpense = async (body: any, req: Request) => {
 
 export const FINANCE_RESOURCES: ResourceDefinition[] = [
   { path: "fee-types", model: FeeType, searchable: ["name", "category"], permission: "fees", beforeCreate: validateFeeType, beforeUpdate: validateFeeType },
-  { path: "expenses", model: Expense, searchable: ["title", "category", "status"], permission: "expenses", beforeCreate: validateExpense, beforeUpdate: validateExpense },
+  { path: "expenses", model: Expense, searchable: ["title", "category", "status"], permission: "expenses", beforeCreate: validateExpense, beforeUpdate: validateExpense,
+    beforeRemove: async (req) => {
+      const e = await Expense.findByPk(Number(req.params.id));
+      if (!e) throw ApiError.notFound("Expense not found");
+      if (["approved","paid"].includes(String(e.status))) throw ApiError.badRequest(`Cannot delete a ${e.status} expense; cancel it instead`);
+    },
+  },
 ];

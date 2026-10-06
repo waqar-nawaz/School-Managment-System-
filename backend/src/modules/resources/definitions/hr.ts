@@ -108,6 +108,7 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       // paid or re-opened; amounts, payee and month change only while the item is a draft.
       const TRANSITIONS: Record<string, string[]> = { draft: ["draft", "approved"], approved: ["approved", "paid", "draft"], paid: ["paid"] };
       if (!TRANSITIONS[current.status].includes(status)) throw ApiError.badRequest(`Cannot move payroll from ${current.status} to ${status}`);
+      if (current.status === "approved" && status === "draft" && await Payslip.count({ where: { payrollItemId: id } })) throw ApiError.badRequest("Cannot re-open: a payslip already exists. Delete the payslip first.");
       const touchesMoney = ["month", "payeeType", "teacherId", "staffId", "basicSalary", "allowances", "deductions"].some((k) => {
         if (body[k] === undefined) return false;
         const cur: any = (current as any)[k];
@@ -144,10 +145,9 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       if (!body.payslipNo) body.payslipNo = `PS-${String(item.month).replace("-", "")}-${String(item.id).padStart(4, "0")}`;
       const existing = await Payslip.findOne({ where: { payrollItemId, ...(branchId != null ? { branchId } : {}) } });
       if (existing) throw ApiError.badRequest("A payslip already exists for this payroll item");
-      if ((body.gross === undefined || body.gross === null || body.gross === "") || (body.net === undefined || body.net === null || body.net === "")) {
-        body.gross = Number(item.basicSalary) + Number(item.allowances ?? 0);
-        body.net = Number(item.netPay ?? body.gross);
-      }
+      // Always derive from the PayrollItem — never trust client-supplied amounts.
+      body.gross = Number(item.basicSalary) + Number(item.allowances ?? 0);
+      body.net = Number(item.netPay);
       const gross = Number(body.gross);
       const net = Number(body.net);
       if (!Number.isFinite(gross) || gross < 0 || !Number.isFinite(net) || net < 0 || net > gross) throw ApiError.badRequest("Payslip gross/net amounts are invalid");
@@ -162,14 +162,21 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       if (!current) throw ApiError.badRequest("Payslip not found");
       if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw ApiError.badRequest("Payslip does not belong to your branch");
       if (body.payrollItemId !== undefined && Number(body.payrollItemId) !== Number(current.payrollItemId)) throw ApiError.badRequest("Payroll item cannot be changed on a payslip");
-      const gross = Number(body.gross ?? current.gross);
-      const net = Number(body.net ?? current.net);
-      if (!Number.isFinite(gross) || gross < 0 || !Number.isFinite(net) || net < 0 || net > gross) throw ApiError.badRequest("Payslip gross/net amounts are invalid");
+      // Re-derive from the linked PayrollItem to keep them in sync.
+      const item = await PayrollItem.findByPk(current.payrollItemId);
+      const gross = item ? Number(item.basicSalary) + Number(item.allowances ?? 0) : Number(current.gross);
+      const net = item ? Number(item.netPay) : Number(current.net);
       body.payrollItemId = current.payrollItemId;
       body.branchId = current.branchId ?? req.user?.branchId;
       body.gross = gross;
       body.net = net;
       return body;
+    },
+    beforeRemove: async (req) => {
+      const p = await Payslip.findByPk(Number(req.params.id));
+      if (!p) throw ApiError.notFound("Payslip not found");
+      const item = await PayrollItem.findByPk(p.payrollItemId);
+      if (item?.status === "paid") throw ApiError.badRequest("Cannot delete a payslip for a paid payroll item");
     },
   },
   {
@@ -257,6 +264,11 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       }
       body.status = status;
       return body;
+    },
+    beforeRemove: async (req) => {
+      const l = await LeaveRequest.findByPk(Number(req.params.id));
+      if (!l) throw ApiError.notFound("Leave not found");
+      if (["approved","pending"].includes(String(l.status))) throw ApiError.badRequest(`Cannot delete a ${l.status} leave; cancel it instead`);
     },
   },
 ];
