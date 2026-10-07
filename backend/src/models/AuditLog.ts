@@ -1,4 +1,4 @@
-import { Table, Column, Index, DataType, ForeignKey } from "sequelize-typescript";
+import { Table, Column, Index, DataType, ForeignKey, BelongsTo } from "sequelize-typescript";
 import { BaseModel } from "./BaseModel";
 import { User } from "./User";
 import { Branch } from "./Branch";
@@ -8,9 +8,14 @@ export class AuditLog extends BaseModel {
   @ForeignKey(() => Branch)
   @Column({ type: DataType.BIGINT.UNSIGNED })
   branchId!: number;
+  @BelongsTo(() => Branch, { as: "branch", foreignKey: "branchId" })
+  branch!: Branch | null;
+
   @ForeignKey(() => User)
   @Column({ type: DataType.BIGINT.UNSIGNED })
   userId!: number;
+  @BelongsTo(() => User, { as: "user", foreignKey: "userId" })
+  user!: User | null;
 
   @Column({ type: DataType.STRING(50) })
   role!: string;

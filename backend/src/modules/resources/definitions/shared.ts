@@ -30,6 +30,8 @@ export interface ResourceDefinition {
   beforeRemove?: (req: Request) => void | Promise<void>;
   includes?: any[];
   decorate?: (row: any) => Record<string, unknown>;
+  /** Allow-list of columns clients may filter on via filter[field]=value. */
+  allowedFilters?: string[];
 }
 
 /** Row → plain object (works for Sequelize instances and plain rows). */

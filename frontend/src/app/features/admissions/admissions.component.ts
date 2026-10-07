@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, HostListener, OnInit } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
@@ -37,7 +37,7 @@ const ADMISSION_TRANSITIONS: Record<string, string[]> = {
     <div class="page-header">
       <div>
         <h1 class="page-title">Admissions</h1>
-        <p class="page-subtitle">Application pipeline</p>
+        <p class="page-subtitle">Application pipeline — track and admit prospective students.</p>
       </div>
       <div class="page-actions">
         <button class="btn btn-primary" (click)="openCreate()">
@@ -46,76 +46,113 @@ const ADMISSION_TRANSITIONS: Record<string, string[]> = {
       </div>
     </div>
 
-    <div class="stat-grid stat-grid-sm">
+    <div class="admission-pipeline">
       @for (s of STATUSES; track s) {
-        <div class="mini-card">
-          <span class="stat-label">{{ s | titlecase }}</span>
-          <span class="stat-value">{{ pipeline[s] || 0 }}</span>
-        </div>
+        <button type="button" class="pipeline-tile pipeline-tile-{{ badgeOf(s) || 'neutral' }}" [class.active]="status === s" (click)="toggleStatusFilter(s)" [title]="s | titlecase">
+          <span class="pipeline-count">{{ pipeline[s] || 0 }}</span>
+          <span class="pipeline-label">{{ s | titlecase }}</span>
+        </button>
       }
     </div>
 
     <div class="card">
-      <div class="card-toolbar">
-        <div class="search-box">
-          <input class="form-control" placeholder="Search application…" [(ngModel)]="search" (ngModelChange)="debouncedLoad()" />
+      <div class="card-toolbar admissions-toolbar">
+        <div class="search-box admissions-search">
+          <app-icon name="search" [size]="15" class="search-leading" />
+          <input class="form-control" placeholder="Search applicant, guardian, phone, application no…" [(ngModel)]="search" (ngModelChange)="debouncedLoad()" />
           @if (search) {
             <button type="button" class="search-clear" (click)="clearSearch()" aria-label="Clear search">
               <app-icon name="x" [size]="14" />
             </button>
           }
         </div>
-        <select class="form-control" style="max-width:180px" [(ngModel)]="status" (ngModelChange)="setPage(1)">
-          <option value="">All statuses</option>
-          @for (s of STATUSES; track s) { <option [value]="s">{{ s | titlecase }}</option> }
-        </select>
+        @if (status) {
+          <button type="button" class="btn btn-sm btn-ghost admissions-clear-filter" (click)="status = ''; setPage(1); load()">
+            <app-icon name="x" [size]="13" /> {{ status | titlecase }}
+          </button>
+        }
       </div>
-      <div class="table-responsive">
-        <table class="table">
-          <thead>
-            <tr><th>No</th><th>Student</th><th>Parent / guardian</th><th>Applied for</th><th>Applied on</th><th>Status</th><th style="width:330px;text-align:right">Actions</th></tr>
-          </thead>
-          <tbody>
-            @for (app of apps; track app.id) {
-              <tr>
-                <td>{{ app.applicationNo }}</td>
-                <td>{{ app.studentName }}<div class="form-hint" style="margin:0">{{ app.gender ? (app.gender | titlecase) : '' }}{{ app.dateOfBirth ? ' · born ' + (app.dateOfBirth | date: 'MMM d, y') : '' }}</div></td>
-                <td>{{ app.guardianName || '—' }}<div class="form-hint" style="margin:0">{{ app.phone }}{{ app.phone && app.email ? ' · ' : '' }}{{ app.email }}</div></td>
-                <td>{{ app.appliedClass || '—' }}</td>
-                <td>{{ app.dateApplied | date: 'MMM d, y' }}</td>
-                <td><span class="badge badge-{{ badgeOf(app.status) }}">{{ app.status }}</span></td>
-                <td style="text-align:right;white-space:nowrap">
-                  @if (isOpen(app.status) && canEdit) {
-                    <button class="btn btn-sm btn-ghost" (click)="openEdit(app)"><app-icon name="edit" [size]="14" /> Edit</button>
-                  }
-                  @if (isOpen(app.status) && canRegister) {
-                    <button class="btn btn-sm btn-primary" (click)="registerStudent(app)" title="Admit: create the student, enrolment and family logins">
-                      <app-icon name="user-check" [size]="14" /> Register
+
+      @if (loading) {
+        <div class="admission-skel-list">
+          @for (i of [1,2,3,4,5,6,7]; track i) {
+            <div class="admission-row-skel">
+              <div class="avatar-skel-sm"></div>
+              <div class="admission-row-body">
+                <div class="line-skel line-skel-name"></div>
+                <div class="line-skel line-skel-meta"></div>
+              </div>
+              <div class="line-skel line-skel-badge"></div>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="admission-list">
+          @for (app of apps; track app.id) {
+            <div class="admission-row" [class.admission-row-closed]="!isOpen(app.status)">
+              <div class="admission-avatar admission-avatar-{{ badgeOf(app.status) || 'neutral' }}">
+                {{ initials(app.studentName) }}
+              </div>
+              <div class="admission-row-main">
+                <div class="admission-row-head">
+                  <strong class="admission-name">{{ app.studentName }}</strong>
+                  <span class="admission-no">{{ app.applicationNo }}</span>
+                  <span class="admission-status-badge admission-status-{{ badgeOf(app.status) || 'neutral' }}">{{ app.status }}</span>
+                </div>
+                <div class="admission-row-meta">
+                  @if (app.appliedClass) { <span class="meta-item"><app-icon name="home" [size]="12" /> {{ app.appliedClass }}</span> }
+                  <span class="meta-item"><app-icon name="calendar" [size]="12" /> {{ app.dateApplied | date: 'MMM d, y' }}</span>
+                  @if (app.guardianName) { <span class="meta-item"><app-icon name="users" [size]="12" /> {{ app.guardianName }}</span> }
+                  @if (app.phone) { <span class="meta-item meta-mono"><app-icon name="phone" [size]="12" /> {{ app.phone }}</span> }
+                  @if (app.studentId) { <span class="meta-item meta-linked"><app-icon name="user-check" [size]="12" /> Linked student</span> }
+                </div>
+              </div>
+              <div class="admission-row-actions">
+                @if (isOpen(app.status) && canEdit) {
+                  <button class="btn btn-sm btn-ghost" (click)="openEdit(app)"><app-icon name="edit" [size]="14" /> Edit</button>
+                }
+                @if (isOpen(app.status) && canRegister) {
+                  <button class="btn btn-sm btn-primary" (click)="registerStudent(app)" title="Admit: create the student, enrolment and family logins">
+                    <app-icon name="user-check" [size]="14" /> Register
+                  </button>
+                }
+                @if (app.studentId) {
+                  <a class="btn btn-sm btn-ghost" routerLink="/students" [queryParams]="{ open: app.studentId }"><app-icon name="users" [size]="14" /> View student</a>
+                }
+                @if (nextStatuses(app.status).length && canEdit) {
+                  <div class="row-menu">
+                    <button type="button" class="icon-btn" (click)="toggleRowMenu(app.id, $event)" aria-label="More actions">
+                      <app-icon name="more-vertical" [size]="16" />
                     </button>
-                  }
-                  @if (app.studentId) {
-                    <a class="btn btn-sm btn-ghost" routerLink="/students" [queryParams]="{ open: app.studentId }"><app-icon name="users" [size]="14" /> View student</a>
-                  }
-                  @if (nextStatuses(app.status).length && canEdit) {
-                    <select class="form-control form-control-sm" style="display:inline-block;width:auto;margin-left:.4rem" (change)="transition(app, $event)" aria-label="Change status">
-                      <option value="">Move to…</option>
-                      @for (st of nextStatuses(app.status); track st) { <option [value]="st">{{ st | titlecase }}</option> }
-                    </select>
-                  }
-                </td>
-              </tr>
-            } @empty {
-              <tr><td colspan="7" class="empty-cell">{{ search || status ? 'No applications match your filters.' : 'No applications yet. Click “New application” to add one.' }}</td></tr>
-            }
-          </tbody>
-        </table>
-      </div>
+                    @if (openMenuId === app.id) {
+                      <div class="row-menu-list" [style.top.px]="menuPos?.top" [style.right.px]="menuPos?.right" (click)="$event.stopPropagation()">
+                        @for (st of nextStatuses(app.status); track st) {
+                          <button type="button" class="row-menu-item" [class.danger]="st === 'rejected' || st === 'withdrawn'" (click)="transition(app, st); openMenuId = null">
+                            <app-icon [name]="st === 'rejected' || st === 'withdrawn' ? 'x' : 'chevron-right'" [size]="15" /> Move to {{ st | titlecase }}
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+          } @empty {
+            <div class="admission-empty">
+              <div class="admission-empty-icon"><app-icon name="clipboard" [size]="28" /></div>
+              <strong>{{ hasFilters ? 'No matches' : 'No applications yet' }}</strong>
+              <span>{{ hasFilters ? 'Try adjusting the search or status filter.' : 'Click "New application" to start the pipeline.' }}</span>
+            </div>
+          }
+        </div>
+      }
+
       @if (total > 0) {
         <div class="pagination-bar">
-          <span>{{ total }} application(s) — page {{ page }} of {{ totalPages }}</span>
-          <div>
-            <button class="btn btn-sm btn-ghost" [disabled]="page <= 1" (click)="setPage(page - 1)"><app-icon name="chevron-left" [size]="14" /></button>
-            <button class="btn btn-sm btn-ghost" [disabled]="page >= totalPages" (click)="setPage(page + 1)"><app-icon name="chevron-right" [size]="14" /></button>
+          <span class="pagination-count">Page {{ page }} of {{ totalPages || 1 }} · {{ total }} applications</span>
+          <div class="page-actions">
+            <button class="btn btn-sm btn-ghost" [disabled]="page <= 1" (click)="setPage(page - 1)"><app-icon name="chevron-left" [size]="14" /> Prev</button>
+            <button class="btn btn-sm btn-ghost" [disabled]="page >= totalPages" (click)="setPage(page + 1)">Next <app-icon name="chevron-right" [size]="14" /></button>
           </div>
         </div>
       }
@@ -267,6 +304,88 @@ const ADMISSION_TRANSITIONS: Record<string, string[]> = {
       />
     }
   `,
+  styles: [`
+    /* Pipeline status tiles */
+    .admission-pipeline { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .pipeline-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); cursor: pointer; text-align: left; color: inherit; transition: all .15s; }
+    .pipeline-tile:hover { border-color: var(--primary); transform: translateY(-1px); }
+    .pipeline-tile.active { border-color: var(--primary); background: var(--primary-light); }
+    .pipeline-count { font-size: 22px; font-weight: 700; line-height: 1; color: var(--text); }
+    .pipeline-tile.active .pipeline-count { color: var(--primary); }
+    .pipeline-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: capitalize; }
+    .pipeline-tile-success .pipeline-count { color: var(--success); }
+    .pipeline-tile-danger .pipeline-count { color: var(--danger); }
+    .pipeline-tile-warning .pipeline-count { color: var(--warning); }
+    .pipeline-tile-info .pipeline-count { color: #1f6feb; }
+
+    /* Toolbar */
+    .admissions-toolbar { gap: 10px; }
+    .admissions-search { flex: 1; position: relative; }
+    .admissions-search .search-leading { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+    .admissions-search .form-control { padding-left: 32px; }
+    .admissions-clear-filter { white-space: nowrap; flex-shrink: 0; }
+
+    /* Admission list rows */
+    .admission-list { display: flex; flex-direction: column; }
+    .admission-row { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--border); transition: background .15s; }
+    .admission-row:last-child { border-bottom: 0; }
+    .admission-row:hover { background: var(--row-hover); }
+    .admission-row-closed { opacity: .68; }
+
+    .admission-avatar { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; text-transform: uppercase; flex-shrink: 0; }
+    .admission-avatar-success { background: var(--success); }
+    .admission-avatar-info { background: #1f6feb; }
+    .admission-avatar-danger { background: var(--danger); }
+    .admission-avatar-warning { background: var(--warning); }
+    .admission-avatar-neutral { background: var(--neutral-500); }
+
+    .admission-row-main { min-width: 0; }
+    .admission-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .admission-name { font-size: 14px; font-weight: 600; color: var(--text); }
+    .admission-no { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--text-muted); }
+    .admission-status-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .admission-status-success { background: rgba(22,163,74,.12); color: var(--success); }
+    .admission-status-info { background: rgba(31,111,235,.12); color: #1f6feb; }
+    .admission-status-danger { background: rgba(192,57,43,.12); color: var(--danger); }
+    .admission-status-warning { background: rgba(217,119,6,.14); color: var(--warning); }
+    .admission-status-neutral { background: var(--neutral-100); color: var(--text-muted); }
+    body.dark-theme .admission-status-success { background: rgba(22,163,74,.22); color: #6ee7a0; }
+    body.dark-theme .admission-status-info { background: rgba(31,111,235,.22); color: #93c5fd; }
+    body.dark-theme .admission-status-danger { background: rgba(192,57,43,.22); color: #fca5a5; }
+    body.dark-theme .admission-status-warning { background: rgba(217,119,6,.22); color: #fcd34d; }
+
+    .admission-row-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 5px; font-size: 11px; color: var(--text-muted); }
+    .meta-item { display: inline-flex; align-items: center; gap: 4px; }
+    .meta-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .meta-linked { color: var(--success); font-weight: 600; }
+
+    .admission-row-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+    /* Skeleton */
+    .admission-skel-list { display: flex; flex-direction: column; }
+    .admission-row-skel { display: grid; grid-template-columns: 44px 1fr 80px; align-items: center; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .avatar-skel-sm { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(90deg,var(--neutral-100) 25%,var(--neutral-50) 37%,var(--neutral-100) 63%); background-size: 400% 100%; animation: admissions-shimmer 1.4s ease infinite; }
+    .admission-row-body { display: flex; flex-direction: column; gap: 6px; }
+    .line-skel { height: 10px; border-radius: 4px; background: linear-gradient(90deg,var(--neutral-100) 25%,var(--neutral-50) 37%,var(--neutral-100) 63%); background-size: 400% 100%; animation: admissions-shimmer 1.4s ease infinite; }
+    .line-skel-name { width: 200px; }
+    .line-skel-meta { width: 280px; height: 9px; }
+    .line-skel-badge { width: 80px; height: 18px; border-radius: 999px; background: linear-gradient(90deg,var(--neutral-100) 25%,var(--neutral-50) 37%,var(--neutral-100) 63%); background-size: 400% 100%; animation: admissions-shimmer 1.4s ease infinite; }
+    @keyframes admissions-shimmer { 0% { background-position: 100% 0 } 100% { background-position: -100% 0 } }
+
+    /* Empty state */
+    .admission-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 60px 24px; text-align: center; }
+    .admission-empty-icon { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--neutral-100); color: var(--text-muted); margin-bottom: 6px; }
+    .admission-empty strong { font-size: 14px; color: var(--text); }
+    .admission-empty span { font-size: 12px; color: var(--text-muted); max-width: 360px; line-height: 1.4; }
+
+    .pagination-count { color: var(--text-muted); font-size: 12px; }
+
+    @media (max-width: 760px) {
+      .admission-row { grid-template-columns: 40px 1fr; }
+      .admission-row-actions { grid-column: 1 / -1; justify-content: flex-start; margin-top: 6px; }
+      .admission-row-meta .meta-mono { display: none; }
+    }
+  `],
 })
 export class AdmissionsComponent implements OnInit {
   readonly STATUSES = STATUSES;
@@ -275,6 +394,9 @@ export class AdmissionsComponent implements OnInit {
   page = 1;
   readonly limit = 15;
   total = 0;
+  loading = false;
+  openMenuId: number | null = null;
+  menuPos: { top: number; right: number } | null = null;
   editingId: number | null = null;
   formError = '';
   issued: { name: string; credentials: LoginCredential[] } | null = null;
@@ -300,8 +422,34 @@ export class AdmissionsComponent implements OnInit {
   get canEdit(): boolean { return this.perms.hasPermission('admissions:update'); }
   get canRegister(): boolean { return this.perms.hasPermission('admissions:update') && this.perms.hasPermission('students:create'); }
   get totalPages(): number { return Math.max(1, Math.ceil(this.total / this.limit)); }
+  get hasFilters(): boolean { return !!(this.search || this.status); }
   isOpen(status: string): boolean { return OPEN.includes(status); }
   setPage(p: number): void { this.page = p; this.load(); }
+
+  /** Two-letter initials for the applicant avatar circle. */
+  initials(name: string): string {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+    return name.charAt(0).toUpperCase();
+  }
+
+  toggleRowMenu(id: number, event: Event): void {
+    event.stopPropagation();
+    if (this.openMenuId === id) { this.openMenuId = null; return; }
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.menuPos = { top: rect.bottom + 4, right: window.innerWidth - rect.right };
+    this.openMenuId = id;
+  }
+  @HostListener('document:click')
+  closeRowMenu(): void { this.openMenuId = null; }
+
+  /** Click a pipeline tile to filter by that status; click again to clear. */
+  toggleStatusFilter(s: string): void {
+    this.status = (this.status === s) ? '' : s;
+    this.page = 1;
+    this.load();
+  }
 
   ngOnInit(): void {
     this.load();
@@ -366,11 +514,12 @@ export class AdmissionsComponent implements OnInit {
   load(): void {
     // Send status filter as filter[status] so the backend crudFactory picks it up
     // (flat `status=` is ignored by buildWhere).
+    this.loading = true;
     const params: Record<string, unknown> = { page: this.page, limit: this.limit, q: this.search };
     if (this.status) params['filter[status]'] = this.status;
     this.api.get<any[]>('/admissions', params).subscribe({
-      next: (res) => { this.apps = res?.data ?? []; this.total = res?.meta?.total ?? this.apps.length; },
-      error: () => {},
+      next: (res) => { this.apps = res?.data ?? []; this.total = res?.meta?.total ?? this.apps.length; this.loading = false; },
+      error: () => { this.loading = false; },
     });
   }
 
@@ -424,11 +573,16 @@ export class AdmissionsComponent implements OnInit {
     });
   }
 
-  transition(app: any, event: Event): void {
-    const next = (event.target as HTMLSelectElement).value;
-    (event.target as HTMLSelectElement).value = '';
+  transition(app: any, nextOrEvent: string | Event): void {
+    // Accept either a direct status string (from the row-menu) or a select-change Event (legacy).
+    let next: string;
+    if (typeof nextOrEvent === 'string') {
+      next = nextOrEvent;
+    } else {
+      next = (nextOrEvent.target as HTMLSelectElement).value;
+      (nextOrEvent.target as HTMLSelectElement).value = '';
+    }
     if (!next || next === app.status) return;
-    // Confirm before terminal / irreversible transitions (rejected, withdrawn, admitted).
     const terminal = ['rejected', 'withdrawn'];
     if (terminal.includes(next)) {
       this.confirmDialog = {

@@ -39,6 +39,7 @@ export interface ResourceConfig {
   fields: FieldConfig[];
   canCreate?: boolean;
   createLabel?: string;
+  filters?: Array<{ key: string; label: string; type: 'select' | 'ref'; options?: Array<{ label: string; value: string }>; ref?: { api: string; labelKey: string } }>;
   subtitle?: string;
 }
 
@@ -53,7 +54,7 @@ const BADGE_COMMON: Record<string, string> = {
   rejected: 'danger', paid: 'success', partial: 'warning', overdue: 'danger',
   cancelled: '', present: 'success', absent: 'danger', late: 'warning',
   complete: 'success', completed: 'success', draft: '',
-  issued: 'success', returned: 'info', available: 'success', occupied: 'info',
+  issued: 'success', returned: 'info', available: 'success', occupied: 'danger',
   in_use: 'success', maintenance: 'warning',
   // additional badges for library / transport / finance / admissions flows
   requested: 'info', lost: 'danger', successful: 'success', failed: 'danger',
@@ -288,8 +289,23 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   leaves: {
     key: 'leaves', label: 'Leave Requests', api: '/leaves',
-    columns: [{ key: 'userId', label: 'User', type: 'number' }, nameCol('leaveType', 'Type'), { key: 'startDate', label: 'From', type: 'date' }, { key: 'endDate', label: 'To', type: 'date' }, statusCol()],
-    fields: fields([{ key: 'leaveType', label: 'Leave type', type: 'select', options: STATUS_OPTIONS(['sick', 'casual', 'annual', 'unpaid', 'maternity']), required: true }, { key: 'startDate', label: 'Start date', type: 'dateonly', required: true }, { key: 'endDate', label: 'End date', type: 'dateonly', required: true }, { key: 'reason', label: 'Reason', type: 'textarea' }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['pending', 'approved', 'rejected', 'cancelled']) }]),
+    subtitle: 'Request and approve leave. Teachers and staff can apply; admins approve.',
+    columns: [
+      nameCol('userName', 'Employee'),
+      { key: 'leaveType', label: 'Type', type: 'badge', badgeMap: { sick: 'danger', casual: 'warning', annual: 'info', unpaid: '', maternity: 'success' } },
+      { key: 'startDate', label: 'From', type: 'date' },
+      { key: 'endDate', label: 'To', type: 'date' },
+      { key: 'days', label: 'Days', type: 'number' },
+      statusCol(),
+    ],
+    fields: fields([
+      { key: 'leaveType', label: 'Leave type', type: 'select', options: STATUS_OPTIONS(['sick', 'casual', 'annual', 'unpaid', 'maternity']), required: true, hint: 'Sick = medical, Casual = personal, Annual = planned vacation, Unpaid = without pay, Maternity = parental' },
+      { key: 'startDate', label: 'Start date', type: 'dateonly', required: true },
+      { key: 'endDate', label: 'End date', type: 'dateonly', required: true, hint: 'Inclusive — a 3-day leave from 1st to 3rd counts as 3 days.' },
+      { key: 'reason', label: 'Reason', type: 'textarea', hint: 'Brief reason for the leave request.' },
+      { key: 'adminComment', label: 'Admin comment', type: 'textarea', hint: 'Approver notes (optional).' },
+      { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['pending', 'approved', 'rejected', 'cancelled']), hint: 'Requesters can only cancel pending requests. Approvers can approve or reject.' },
+    ]),
   },
   books: {
     key: 'books', label: 'Books', api: '/books',
@@ -306,13 +322,24 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   'book-copies': {
     key: 'book-copies', label: 'Book Copies', api: '/book-copies',
-    columns: [nameCol('accessionNo', 'Accession No'), { key: 'bookId', label: 'Book', type: 'number' }, statusCol()],
-    fields: fields([{ key: 'accessionNo', label: 'Accession number', required: true }, refField('bookId', 'Book', '/books', 'title', undefined, true), { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available','issued','reserved','damaged','lost']) }]),
+    columns: [nameCol('accessionNo', 'Accession No'), nameCol('bookTitle', 'Book'), statusCol()],
+    fields: fields([
+      { key: 'accessionNo', label: 'Accession number', required: true, hint: 'Unique physical copy identifier / barcode.' },
+      refField('bookId', 'Book', '/books', 'title', undefined, true, { field: 'isActive', value: 'true' }),
+      { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available','damaged']), hint: 'Issued and lost are controlled by circulation actions.' },
+    ]),
   },
   'book-fines': {
     key: 'book-fines', label: 'Book Fines', api: '/book-fines',
-    columns: [{ key: 'bookIssueId', label: 'Issue', type: 'number' }, { key: 'userId', label: 'User', type: 'number' }, { key: 'amount', label: 'Amount', type: 'money' }, statusCol()],
-    fields: fields([refField('bookIssueId', 'Book issue', '/book-issues', 'id', undefined, true), refField('userId', 'User', '/users', 'firstName', 'email', true), { key: 'amount', label: 'Amount', type: 'number', required: true }, { key: 'reason', label: 'Reason' }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['pending','paid','waived']) }]),
+    subtitle: 'Fines are linked to a completed circulation event and keep a traceable payment or waiver state.',
+    columns: [nameCol('bookTitle', 'Book'), nameCol('accessionNo', 'Copy'), nameCol('borrowerName', 'Borrower'), { key: 'amount', label: 'Amount', type: 'money' }, statusCol(), nameCol('receiptNo', 'Receipt'), { key: 'paidAt', label: 'Paid', type: 'date' }],
+    fields: fields([
+      refField('bookIssueId', 'Book issue', '/book-issues', 'id', undefined, true),
+      refField('userId', 'Borrower', '/users', 'firstName', 'email', true, { field: 'isActive', value: 'true' }),
+      { key: 'amount', label: 'Amount', type: 'number', required: true },
+      { key: 'reason', label: 'Reason', type: 'textarea' },
+      { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['pending','paid','waived']) },
+    ]),
   },
   routes: {
     key: 'routes', label: 'Transport Routes', api: '/routes',
@@ -348,7 +375,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   hostels: {
     key: 'hostels', label: 'Hostels', api: '/hostels',
     subtitle: 'Manage hostel buildings. Rooms and beds are managed separately.',
-    columns: [nameCol('name', 'Hostel'), nameCol('gender', 'Type'), { key: 'roomCount', label: 'Rooms', type: 'number' }, { key: 'totalBeds', label: 'Beds', type: 'number' }, { key: 'occupancy', label: 'Occupied / Beds', type: 'text' }, { key: 'availableBeds', label: 'Free', type: 'number' }, nameCol('wardenName', 'Warden'), boolCol('isActive', 'Active')],
+    columns: [nameCol('name', 'Hostel'), { key: 'gender', label: 'Type', type: 'badge', badgeMap: { boys: 'info', girls: 'warning', coed: 'success' } }, { key: 'roomCount', label: 'Rooms', type: 'number' }, { key: 'totalBeds', label: 'Beds', type: 'number' }, { key: 'occupancy', label: 'Occupied', type: 'text' }, { key: 'availableBeds', label: 'Free', type: 'number' }, nameCol('wardenName', 'Warden'), boolCol('isActive', 'Active')],
     fields: fields([{ key: 'name', label: 'Hostel name', required: true }, { key: 'gender', label: 'Type', type: 'select', options: STATUS_OPTIONS(['boys', 'girls', 'coed']) }, refField('wardenId', 'Warden', '/staff', 'firstName', 'employeeType', false, { field: 'employeeType', value: 'hostel_warden' }), { key: 'address', label: 'Address', type: 'textarea' }, { key: 'isActive', label: 'Active', type: 'bool', hint: 'Turn off to retire a hostel (not possible while students live in it).' }]),
   },
   rooms: {
@@ -359,9 +386,11 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   beds: {
     key: 'beds', label: 'Beds', api: '/beds',
-    subtitle: 'Beds are auto-created from room capacity. Occupied status is controlled by allocations.', canCreate: false,
-    columns: [nameCol('hostelName', 'Hostel'), nameCol('roomNo', 'Room'), nameCol('bedNo', 'Bed'), statusCol()],
-    fields: fields([refField('roomId', 'Room', '/rooms', 'roomLabel', undefined, true), { key: 'bedNo', label: 'Bed number', required: true }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available', 'maintenance']), hint: '“Occupied” is set automatically when a student is allocated.' }]),
+    subtitle: 'Beds are auto-created from room capacity. Status is controlled by allocations.',
+    canCreate: false,
+    columns: [nameCol('bedNo', 'Bed'), nameCol('roomNo', 'Room'), nameCol('hostelName', 'Hostel'), { key: 'hostelGender', label: 'Type', type: 'badge', badgeMap: { boys: 'info', girls: 'warning', coed: 'success' } }, statusCol()],
+    fields: fields([refField('roomId', 'Room', '/rooms', 'roomLabel', undefined, true), { key: 'bedNo', label: 'Bed number', required: true }, { key: 'status', label: 'Status', type: 'select', options: STATUS_OPTIONS(['available', 'maintenance']), hint: 'Occupied is set automatically when a student is allocated.' }]),
+    filters: [{ key: 'hostelId', label: 'Hostel', type: 'ref', ref: { api: '/hostels', labelKey: 'name' } }],
   },
   events: {
     key: 'events', label: 'Events', api: '/events',
@@ -380,12 +409,19 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   messages: {
     key: 'messages', label: 'Messages', api: '/messages',
-    columns: [nameCol('subject'), { key: 'senderName', label: 'Sender', type: 'text' }, nameCol('kind'), boolCol('isArchived', 'Archived')],
-    fields: fields([{ key: 'subject', label: 'Subject' }, { key: 'body', label: 'Message', type: 'textarea', required: true }, { key: 'kind', label: 'Kind', type: 'select', options: STATUS_OPTIONS(['direct', 'broadcast', 'group']) }, { key: 'recipientIds', label: 'Recipients (comma-separated user IDs)', hint: 'For broadcast, leave blank' }]),
+    subtitle: 'Private internal communication between active school users.',
+    columns: [nameCol('subject', 'Subject'), { key: 'senderName', label: 'From', type: 'text' }, nameCol('kind', 'Type'), { key: 'createdAt', label: 'Sent', type: 'datetime' }, boolCol('isArchived', 'Archived')],
+    fields: fields([
+      { key: 'subject', label: 'Subject' },
+      { key: 'body', label: 'Message', type: 'textarea', required: true },
+      { key: 'kind', label: 'Message type', type: 'select', options: STATUS_OPTIONS(['direct', 'broadcast', 'group']) },
+      { key: 'recipientIds', label: 'Recipients (user IDs)', hint: 'For direct/group messages, enter active user IDs separated by commas. Broadcast sends to all active users in your branch.' },
+    ]),
   },
   notifications: {
     key: 'notifications', label: 'Notifications', api: '/notifications',
-    columns: [{ key: 'userId', label: 'User', type: 'number' }, nameCol('channel'), nameCol('title'), { key: 'readAt', label: 'Read', type: 'datetime' }],
+    subtitle: 'Your personal system notifications. Only your own notifications are visible.',
+    columns: [nameCol('title', 'Notification'), nameCol('channel', 'Channel'), { key: 'readAt', label: 'Read at', type: 'datetime' }, { key: 'createdAt', label: 'Received', type: 'datetime' }],
     fields: [],
     canCreate: false,
   },
@@ -474,12 +510,14 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   'book-issues': {
     key: 'book-issues', label: 'Book Issues', api: '/book-issues',
+    subtitle: 'Issue, return and track circulation. Returned and lost records remain in history.',
     columns: [{ key: 'bookTitle', label: 'Book', type: 'text' }, { key: 'accessionNo', label: 'Copy', type: 'text' }, { key: 'borrowerName', label: 'Borrower', type: 'text' }, { key: 'issueDate', label: 'Issued', type: 'date' }, { key: 'dueDate', label: 'Due', type: 'date' }, statusCol()],
     fields: fields([
-      refField('bookCopyId', 'Book copy', '/book-copies', 'accessionNo', undefined, true),
-      refField('studentId', 'Student', '/students', 'firstName', 'admissionNo'),
-      { key: 'dueInDays', label: 'Due in (days)', type: 'number' },
-      { key: 'requestedFor', label: 'Requested for', type: 'select', options: STATUS_OPTIONS(['student', 'teacher', 'staff']) },
+      refField('bookCopyId', 'Available book copy', '/book-copies', 'accessionNo', undefined, true, { field: 'status', value: 'available' }),
+      refField('userId', 'Borrower', '/users', 'firstName', 'email', true, { field: 'isActive', value: 'true' }),
+      { key: 'dueInDays', label: 'Loan period (days)', type: 'number', hint: '1–365 days. Used when issuing a new loan.' },
+      { key: 'dueDate', label: 'Due date', type: 'dateonly', hint: 'Only used when editing an open loan.' },
+      { key: 'requestedFor', label: 'Borrower type', type: 'select', options: STATUS_OPTIONS(['student', 'teacher', 'staff']) },
     ]),
   },
   payments: {

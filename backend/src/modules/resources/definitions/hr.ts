@@ -10,8 +10,9 @@ import {
   User,
 } from "../../../models";
 import { getPermissionsForRole } from "../../../services/rbac.service";
-import { ResourceDefinition } from "./shared";
+import { ResourceDefinition, plain } from "./shared";
 import { findPersonDuplicate } from "../../payroll/payroll.util";
+import { notify } from "../../../services/notification.service";
 
 export const HR_RESOURCES: ResourceDefinition[] = [
   {
@@ -108,6 +109,7 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       // paid or re-opened; amounts, payee and month change only while the item is a draft.
       const TRANSITIONS: Record<string, string[]> = { draft: ["draft", "approved"], approved: ["approved", "paid", "draft"], paid: ["paid"] };
       if (!TRANSITIONS[current.status].includes(status)) throw ApiError.badRequest(`Cannot move payroll from ${current.status} to ${status}`);
+      if (current.status === "approved" && status === "draft" && await Payslip.count({ where: { payrollItemId: id } })) throw ApiError.badRequest("Cannot re-open: a payslip already exists. Delete the payslip first.");
       const touchesMoney = ["month", "payeeType", "teacherId", "staffId", "basicSalary", "allowances", "deductions"].some((k) => {
         if (body[k] === undefined) return false;
         const cur: any = (current as any)[k];
@@ -144,10 +146,9 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       if (!body.payslipNo) body.payslipNo = `PS-${String(item.month).replace("-", "")}-${String(item.id).padStart(4, "0")}`;
       const existing = await Payslip.findOne({ where: { payrollItemId, ...(branchId != null ? { branchId } : {}) } });
       if (existing) throw ApiError.badRequest("A payslip already exists for this payroll item");
-      if ((body.gross === undefined || body.gross === null || body.gross === "") || (body.net === undefined || body.net === null || body.net === "")) {
-        body.gross = Number(item.basicSalary) + Number(item.allowances ?? 0);
-        body.net = Number(item.netPay ?? body.gross);
-      }
+      // Always derive from the PayrollItem — never trust client-supplied amounts.
+      body.gross = Number(item.basicSalary) + Number(item.allowances ?? 0);
+      body.net = Number(item.netPay);
       const gross = Number(body.gross);
       const net = Number(body.net);
       if (!Number.isFinite(gross) || gross < 0 || !Number.isFinite(net) || net < 0 || net > gross) throw ApiError.badRequest("Payslip gross/net amounts are invalid");
@@ -162,20 +163,49 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       if (!current) throw ApiError.badRequest("Payslip not found");
       if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw ApiError.badRequest("Payslip does not belong to your branch");
       if (body.payrollItemId !== undefined && Number(body.payrollItemId) !== Number(current.payrollItemId)) throw ApiError.badRequest("Payroll item cannot be changed on a payslip");
-      const gross = Number(body.gross ?? current.gross);
-      const net = Number(body.net ?? current.net);
-      if (!Number.isFinite(gross) || gross < 0 || !Number.isFinite(net) || net < 0 || net > gross) throw ApiError.badRequest("Payslip gross/net amounts are invalid");
+      // Re-derive from the linked PayrollItem to keep them in sync.
+      const item = await PayrollItem.findByPk(current.payrollItemId);
+      const gross = item ? Number(item.basicSalary) + Number(item.allowances ?? 0) : Number(current.gross);
+      const net = item ? Number(item.netPay) : Number(current.net);
       body.payrollItemId = current.payrollItemId;
       body.branchId = current.branchId ?? req.user?.branchId;
       body.gross = gross;
       body.net = net;
       return body;
     },
+    beforeRemove: async (req) => {
+      const p = await Payslip.findByPk(Number(req.params.id));
+      if (!p) throw ApiError.notFound("Payslip not found");
+      const item = await PayrollItem.findByPk(p.payrollItemId);
+      if (item?.status === "paid") throw ApiError.badRequest("Cannot delete a payslip for a paid payroll item");
+    },
   },
   {
     path: "leaves", model: LeaveRequest, searchable: ["leaveType", "status"], permission: "leaves",
-    // Everyone sees only their own leaves except school management (who approve them).
-    scopeWhere: (req) => ["super_admin", "admin", "principal"].includes(String(req.user?.role ?? "")) ? {} : { userId: req.user?.id },
+    allowedFilters: ["status", "leaveType", "userId"],
+    includes: [
+      { association: "user", attributes: ["id", "firstName", "lastName", "username", "role"] },
+      { association: "processor", attributes: ["id", "firstName", "lastName", "username", "role"] },
+    ],
+    decorate: (row) => {
+      const p = plain(row);
+      p.userName = p.user ? `${p.user.firstName ?? ""} ${p.user.lastName ?? ""}`.trim() : `#${p.userId}`;
+      p.userRole = p.user?.role ?? "";
+      const approver = (p as any).processor;
+      p.processedByUserName = approver
+        ? `${approver.firstName ?? ""} ${approver.lastName ?? ""}`.trim() || `#${p.processedBy}`
+        : (p.processedBy ? `#${p.processedBy}` : "");
+      delete (p as any).processor;
+      return p;
+    },
+
+    // Permission controls approval authority; data scope controls which rows are visible.
+    scopeWhere: async (req) => {
+      const permissions = await getPermissionsForRole(String(req.user?.role ?? ""));
+      const canApprove = permissions.includes("*") || permissions.includes("leaves:approve");
+      return canApprove ? {} : { userId: req.user?.id };
+    },
+
     beforeCreate: async (body, req) => {
       const userId = Number(req.user?.id);
       const branchId = req.user?.branchId;
@@ -183,12 +213,24 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       const startDate = new Date(body.startDate);
       const endDate = new Date(body.endDate);
       if (!userId) throw ApiError.badRequest("Authenticated user is required");
-      if (!["sick", "casual", "annual", "unpaid", "maternity"].includes(leaveType)) throw ApiError.badRequest("Invalid leave type");
-      if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) throw ApiError.badRequest("Invalid leave date range");
-      const days = Math.floor((Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) - Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000) + 1;
+      if (!["sick", "casual", "annual", "unpaid", "maternity"].includes(leaveType)) {
+        throw ApiError.badRequest("Invalid leave type");
+      }
+      if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) {
+        throw ApiError.badRequest("Invalid leave date range");
+      }
+
+      const days = Math.floor(
+        (Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) -
+          Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000
+      ) + 1;
+
       const user = await User.findByPk(userId);
       if (!user || !user.isActive) throw ApiError.badRequest("User is not active");
-      if (branchId != null && Number(user.branchId) !== Number(branchId)) throw ApiError.badRequest("User does not belong to your branch");
+      if (branchId != null && Number(user.branchId) !== Number(branchId)) {
+        throw ApiError.badRequest("User does not belong to your branch");
+      }
+
       const overlap = await LeaveRequest.findOne({
         where: {
           userId,
@@ -199,6 +241,7 @@ export const HR_RESOURCES: ResourceDefinition[] = [
         },
       });
       if (overlap) throw ApiError.badRequest("An overlapping pending or approved leave already exists");
+
       body.userId = userId;
       body.branchId = branchId;
       body.leaveType = leaveType;
@@ -206,57 +249,149 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       body.endDate = endDate;
       body.days = days;
       body.status = "pending";
-      delete body.processedBy;
+      body.adminComment = "";
+      body.processedBy = null;
       return body;
     },
+
     beforeUpdate: async (body, req) => {
       const id = Number(req.params.id);
       const current = await LeaveRequest.findByPk(id);
-      if (!current) throw ApiError.badRequest("Leave request not found");
-      const role = String(req.user?.role ?? "");
-      const approver = ["super_admin", "admin", "principal"].includes(role) || (await getPermissionsForRole(role)).includes("leaves:approve");
-      if (!approver && Number(current.userId) !== Number(req.user?.id)) throw ApiError.forbidden("You can only update your own leave request");
-      if (!approver && current.status !== "pending") throw ApiError.badRequest("Only pending leave requests can be changed by the requester");
-      if (!approver && body.status !== undefined && String(body.status).toLowerCase() !== "cancelled") throw ApiError.forbidden("You can only cancel your own pending leave request");
-      if (approver && body.status !== undefined && !["pending","approved","rejected"].includes(String(body.status).toLowerCase())) throw ApiError.badRequest("Approver can only set leave status to pending, approved, or rejected");
-      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw ApiError.badRequest("Leave request does not belong to your branch");
+      if (!current) throw ApiError.notFound("Leave request not found");
+
+      const permissions = await getPermissionsForRole(String(req.user?.role ?? ""));
+      const canApprove = permissions.includes("*") || permissions.includes("leaves:approve");
+
+      if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) {
+        throw ApiError.forbidden("Leave request does not belong to your branch");
+      }
+
+      if (!canApprove) {
+        if (Number(current.userId) !== Number(req.user?.id)) {
+          throw ApiError.forbidden("You can only update your own leave request");
+        }
+        if (current.status !== "pending") {
+          throw ApiError.badRequest("Only pending leave requests can be changed by the requester");
+        }
+
+        const requestedStatus = body.status === undefined ? "pending" : String(body.status).toLowerCase();
+        if (!["pending", "cancelled"].includes(requestedStatus)) {
+          throw ApiError.forbidden("You can only cancel your own pending leave request");
+        }
+
+        if (requestedStatus === "cancelled") {
+          const extraKeys = Object.keys(body).filter((key) => key !== "status");
+          if (extraKeys.length) throw ApiError.badRequest("Cancellation cannot change other leave fields");
+          return {
+            userId: current.userId,
+            branchId: current.branchId,
+            status: "cancelled",
+            processedBy: null,
+            adminComment: current.adminComment ?? "",
+          };
+        }
+
+        delete body.id;
+        delete body.userId;
+        delete body.branchId;
+        delete body.status;
+        delete body.days;
+        delete body.adminComment;
+        delete body.processedBy;
+      } else {
+        if (current.status !== "pending") {
+          throw ApiError.badRequest("Only pending leave requests can be approved or rejected");
+        }
+
+        const requestedStatus = String(body.status ?? "").toLowerCase();
+        if (!["approved", "rejected"].includes(requestedStatus)) {
+          throw ApiError.badRequest("Approver must approve or reject a pending leave request");
+        }
+
+        const comment = String(body.adminComment ?? "").trim();
+        if (requestedStatus === "rejected" && !comment) {
+          throw ApiError.badRequest("A rejection reason is required");
+        }
+
+        body.userId = current.userId;
+        body.branchId = current.branchId ?? req.user?.branchId;
+        body.status = requestedStatus;
+        body.processedBy = req.user?.id;
+        body.adminComment = comment;
+
+        delete body.leaveType;
+        delete body.startDate;
+        delete body.endDate;
+        delete body.days;
+      }
+
       const startDate = body.startDate !== undefined ? new Date(body.startDate) : new Date(current.startDate);
       const endDate = body.endDate !== undefined ? new Date(body.endDate) : new Date(current.endDate);
-      // Days always follow the dates (previously editing the dates left a stale day count).
-      const datesChanged = body.startDate !== undefined || body.endDate !== undefined;
-      const days = datesChanged
-        ? Math.floor((Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) - Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000) + 1
-        : Number(current.days);
+      if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) {
+        throw ApiError.badRequest("Invalid leave date range");
+      }
+
+      const days = Math.floor(
+        (Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) -
+          Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) / 86400000
+      ) + 1;
+      if (!Number.isFinite(days) || days <= 0) throw ApiError.badRequest("Invalid leave duration");
+
       const leaveType = String(body.leaveType ?? current.leaveType).trim().toLowerCase();
-      const status = String(body.status ?? current.status).toLowerCase();
-      if (!["sick", "casual", "annual", "unpaid", "maternity"].includes(leaveType)) throw ApiError.badRequest("Invalid leave type");
-      if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || endDate < startDate) throw ApiError.badRequest("Invalid leave date range");
-      if (!Number.isFinite(days) || days <= 0) throw ApiError.badRequest("days must be greater than 0");
-      if (!["pending", "approved", "rejected", "cancelled"].includes(status)) throw ApiError.badRequest("Invalid leave status");
+      if (!["sick", "casual", "annual", "unpaid", "maternity"].includes(leaveType)) {
+        throw ApiError.badRequest("Invalid leave type");
+      }
+
       const overlap = await LeaveRequest.findOne({
         where: {
           userId: current.userId,
-          ...(req.user?.branchId != null ? { branchId: req.user.branchId } : {}),
+          ...(current.branchId != null ? { branchId: current.branchId } : {}),
           status: { [Op.in]: ["pending", "approved"] },
           startDate: { [Op.lte]: endDate },
           endDate: { [Op.gte]: startDate },
           id: { [Op.ne]: id },
         },
       });
-      if (overlap && status !== "rejected" && status !== "cancelled") throw ApiError.badRequest("An overlapping pending or approved leave already exists");
+      if (overlap) throw ApiError.badRequest("An overlapping pending or approved leave already exists");
+
       body.userId = current.userId;
       body.branchId = current.branchId ?? req.user?.branchId;
       body.leaveType = leaveType;
       body.startDate = startDate;
       body.endDate = endDate;
       body.days = days;
-      if (status !== "pending") {
-        body.processedBy = req.user?.id;
-      } else {
-        delete body.processedBy;
+
+      // Requester edits remain pending; approver actions retain the chosen terminal status.
+      if (!canApprove) {
+        body.status = "pending";
+        body.processedBy = null;
+        body.adminComment = "";
       }
-      body.status = status;
+
       return body;
+    },
+
+    afterUpdate: async (row) => {
+      const status = String(row.status ?? "");
+      if (!["approved", "rejected"].includes(status) || !row.userId) return;
+
+      await notify({
+        userId: Number(row.userId),
+        title: status === "approved" ? "Leave request approved" : "Leave request rejected",
+        body: status === "approved"
+          ? `Your ${row.leaveType ?? ""} leave request has been approved.`
+          : `Your ${row.leaveType ?? ""} leave request was rejected. ${String(row.adminComment ?? "").trim()}`.trim(),
+        channel: "system",
+        data: { type: "leave", leaveId: Number(row.id), status, route: "/leaves" },
+      });
+    },
+
+    beforeRemove: async (req) => {
+      const l = await LeaveRequest.findByPk(Number(req.params.id));
+      if (!l) throw ApiError.notFound("Leave not found");
+      if (["approved", "pending"].includes(String(l.status))) {
+        throw ApiError.badRequest(`Cannot delete a ${l.status} leave; cancel it instead`);
+      }
     },
   },
 ];

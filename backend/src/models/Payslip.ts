@@ -13,6 +13,7 @@ export class Payslip extends BaseModel {
   @Column({ type: DataType.STRING(40), allowNull: false })
   payslipNo!: string;
 
+  @Unique("uq_payslip_payroll_item")
   @ForeignKey(() => PayrollItem)
   @Column({ type: DataType.BIGINT.UNSIGNED, allowNull: false })
   payrollItemId!: number;

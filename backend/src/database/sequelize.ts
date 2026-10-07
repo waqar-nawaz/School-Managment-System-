@@ -1,7 +1,7 @@
 import { Sequelize, ModelCtor, DataType } from "sequelize-typescript";
 import env from "../config";
 import { logger } from "../config/logger";
-import { models, Section, SchoolClass } from "../models";
+import { models, Section, SchoolClass, Permission } from "../models";
 
 const commonOptions = {
   timezone: "+00:00",
@@ -110,6 +110,7 @@ async function ensureColumns(): Promise<void> {
     { table: "notifications", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     // Multi-tenant scope for finance tables (previously missing — caused cross-branch data leaks).
     { table: "invoices", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
+    { table: "invoices", column: "notes", def: { type: DataType.TEXT } },
     { table: "payments", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "receipts", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
     { table: "refunds", column: "branchId", def: { type: DataType.BIGINT.UNSIGNED } },
@@ -148,6 +149,17 @@ async function ensureColumns(): Promise<void> {
 /** Data/enum fixes that need the tables to exist, so they run AFTER sync(). Idempotent. */
 async function postSyncPatches(): Promise<void> {
   const qi = sequelize.getQueryInterface();
+
+  // Keep newly introduced permissions available even when the one-time seed marker
+  // is already set in an existing production database.
+  try {
+    await Permission.findOrCreate({
+      where: { key: "leaves:approve" },
+      defaults: { key: "leaves:approve", label: "leaves:approve", category: "leaves" },
+    });
+  } catch (err) {
+    logger.warn(`Could not ensure leaves:approve permission: ${(err as Error).message}`);
+  }
   // Backfill enrolments created before they carried a branch (capacity checks, rosters and
   // the /enrolments list all filter on enrolments.branchId).
   try {
@@ -197,6 +209,7 @@ async function ensureBranchScopedNameIndexes(): Promise<void> {
     { table: "classes", name: "uq_class_branch_name", fields: ["name", "branchId"] },
     { table: "sections", name: "uq_section_class_name", fields: ["name", "classId"] },
     { table: "academic_years", name: "uq_academic_year_branch_name", fields: ["name", "branchId"] },
+    { table: "books", name: "uq_book_branch_isbn", fields: ["isbn", "branchId"] },
   ];
 
   for (const target of targets) {
@@ -222,7 +235,7 @@ async function ensureBranchScopedNameIndexes(): Promise<void> {
                   SELECT string_agg(a.attname, ',' ORDER BY u.ordinality)
                   FROM unnest(c.conkey) WITH ORDINALITY u(attnum, ordinality)
                   JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = u.attnum
-                ) = 'name'
+                ) = '${target.fields[0]}'
             LOOP
               EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I', '${target.table}', r.conname);
             END LOOP;
@@ -233,7 +246,7 @@ async function ensureBranchScopedNameIndexes(): Promise<void> {
       const indexes = await qi.showIndex(target.table);
       for (const index of indexes as any[]) {
         const fields = (index.fields || []).map((f: any) => f.attribute || f.name).filter(Boolean);
-        if (index.unique && fields.length === 1 && fields[0] === "name") {
+        if (index.unique && fields.length === 1 && fields[0] === target.fields[0]) {
           try { await qi.removeIndex(target.table, index.name); } catch { /* already removed as a constraint */ }
           logger.info(`Removed stale single-column unique index ${target.table}.${index.name}`);
         }

@@ -240,6 +240,8 @@ export function defineAssociations(): void {
   Payslip.belongsTo(PayrollItem, { as: "payrollItem", foreignKey: "payrollItemId" });
   PayrollItem.belongsTo(Teacher, { as: "teacher", foreignKey: "teacherId" });
   PayrollItem.belongsTo(Staff, { as: "staff", foreignKey: "staffId" });
+  LeaveRequest.belongsTo(User, { as: "user", foreignKey: "userId" });
+  LeaveRequest.belongsTo(User, { as: "processor", foreignKey: "processedBy" });
 
   // Library
   Book.hasMany(BookCopy, { as: "bookCopies", foreignKey: "bookId" });
@@ -248,7 +250,8 @@ export function defineAssociations(): void {
   BookIssue.belongsTo(BookCopy, { as: "bookCopy", foreignKey: "bookCopyId" });
   BookIssue.belongsTo(User, { as: "borrower", foreignKey: "userId" });
   BookIssue.hasMany(BookFine, { as: "fines", foreignKey: "bookIssueId" });
-  BookFine.belongsTo(BookIssue, { foreignKey: "bookIssueId" });
+  BookFine.belongsTo(BookIssue, { foreignKey: "bookIssueId", as: "bookIssue" });
+  BookFine.belongsTo(User, { as: "user", foreignKey: "userId" });
 
   // Transport
   Route.hasMany(RouteStop, { as: "stops", foreignKey: "routeId" });
@@ -275,6 +278,9 @@ export function defineAssociations(): void {
   User.hasMany(Message, { as: "sentMessages", foreignKey: "senderId" });
   Message.belongsTo(User, { as: "sender", foreignKey: "senderId" });
   Message.belongsToMany(User, { through: MessageRecipient, as: "recipients", foreignKey: "messageId", otherKey: "recipientId" });
+  MessageRecipient.belongsTo(Message, { as: "message", foreignKey: "messageId" });
+  MessageRecipient.belongsTo(User, { as: "recipient", foreignKey: "recipientId" });
+  User.hasMany(MessageRecipient, { as: "messageRecipients", foreignKey: "recipientId" });
   User.hasMany(Notification, { as: "notifications", foreignKey: "userId" });
   Notification.belongsTo(User, { foreignKey: "userId" });
 
@@ -283,7 +289,9 @@ export function defineAssociations(): void {
   HealthRecord.belongsTo(Student, { foreignKey: "studentId" });
   DisciplineRecord.belongsTo(Student, { foreignKey: "studentId" });
   Complaint.belongsTo(User, { as: "reporter", foreignKey: "submittedBy" });
-  AuditLog.belongsTo(User, { foreignKey: "userId" });
+  // AuditLog.user + AuditLog.branch associations are declared on the model via
+  // @BelongsTo decorators (see AuditLog.ts) — do not redeclare them here or
+  // sequelize-typescript will throw a duplicate-association error.
   Media.belongsTo(User, { foreignKey: "uploadedBy" });
   Media.belongsTo(Branch, { as: "branch", foreignKey: "branchId" });
   VisitorLog.belongsTo(User, { foreignKey: "registeredBy" });

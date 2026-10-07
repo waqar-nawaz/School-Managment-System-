@@ -21,9 +21,14 @@ const RECEIVED_STATUSES = ["successful", "refunded", "reversed"];
 const yearStart = () => new Date(new Date().getFullYear(), 0, 1);
 
 /** Coerce a query date to a valid Date (or the fallback). */
-function dateParam(value: unknown, fallback: Date): Date {
+function dateParam(value: unknown, fallback: Date, endOfDay = false): Date {
   if (!value) return fallback;
-  const d = new Date(String(value));
+  const raw = String(value).trim();
+  // Date-only filters must include the entire selected day. Use UTC explicitly so
+  // the API behaves consistently on Render and local development machines.
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? new Date(`${raw}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`)
+    : new Date(raw);
   return Number.isNaN(d.getTime()) ? fallback : d;
 }
 
@@ -84,7 +89,7 @@ router.get(
   authorize("reports:read"),
   asyncHandler(async (req, res) => {
     const from = dateParam(req.query.from, yearStart());
-    const to = dateParam(req.query.to, new Date());
+    const to = dateParam(req.query.to, new Date(), true);
     const studentIds = await branchStudentIds(branchIdOf(req));
     const studentWhere = studentIds ? { studentId: { [Op.in]: studentIds } } : {};
     const dateWhere = { date: { [Op.between]: [from, to] }, ...studentWhere };
@@ -125,7 +130,7 @@ router.get(
     if (branchId) refundWhere.branchId = branchId;
     const refunded = await Refund.sum("amount", { where: refundWhere }) || 0;
 
-    let spentWhere: any = { expensedOn: { [Op.between]: [from, to] }, status: "approved" };
+    let spentWhere: any = { expensedOn: { [Op.between]: [from, to] }, status: { [Op.in]: ["approved", "paid"] } };
     if (branchId) {
       spentWhere.branchId = branchId;
     }

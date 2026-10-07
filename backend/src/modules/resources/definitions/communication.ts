@@ -12,6 +12,18 @@ import {
   MessageRecipient,
 } from "../../../models";
 import { ResourceDefinition, plain } from "./shared";
+import { notifyMany } from "../../../services/notification.service";
+
+/** Fetch all active user ids in a branch (excludes the actor so they don't notify
+ *  themselves about their own creation). Used for school-wide alerts like events,
+ *  notices, and announcements — these are public and meant to reach everyone. */
+async function activeUserIds(branchId: number | null | undefined, excludeUserId: number): Promise<number[]> {
+  const users = await User.findAll({
+    where: { isActive: true, ...(branchId != null ? { branchId } : {}) },
+    attributes: ["id"],
+  });
+  return users.map((u) => Number(u.id)).filter((id) => id !== excludeUserId);
+}
 
 export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
   {
@@ -37,15 +49,42 @@ export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
       if (branchId != null && Number(sender.branchId) !== Number(branchId)) throw ApiError.badRequest("Sender does not belong to your branch");
       const kind = String(body.kind ?? "direct").trim().toLowerCase();
       if (!["direct", "broadcast", "group"].includes(kind)) throw ApiError.badRequest("Invalid message kind");
+      const subject = String(body.subject ?? "").trim();
       const messageBody = String(body.body ?? "").trim();
+      if (!subject) throw ApiError.badRequest("Message subject is required");
       if (!messageBody) throw ApiError.badRequest("Message body is required");
+      if (subject.length > 180) throw ApiError.badRequest("Message subject cannot exceed 180 characters");
       // Capture recipientIds before they reach model.create (which would reject unknown column).
-      const recipientIds: number[] = Array.isArray(body.recipientIds)
-        ? body.recipientIds.map((n: any) => Number(n)).filter((n: number) => Number.isInteger(n) && n > 0)
-        : [];
+      const rawRecipientIds = Array.isArray(body.recipientIds)
+        ? body.recipientIds
+        : typeof body.recipientIds === "string"
+          ? body.recipientIds.split(",").map((value: string) => value.trim()).filter(Boolean)
+          : [];
+      const recipientIds: number[] = Array.from(new Set(
+        rawRecipientIds
+          .map((n: any) => Number(n))
+          .filter((n: number) => Number.isInteger(n) && n > 0)
+      ));
       if (kind !== "broadcast" && recipientIds.length === 0) {
         throw ApiError.badRequest("recipientIds is required for direct/group messages");
       }
+
+      if (recipientIds.length) {
+        const recipients = await User.findAll({
+          where: {
+            id: { [Op.in]: recipientIds },
+            isActive: true,
+            ...(branchId != null ? { branchId } : {}),
+          },
+          attributes: ["id"],
+        });
+        const validRecipientIds = new Set(recipients.map((user) => Number(user.id)));
+        const invalidRecipientIds = recipientIds.filter((id) => !validRecipientIds.has(id));
+        if (invalidRecipientIds.length) {
+          throw ApiError.badRequest("One or more recipients are inactive, missing, or outside your branch");
+        }
+      }
+      body.subject = subject;
       body.senderId = senderId;
       body.branchId = branchId;
       body.kind = kind;
@@ -60,7 +99,11 @@ export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
       const current = await Message.findByPk(req.params.id);
       if (!current) throw ApiError.badRequest("Message not found");
       if (req.user?.branchId != null && Number(current.branchId) !== Number(req.user.branchId)) throw ApiError.badRequest("Message does not belong to your branch");
+      if (req.user?.role !== "super_admin" && Number(current.senderId) !== Number(req.user?.id)) {
+        throw ApiError.forbidden("Only the message sender can edit this message");
+      }
       delete body.senderId;
+      delete body.recipientIds;
       body.branchId = current.branchId ?? req.user?.branchId;
       if (body.kind !== undefined) {
         const kind = String(body.kind).trim().toLowerCase();
@@ -84,8 +127,24 @@ export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
       }
       recipientIds = Array.from(new Set(recipientIds)).filter((id) => id !== Number(row.senderId));
       if (recipientIds.length) {
+        const recipients = await User.findAll({
+          where: {
+            id: { [Op.in]: recipientIds },
+            isActive: true,
+            ...(row.branchId != null ? { branchId: row.branchId } : {}),
+          },
+          attributes: ["id"],
+        });
+        const validRecipientIds = new Set(recipients.map((user) => Number(user.id)));
+        recipientIds = recipientIds.filter((id) => validRecipientIds.has(id));
         await MessageRecipient.bulkCreate(
           recipientIds.map((rid) => ({ messageId: row.id, recipientId: rid, branchId: row.branchId }))
+        );
+        await notifyMany(
+          recipientIds,
+          row.subject?.trim() || "New message",
+          `You have a new message from user #${Number(row.senderId)}.`,
+          { type: "message", messageId: Number(row.id), route: "/messages" }
         );
       }
     },
@@ -103,14 +162,145 @@ export const COMMUNICATION_RESOURCES: ResourceDefinition[] = [
   },
   {
     path: "events", model: Event, searchable: ["title", "category", "venue"], permission: "events",
-    beforeCreate: (body, req) => { body.createdBy = req.user?.id; body.branchId = req.user?.branchId ?? body.branchId; return body; },
+    beforeCreate: (body, req) => {
+      const title = String(body.title ?? "").trim();
+      const category = String(body.category ?? "general").trim().toLowerCase();
+      const startAt = new Date(body.startAt);
+      const endAt = body.endAt ? new Date(body.endAt) : null;
+      if (!title) throw ApiError.badRequest("Event title is required");
+      if (!["general", "sports", "cultural", "exam", "holiday"].includes(category)) throw ApiError.badRequest("Invalid event category");
+      if (!Number.isFinite(startAt.getTime())) throw ApiError.badRequest("Invalid event start date");
+      if (endAt && !Number.isFinite(endAt.getTime())) throw ApiError.badRequest("Invalid event end date");
+      if (endAt && endAt.getTime() < startAt.getTime()) throw ApiError.badRequest("Event end cannot be before start");
+      body.title = title; body.category = category; body.startAt = startAt; body.endAt = endAt ?? undefined;
+      body.createdBy = req.user?.id; body.branchId = req.user?.branchId ?? body.branchId;
+      return body;
+    },
+    beforeUpdate: async (body, req) => {
+      const current = await Event.findByPk(req.params.id);
+      if (!current) throw ApiError.notFound("Event not found");
+      const title = String(body.title ?? current.title).trim();
+      const category = String(body.category ?? current.category).trim().toLowerCase();
+      const startAt = body.startAt !== undefined ? new Date(body.startAt) : new Date(current.startAt);
+      const endAt = body.endAt !== undefined && body.endAt !== null && body.endAt !== "" ? new Date(body.endAt) : (body.endAt === null || body.endAt === "" ? null : (current.endAt ? new Date(current.endAt) : null));
+      if (!title) throw ApiError.badRequest("Event title is required");
+      if (!["general", "sports", "cultural", "exam", "holiday"].includes(category)) throw ApiError.badRequest("Invalid event category");
+      if (!Number.isFinite(startAt.getTime())) throw ApiError.badRequest("Invalid event start date");
+      if (endAt && !Number.isFinite(endAt.getTime())) throw ApiError.badRequest("Invalid event end date");
+      if (endAt && endAt.getTime() < startAt.getTime()) throw ApiError.badRequest("Event end cannot be before start");
+      delete body.createdBy; delete body.branchId;
+      body.title = title; body.category = category; body.startAt = startAt; body.endAt = endAt;
+      return body;
+    },
+    afterCreate: async (row: any, req: Request) => {
+      // Notify every active user in the branch about the new event so it shows up in
+      // their notification feed + bell badge in real time. (Previously creating an
+      // event was silent — students/teachers never learned about it unless they
+      // opened the Events page themselves.)
+      const ids = await activeUserIds(row.branchId, Number(req.user?.id));
+      if (!ids.length) return;
+      const when = new Date(row.startAt).toLocaleDateString();
+      await notifyMany(
+        ids,
+        `New event: ${row.title}`,
+        `Event scheduled on ${when}${row.venue ? ` at ${row.venue}` : ""}.`,
+        { type: "event", eventId: Number(row.id), route: "/events" }
+      );
+    },
   },
   {
     path: "notices", model: Notice, searchable: ["title", "type"], permission: "notices",
-    beforeCreate: (body, req) => { body.createdBy = req.user?.id; body.branchId = req.user?.branchId ?? body.branchId; return body; },
+    beforeCreate: (body, req) => {
+      const title = String(body.title ?? "").trim();
+      const bodyText = String(body.body ?? "").trim();
+      const type = String(body.type ?? "notice").trim().toLowerCase();
+      const publishDate = body.publishDate ? new Date(body.publishDate) : new Date();
+      const expiryDate = body.expiryDate ? new Date(body.expiryDate) : null;
+      if (!title || !bodyText) throw ApiError.badRequest("Notice title and body are required");
+      if (!["notice", "circular", "urgent"].includes(type)) throw ApiError.badRequest("Invalid notice type");
+      if (!Number.isFinite(publishDate.getTime())) throw ApiError.badRequest("Invalid notice publish date");
+      if (expiryDate && !Number.isFinite(expiryDate.getTime())) throw ApiError.badRequest("Invalid notice expiry date");
+      if (expiryDate && expiryDate.getTime() < publishDate.getTime()) throw ApiError.badRequest("Notice expiry cannot be before publish date");
+      body.title = title; body.body = bodyText; body.type = type; body.publishDate = publishDate; body.expiryDate = expiryDate ?? undefined;
+      body.createdBy = req.user?.id; body.branchId = req.user?.branchId ?? body.branchId;
+      return body;
+    },
+    beforeUpdate: async (body, req) => {
+      const current = await Notice.findByPk(req.params.id);
+      if (!current) throw ApiError.notFound("Notice not found");
+      const title = String(body.title ?? current.title).trim();
+      const bodyText = String(body.body ?? current.body).trim();
+      const type = String(body.type ?? current.type).trim().toLowerCase();
+      const publishDate = body.publishDate !== undefined ? new Date(body.publishDate) : new Date(current.publishDate ?? new Date());
+      const expiryDate = body.expiryDate !== undefined && body.expiryDate !== null && body.expiryDate !== "" ? new Date(body.expiryDate) : (body.expiryDate === null || body.expiryDate === "" ? null : (current.expiryDate ? new Date(current.expiryDate) : null));
+      if (!title || !bodyText) throw ApiError.badRequest("Notice title and body are required");
+      if (!["notice", "circular", "urgent"].includes(type)) throw ApiError.badRequest("Invalid notice type");
+      if (!Number.isFinite(publishDate.getTime())) throw ApiError.badRequest("Invalid notice publish date");
+      if (expiryDate && !Number.isFinite(expiryDate.getTime())) throw ApiError.badRequest("Invalid notice expiry date");
+      if (expiryDate && expiryDate.getTime() < publishDate.getTime()) throw ApiError.badRequest("Notice expiry cannot be before publish date");
+      delete body.createdBy; delete body.branchId;
+      body.title = title; body.body = bodyText; body.type = type; body.publishDate = publishDate; body.expiryDate = expiryDate;
+      return body;
+    },
+    afterCreate: async (row: any, req: Request) => {
+      // Broadcast notices to every active user in the branch (urgent notices especially
+      // need to reach parents/teachers immediately, not just sit in the Notices page).
+      const ids = await activeUserIds(row.branchId, Number(req.user?.id));
+      if (!ids.length) return;
+      const prefix = row.type === "urgent" ? "URGENT: " : (row.type === "circular" ? "Circular: " : "Notice: ");
+      await notifyMany(
+        ids,
+        `${prefix}${row.title}`,
+        String(row.body ?? "").slice(0, 160),
+        { type: "notice", noticeId: Number(row.id), route: "/notices" }
+      );
+    },
   },
   {
     path: "announcements", model: Announcement, searchable: ["title", "priority"], permission: "announcements",
-    beforeCreate: (body, req) => { body.createdBy = req.user?.id; body.branchId = req.user?.branchId ?? body.branchId; return body; },
+    beforeCreate: (body, req) => {
+      const title = String(body.title ?? "").trim();
+      const bodyText = String(body.body ?? "").trim();
+      const priority = String(body.priority ?? "info").trim().toLowerCase();
+      const startsAt = new Date(body.startsAt);
+      const endsAt = body.endsAt ? new Date(body.endsAt) : null;
+      if (!title || !bodyText) throw ApiError.badRequest("Announcement title and body are required");
+      if (!["info", "important", "critical"].includes(priority)) throw ApiError.badRequest("Invalid announcement priority");
+      if (!Number.isFinite(startsAt.getTime())) throw ApiError.badRequest("Invalid announcement start date");
+      if (endsAt && !Number.isFinite(endsAt.getTime())) throw ApiError.badRequest("Invalid announcement end date");
+      if (endsAt && endsAt.getTime() < startsAt.getTime()) throw ApiError.badRequest("Announcement end cannot be before start");
+      body.title = title; body.body = bodyText; body.priority = priority; body.startsAt = startsAt; body.endsAt = endsAt ?? undefined;
+      body.createdBy = req.user?.id; body.branchId = req.user?.branchId ?? body.branchId;
+      return body;
+    },
+    beforeUpdate: async (body, req) => {
+      const current = await Announcement.findByPk(req.params.id);
+      if (!current) throw ApiError.notFound("Announcement not found");
+      const title = String(body.title ?? current.title).trim();
+      const bodyText = String(body.body ?? current.body).trim();
+      const priority = String(body.priority ?? current.priority).trim().toLowerCase();
+      const startsAt = body.startsAt !== undefined ? new Date(body.startsAt) : new Date(current.startsAt);
+      const endsAt = body.endsAt !== undefined && body.endsAt !== null && body.endsAt !== "" ? new Date(body.endsAt) : (body.endsAt === null || body.endsAt === "" ? null : (current.endsAt ? new Date(current.endsAt) : null));
+      if (!title || !bodyText) throw ApiError.badRequest("Announcement title and body are required");
+      if (!["info", "important", "critical"].includes(priority)) throw ApiError.badRequest("Invalid announcement priority");
+      if (!Number.isFinite(startsAt.getTime())) throw ApiError.badRequest("Invalid announcement start date");
+      if (endsAt && !Number.isFinite(endsAt.getTime())) throw ApiError.badRequest("Invalid announcement end date");
+      if (endsAt && endsAt.getTime() < startsAt.getTime()) throw ApiError.badRequest("Announcement end cannot be before start");
+      delete body.createdBy; delete body.branchId;
+      body.title = title; body.body = bodyText; body.priority = priority; body.startsAt = startsAt; body.endsAt = endsAt;
+      return body;
+    },
+    afterCreate: async (row: any, req: Request) => {
+      // Push announcements to active users in the branch; critical ones especially.
+      const ids = await activeUserIds(row.branchId, Number(req.user?.id));
+      if (!ids.length) return;
+      const prefix = row.priority === "critical" ? "CRITICAL: " : (row.priority === "important" ? "Important: " : "");
+      await notifyMany(
+        ids,
+        `${prefix}${row.title}`,
+        String(row.body ?? "").slice(0, 160),
+        { type: "announcement", announcementId: Number(row.id), route: "/announcements" }
+      );
+    },
   },
 ];

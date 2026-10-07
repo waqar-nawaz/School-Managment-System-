@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { Op } from "sequelize";
+import { likeOp } from "../../utils/search";
 import { sequelize } from "../../database/sequelize";
 import { authenticate } from "../../middlewares/authenticate";
 import { authorize } from "../../middlewares/authorize";
@@ -10,6 +11,7 @@ import { BookCopy, Book, BookIssue, BookFine, User, Student } from "../../models
 import { createCrudController } from "../../utils/crudFactory";
 import { ownStudentIds } from "../../utils/access";
 import { writeAuditLog } from "../../services/audit.service";
+import { parsePagination, buildPaginationMeta } from "../../utils/pagination";
 
 const router = Router();
 // A book stays "open" from issue until it is returned or lost. The nightly job flips late ones to
@@ -24,6 +26,17 @@ router.use(authenticate);
 const base = createCrudController<BookIssue>({
   model: BookIssue,
   searchable: ["status", "requestedFor"],
+  toSearchWhere: (q: string) => ({
+    [Op.or]: [
+      { status: { [likeOp]: `%${q}%` } },
+      { requestedFor: { [likeOp]: `%${q}%` } },
+      { "$bookCopy.accessionNo$": { [likeOp]: `%${q}%` } },
+      { "$bookCopy.book.title$": { [likeOp]: `%${q}%` } },
+      { "$borrower.firstName$": { [likeOp]: `%${q}%` } },
+      { "$borrower.lastName$": { [likeOp]: `%${q}%` } },
+      { "$borrower.email$": { [likeOp]: `%${q}%` } },
+    ],
+  }),
   defaultSort: [["issueDate", "DESC"]],
   scopeWhere: async (req: any) => {
     const role = req.user?.role;
@@ -47,6 +60,8 @@ const base = createCrudController<BookIssue>({
     p.accessionNo = p.bookCopy?.accessionNo ?? "";
     p.bookTitle = p.bookCopy?.book?.title ?? "";
     p.isOverdue = OPEN_STATUSES.includes(p.status) && p.dueDate && new Date(p.dueDate) < new Date();
+    // Keep the UI accurate even when the optional production cron has not run yet.
+    if (p.status === "issued" && p.isOverdue) p.status = "overdue";
     return p;
   },
 });
@@ -55,12 +70,44 @@ router.get("/", authorize("library:read", "book-issues:read"), (req, res, next) 
 // IMPORTANT: /overdue/list MUST come before /:id, otherwise Express matches "overdue" as an id param
 // and the route becomes unreachable (returns 400 "Invalid id").
 router.get("/overdue/list", authorize("book-issues:update", "library:update"), asyncHandler(async (req, res) => {
-  const issues = await BookIssue.findAll({
-    where: { status: OPEN_STATUSES, dueDate: { [Op.lt]: new Date() }, ...(branchOf(req) != null ? { branchId: branchOf(req) } : {}) },
-    include: [{ association: "borrower", attributes: ["id", "firstName", "lastName", "email"] }],
+  const p = parsePagination(req);
+  const q = req.query.q ? String(req.query.q).trim() : "";
+  const where: any = {
+    status: OPEN_STATUSES,
+    dueDate: { [Op.lt]: new Date() },
+    ...(branchOf(req) != null ? { branchId: branchOf(req) } : {}),
+  };
+  if (q) {
+    where[Op.or] = [
+      { "$bookCopy.accessionNo$": { [likeOp]: `%${q}%` } },
+      { "$bookCopy.book.title$": { [likeOp]: `%${q}%` } },
+      { "$borrower.firstName$": { [likeOp]: `%${q}%` } },
+      { "$borrower.lastName$": { [likeOp]: `%${q}%` } },
+      { "$borrower.email$": { [likeOp]: `%${q}%` } },
+    ];
+  }
+  const { count, rows } = await BookIssue.findAndCountAll({
+    where,
+    limit: p.limit,
+    offset: p.offset,
     order: [["dueDate", "ASC"]],
+    distinct: true,
+    include: [
+      { association: "borrower", attributes: ["id", "firstName", "lastName", "email"] },
+      { association: "bookCopy", attributes: ["id", "accessionNo"], include: [{ association: "book", attributes: ["id", "title", "isbn"] }] },
+    ],
   });
-  ApiResponse.success(res, 200, "Overdue books", issues);
+  const meta = buildPaginationMeta(p.page, p.limit, count);
+  const data = rows.map((row: any) => {
+    const plain = row.get({ plain: true });
+    plain.borrowerName = plain.borrower ? `${plain.borrower.firstName} ${plain.borrower.lastName}`.trim() : "";
+    plain.accessionNo = plain.bookCopy?.accessionNo ?? "";
+    plain.bookTitle = plain.bookCopy?.book?.title ?? "";
+    plain.isOverdue = true;
+    plain.status = "overdue";
+    return plain;
+  });
+  ApiResponse.success(res, 200, "Overdue books", data, meta);
 }));
 router.get("/:id", authorize("library:read", "book-issues:read"), (req, res, next) => base.getOne(req, res).catch(next));
 // DELETE on book-issues is intentionally disabled — issues have linked BookFine records (financial history).
@@ -80,6 +127,9 @@ router.post("/", authorize("book-issues:create"), asyncHandler(async (req, res) 
     let copy = bookCopyId
       ? await BookCopy.findByPk(bookCopyId, { transaction, lock: transaction.LOCK.UPDATE })
       : null;
+    if (copy && bookId && Number(copy.bookId) !== Number(bookId)) {
+      throw ApiError.badRequest("Selected book does not match the selected copy");
+    }
     if (!copy && bookId) {
       // Scope the available-copy lookup by branch so we don't pick a copy from another branch.
       const branchScope = branchOf(req) != null ? { branchId: branchOf(req) } : {};
@@ -88,16 +138,26 @@ router.post("/", authorize("book-issues:create"), asyncHandler(async (req, res) 
     if (!copy || copy.status !== "available") throw ApiError.badRequest("No available copy for this book");
     assertBranch(copy, req, "Book copy");
 
+    const book = await Book.findByPk(copy.bookId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!book || (branchOf(req) != null && Number(book.branchId) !== branchOf(req))) {
+      throw ApiError.badRequest("Book does not belong to your branch");
+    }
+    if (!book.isActive) throw ApiError.badRequest("This book is inactive and cannot be issued");
+
     let borrowerId = userId;
     // Portal users can only ever borrow for themselves.
     if (OWN_ONLY_ROLES.has(req.user!.role)) borrowerId = req.user!.id;
     else if (!borrowerId && studentId) {
       const student = await Student.findByPk(studentId, { transaction });
-      borrowerId = student?.userId;
+      if (!student || (branchOf(req) != null && Number(student.branchId) !== branchOf(req))) {
+        throw ApiError.badRequest("Student does not belong to your branch");
+      }
+      borrowerId = student.userId;
     }
     const borrower = borrowerId ? await User.findByPk(borrowerId, { transaction }) : null;
     assertBranch(borrower, req, "Borrower");
     if (!borrower) throw ApiError.badRequest("Borrower not found: provide a valid userId or studentId");
+    if (!borrower.isActive) throw ApiError.badRequest("Borrower account is inactive");
 
     const days = Number(dueInDays);
     if (!Number.isInteger(days) || days < 1 || days > 365) throw ApiError.badRequest("dueInDays must be between 1 and 365");
@@ -133,7 +193,16 @@ router.put("/:id", authorize("book-issues:update"), asyncHandler(async (req, res
   }
   const { dueDate, status, requestedFor } = req.body;
   if (status !== undefined && status !== issue.status) throw ApiError.badRequest("Use the return or mark-lost action to change status");
-  if (dueDate !== undefined && Number.isNaN(new Date(dueDate).getTime())) throw ApiError.badRequest("Invalid dueDate");
+  if (requestedFor !== undefined && !["student", "teacher", "staff"].includes(String(requestedFor))) {
+    throw ApiError.badRequest("requestedFor must be one of: student, teacher, staff");
+  }
+  if (dueDate !== undefined) {
+    const parsedDueDate = new Date(dueDate);
+    if (Number.isNaN(parsedDueDate.getTime())) throw ApiError.badRequest("Invalid dueDate");
+    if (parsedDueDate.getTime() <= new Date(issue.issueDate).getTime()) {
+      throw ApiError.badRequest("dueDate must be after issueDate");
+    }
+  }
   await issue.update({
     ...(dueDate !== undefined ? { dueDate } : {}),
     ...(requestedFor !== undefined ? { requestedFor } : {}),

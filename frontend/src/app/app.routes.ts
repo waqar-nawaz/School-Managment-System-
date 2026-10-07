@@ -42,6 +42,18 @@ export const routes: Routes = [
           import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
       },
       {
+        path: 'messages',
+        data: { permission: 'messages:read' },
+        canActivate: [PermissionGuard],
+        loadComponent: () => import('./features/messages/messages.component').then((m) => m.MessagesComponent),
+      },
+      {
+        path: 'notifications',
+        data: { permission: 'notifications:read' },
+        canActivate: [PermissionGuard],
+        loadComponent: () => import('./features/notifications/notifications.component').then((m) => m.NotificationsComponent),
+      },
+      {
         path: 'users',
         data: { permission: 'users:read' },
         canActivate: [PermissionGuard],
@@ -75,6 +87,20 @@ export const routes: Routes = [
         canActivate: [PermissionGuard],
         loadComponent: () =>
           import('./features/reports/reports.component').then((m) => m.ReportsComponent),
+      },
+      {
+        path: 'audit-logs',
+        data: { permission: 'audit-logs:read' },
+        canActivate: [PermissionGuard],
+        loadComponent: () =>
+          import('./features/audit-logs/audit-logs.component').then((m) => m.AuditLogsComponent),
+      },
+      {
+        path: 'permissions',
+        data: { permission: 'permissions:read' },
+        canActivate: [PermissionGuard],
+        loadComponent: () =>
+          import('./features/permissions/permissions.component').then((m) => m.PermissionsComponent),
       },
       {
         path: 'students',

@@ -247,7 +247,7 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
     },
   },
   {
-    path: "beds", model: Bed, searchable: ["bedNo"], permission: "beds",
+    path: "beds", model: Bed, searchable: ["bedNo"], permission: "beds", allowedFilters: ["hostelId", "roomId", "status"],
     includes: [{
       association: "room",
       attributes: ["id", "roomNo", "hostelId", "status"],
@@ -277,7 +277,7 @@ export const HOSTEL_RESOURCES: ResourceDefinition[] = [
       p.hostelId = p.room?.hostelId ?? p.room?.hostel?.id ?? null;
       p.hostelName = p.room?.hostel?.name ?? "";
       p.hostelGender = p.room?.hostel?.gender ?? "";
-      p.bedLabel = `Bed ${p.bedNo} — Room ${p.roomNo} — ${p.hostelName}`;
+      // bedLabel removed — columns are separate now (Bed, Room, Hostel).
       return p;
     },
   },

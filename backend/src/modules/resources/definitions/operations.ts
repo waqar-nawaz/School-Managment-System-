@@ -12,7 +12,7 @@ import {
   AuditLog,
   VisitorLog,
 } from "../../../models";
-import { ResourceDefinition, getExisting, validateComplaint } from "./shared";
+import { ResourceDefinition, plain, getExisting, validateComplaint } from "./shared";
 
 const validateInventory = async (body: any, req: Request) => {
   const existing = await getExisting(InventoryItem, req);
@@ -152,7 +152,24 @@ export const OPERATIONS_RESOURCES: ResourceDefinition[] = [
     beforeCreate: validateAsset,
     beforeUpdate: validateAsset,
   },
-  { path: "audit-logs", model: AuditLog, searchable: ["action", "entity"], permission: "audit-logs", readonly: true },
+  {
+    path: "audit-logs", model: AuditLog, searchable: ["action", "entity"], permission: "audit-logs", readonly: true,
+    // Expose the acting user's name alongside the userId so the audit UI can render
+    // 'Waqar Nawaz' instead of an opaque id. The association is declared in models/index.ts.
+    includes: [{ association: "user", attributes: ["id", "firstName", "lastName", "username", "role"] }],
+    allowedFilters: ["action", "entity", "userId"],
+    decorate: (row) => {
+      const p = plain(row);
+      const u = (p as any).user;
+      p.userName = u
+        ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || `#${p.userId}`
+        : (p.userId ? `#${p.userId}` : "—");
+      p.userRoleLabel = u?.role ?? p.role ?? "";
+      // The nested user object isn't useful to the client — keep the payload flat.
+      delete (p as any).user;
+      return p;
+    },
+  },
   {
     path: "visitor-logs", model: VisitorLog, searchable: ["visitorName", "purpose"], permission: "visitors",
     beforeCreate: (body, req) => {
