@@ -1,0 +1,63 @@
+{
+  "$schema": "./node_modules/@angular/service-worker/config/schema.json",
+  "index": "/index.html",
+  "assetGroups": [
+    {
+      "name": "app-shell",
+      "installMode": "prefetch",
+      "updateMode": "prefetch",
+      "resources": {
+        "files": [
+          "/favicon.svg",
+          "/favicon-32x32.png",
+          "/index.html",
+          "/manifest.webmanifest",
+          "/icons/*.png",
+          "/*.css",
+          "/*.js"
+        ]
+      }
+    },
+    {
+      "name": "assets",
+      "installMode": "lazy",
+      "updateMode": "prefetch",
+      "resources": {
+        "files": [
+          "/media/**",
+          "/*.ico",
+          "/*.svg"
+        ]
+      }
+    }
+  ],
+  "dataGroups": [
+    {
+      "name": "api",
+      "urls": ["/api/**", "/auth/**", "/dashboard", "/users", "/students", "/teachers", "/staff", "/classes", "/sections", "/subjects", "/attendance", "/leaves", "/invoices", "/payments", "/payroll", "/messages/**", "/notifications/**", "/roles/**", "/permissions", "/audit-logs", "/settings", "/reports/**"],
+      "cacheConfig": {
+        "maxSize": 100,
+        "maxAge": "1h",
+        "timeout": "10s",
+        "strategy": "freshness"
+      }
+    },
+    {
+      "name": "uploads",
+      "urls": ["/uploads/**"],
+      "cacheConfig": {
+        "maxSize": 50,
+        "maxAge": "7d",
+        "timeout": "30s",
+        "strategy": "performance"
+      }
+    }
+  ],
+  "navigationUrls": [
+    "/**",
+    "!/**/*.*",
+    "!/**/api/**",
+    "!/**/auth/**",
+    "!/**/ws/**"
+  ]
+}

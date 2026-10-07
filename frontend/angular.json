@@ -42,7 +42,9 @@
                 "styles": { "minify": true, "inlineCritical": false },
                 "fonts": true
               },
-              "buildOptimizer": true
+              "buildOptimizer": true,
+              "serviceWorker": true,
+              "ngswConfigPath": "ngsw-config.json"
             },
             "development": {
               "buildOptimizer": false,
