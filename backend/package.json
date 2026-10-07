@@ -14,7 +14,8 @@
     "smoke": "node scripts/smoke.mjs",
     "smoke:hostel": "node scripts/smoke-hostel.mjs",
     "smoke:students": "node scripts/smoke-students.mjs",
-    "smoke:staff": "node scripts/smoke-staff.mjs"
+    "smoke:staff": "node scripts/smoke-staff.mjs",
+    "smoke:users": "node scripts/smoke-users.mjs"
   },
   "keywords": [
     "school",

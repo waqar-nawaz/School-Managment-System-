@@ -255,7 +255,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                 <div class="form-group">
                   <label>Role</label>
                   <select class="form-control" name="role" [(ngModel)]="form.role">
-                    @for (r of ROLES; track r) { <option [value]="r">{{ r | titlecase }}</option> }
+                    @for (r of formRoles(); track r) { <option [value]="r">{{ r | titlecase }}</option> }
                   </select>
                   @if (isEmployeeRole(form.role)) {
                     <div class="form-hint">An employee profile is created automatically with this login. To also set department, designation and salary in one step, use <strong>Employees → Add employee</strong> instead.</div>
@@ -486,8 +486,10 @@ export class UsersComponent implements OnInit {
   roleFilter = '';
   activeFilter = '';
   loading = true;
-  private readonly EMPLOYEE_ROLES = ['teacher', 'accountant', 'librarian', 'hostel_warden', 'transport_manager', 'receptionist', 'principal'];
+  private readonly EMPLOYEE_ROLES = ['teacher', 'staff', 'accountant', 'librarian', 'hostel_warden', 'transport_manager', 'receptionist', 'principal'];
   isEmployeeRole(role: string): boolean { return this.EMPLOYEE_ROLES.includes(role); }
+  /** Student logins are created by admitting a student, so "student" is not offered when adding a user. */
+  formRoles(): string[] { return this.ROLES.filter((r) => r !== 'student' || (this.form as any)?.role === 'student'); }
   showForm = false;
   editing: boolean | null = null;
   form: Record<string, any> = {};
