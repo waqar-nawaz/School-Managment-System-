@@ -39,6 +39,7 @@ const validateHostel = async (body: any, req: Request) => {
     if (!Number.isInteger(wardenId) || wardenId <= 0) throw ApiError.badRequest("Invalid warden selected");
     const warden = await Staff.findByPk(wardenId);
     if (!warden || !warden.isActive) throw ApiError.badRequest("Selected warden is not an active staff member");
+    if (warden.employeeType !== "hostel_warden") throw ApiError.badRequest("The warden must be an employee of type Hostel warden");
     if (branchId != null && Number(warden.branchId) !== Number(branchId)) throw ApiError.badRequest("Selected warden does not belong to your branch");
     body.wardenId = wardenId;
   } else if (body.wardenId === "" || body.wardenId === null) {

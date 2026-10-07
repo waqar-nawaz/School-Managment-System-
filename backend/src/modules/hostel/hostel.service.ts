@@ -1,7 +1,7 @@
 import { Transaction, Op } from "sequelize";
 import { ApiError } from "../../utils/ApiError";
 import { sequelize } from "../../database/sequelize";
-import { Bed, Room, Hostel, HostelAllocation, Student } from "../../models";
+import { Bed, Room, Hostel, HostelAllocation, Student, Staff } from "../../models";
 import { logger } from "../../config/logger";
 
 /**
@@ -96,3 +96,30 @@ export async function activeAllocationCount(where: Record<string, unknown>): Pro
 }
 
 export { Op };
+
+/**
+ * Older databases stored the warden as free text (hostels.wardenName). Link each hostel to the
+ * matching active hostel-warden employee when the name matches exactly one person; leave the rest
+ * alone. Idempotent (only touches hostels that have no warden yet) and silent when the old column
+ * does not exist.
+ */
+export async function migrateWardenNames(): Promise<void> {
+  try {
+    const [rows] = (await sequelize.query(
+      `SELECT id, "branchId", "wardenName" FROM hostels WHERE "wardenId" IS NULL AND "wardenName" IS NOT NULL AND trim("wardenName") <> ''`
+    )) as unknown as [Array<{ id: number; branchId: number | null; wardenName: string }>, unknown];
+    let linked = 0;
+    for (const h of rows) {
+      const wanted = h.wardenName.trim().toLowerCase().replace(/\s+/g, " ");
+      const wardens = await Staff.findAll({ where: { isActive: true, employeeType: "hostel_warden", ...(h.branchId != null ? { branchId: h.branchId } : {}) } });
+      const hits = wardens.filter((w) => `${w.firstName} ${w.lastName}`.trim().toLowerCase().replace(/\s+/g, " ") === wanted);
+      if (hits.length === 1) {
+        await Hostel.update({ wardenId: hits[0].id } as any, { where: { id: h.id } });
+        linked++;
+      }
+    }
+    if (linked) logger.info(`Hostel: linked ${linked} hostel(s) to their warden by name`);
+  } catch {
+    /* no legacy wardenName column: nothing to migrate */
+  }
+}

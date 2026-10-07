@@ -1,5 +1,5 @@
 import { User, Parent, Role } from "../../models";
-import { Transaction } from "sequelize";
+import { Transaction, Op } from "sequelize";
 import { sequelize } from "../../database/sequelize";
 import { hashPassword, generateRandomPassword } from "../../utils/password.util";
 import { ApiError } from "../../utils/ApiError";
@@ -45,6 +45,19 @@ export async function ensureRoleProfile(user: User, transaction?: Transaction): 
   await ensureEmployeeProfiles(user, transaction);
 }
 
+/** Case-insensitive "is this username / email already taken (by someone else)?" */
+export async function assertIdentityFree(identity: { username?: string; email?: string }, exceptUserId?: number, transaction?: Transaction): Promise<void> {
+  const notSelf = exceptUserId ? { id: { [Op.ne]: exceptUserId } } : {};
+  if (identity.email !== undefined) {
+    const hit = await User.findOne({ where: { [Op.and]: [sequelize.where(sequelize.fn("lower", sequelize.col("email")), identity.email.toLowerCase()), notSelf] }, transaction });
+    if (hit) throw ApiError.conflict("Email already registered");
+  }
+  if (identity.username !== undefined) {
+    const hit = await User.findOne({ where: { [Op.and]: [sequelize.where(sequelize.fn("lower", sequelize.col("username")), identity.username.toLowerCase()), notSelf] }, transaction });
+    if (hit) throw ApiError.conflict("Username already taken");
+  }
+}
+
 export async function createUser(input: CreateUserInput): Promise<User> {
   // Run user + profile creation atomically: no half-created users if the profile insert fails.
   if (!input.transaction) {
@@ -55,11 +68,8 @@ export async function createUser(input: CreateUserInput): Promise<User> {
   const roleRow = await Role.findOne({ where: { name: input.role }, transaction: t });
   if (!roleRow) throw ApiError.badRequest(`Unknown role "${input.role}"`);
 
-  const emailTaken = await User.findOne({ where: { email: input.email }, transaction: t });
-  if (emailTaken) throw ApiError.conflict("Email already registered");
-
-  const usernameTaken = await User.findOne({ where: { username: input.username }, transaction: t });
-  if (usernameTaken) throw ApiError.conflict("Username already taken");
+  input.email = String(input.email).trim().toLowerCase();
+  await assertIdentityFree({ email: input.email, username: input.username }, undefined, t);
 
   const tempPassword = input.password ?? generateRandomPassword();
   const user = await User.create({

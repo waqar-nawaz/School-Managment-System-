@@ -1,7 +1,7 @@
 import { Op, Transaction } from "sequelize";
 import { sequelize } from "../../database/sequelize";
 import { logger } from "../../config/logger";
-import { User, Staff, Teacher, Settings } from "../../models";
+import { User, Staff, Teacher, Settings, Hostel } from "../../models";
 
 /** Roles that are school employees. Each gets one Staff row (and teachers also a Teacher row). */
 export const EMPLOYEE_ROLES = new Set([
@@ -43,6 +43,7 @@ export async function ensureEmployeeProfiles(user: User, t?: Transaction, extra:
     // Moved to a non-employee role (parent, student...): keep the history but stop paying/listing them.
     if (staff && staff.isActive) await staff.update({ isActive: false }, { transaction: t });
     if (teacher && teacher.isActive) await teacher.update({ isActive: false }, { transaction: t });
+    if (staff) await releaseWardenPost(staff.id, t);
     return;
   }
 
@@ -59,6 +60,8 @@ export async function ensureEmployeeProfiles(user: User, t?: Transaction, extra:
     } as any, { transaction: t });
   } else {
     await staff.update({ ...shared, employeeType: user.role, ...(user.gender ? { gender: user.gender as any } : {}) }, { transaction: t });
+    // Only an active hostel warden can be in charge of a hostel.
+    if (!shared.isActive || user.role !== "hostel_warden") await releaseWardenPost(staff.id, t);
   }
 
   if (user.role === "teacher") {
@@ -74,6 +77,11 @@ export async function ensureEmployeeProfiles(user: User, t?: Transaction, extra:
     // No longer a teacher: remove them from timetables/teacher lists but keep the record.
     await teacher.update({ isActive: false }, { transaction: t });
   }
+}
+
+/** A hostel must not keep pointing at someone who left or changed jobs. */
+export async function releaseWardenPost(staffId: number, t?: Transaction): Promise<void> {
+  await Hostel.update({ wardenId: null } as any, { where: { wardenId: staffId }, transaction: t });
 }
 
 /** The other direction: editing the employee's profile updates the login's name/contact. */

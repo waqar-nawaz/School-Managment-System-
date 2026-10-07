@@ -5,7 +5,7 @@ import { connectDatabase } from "./database/sequelize";
 import { defineAssociations } from "./models";
 import { runSeeders } from "./database/seeders";
 import { startJobs } from "./jobs";
-import { reconcileHostelState, ensureHostelIndexes } from "./modules/hostel/hostel.service";
+import { reconcileHostelState, ensureHostelIndexes, migrateWardenNames } from "./modules/hostel/hostel.service";
 import { backfillEmployeeProfiles } from "./modules/employees/employees.service";
 
 async function bootstrap(): Promise<void> {
@@ -30,6 +30,7 @@ async function bootstrap(): Promise<void> {
     await reconcileHostelState();
     await ensureHostelIndexes();
     await backfillEmployeeProfiles();
+    await migrateWardenNames();
     app.locals.dbReady = true;
     logger.info("Database connected and schema is ready");
   } catch (err) {

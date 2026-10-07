@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { Op } from "sequelize";
+import { sequelize } from "../../database/sequelize";
 import { User, RefreshToken, Settings } from "../../models";
 import { comparePassword, hashPassword } from "../../utils/password.util";
 import { ApiError } from "../../utils/ApiError";
@@ -26,12 +27,9 @@ function toClaims(role: string): string[] {
 }
 
 export async function login(input: LoginInput, ip?: string, userAgent?: string): Promise<AuthResult> {
+  const ident = input.identifier.trim().toLowerCase();
   const user = await User.findOne({
-    where: {
-      ...(input.identifier.includes("@")
-        ? { email: input.identifier }
-        : { username: input.identifier }),
-    },
+    where: sequelize.where(sequelize.fn("lower", sequelize.col(ident.includes("@") ? "email" : "username")), ident),
   });
 
   if (!user || !(await comparePassword(input.password, user.passwordHash))) {

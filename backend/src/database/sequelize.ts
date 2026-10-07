@@ -159,6 +159,16 @@ async function postSyncPatches(): Promise<void> {
     logger.warn(`Could not backfill enrolments.branchId: ${(err as Error).message}`);
   }
 
+  // One account per email / username regardless of letter case. If old data already has such
+  // duplicates the index cannot be built: warn instead of failing the boot.
+  for (const [name, col] of [["uq_users_email_lower", "email"], ["uq_users_username_lower", "username"]]) {
+    try {
+      await sequelize.query(`CREATE UNIQUE INDEX IF NOT EXISTS ${name} ON users (lower("${col}"))`);
+    } catch (err) {
+      logger.warn(`Could not enforce case-insensitive unique ${col} (duplicates already exist?): ${(err as Error).message}`);
+    }
+  }
+
   // students.religion was VARCHAR(6): most religion names did not fit. Idempotent.
   try {
     await sequelize.query(`ALTER TABLE students ALTER COLUMN religion TYPE VARCHAR(50)`);

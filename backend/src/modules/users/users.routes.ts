@@ -17,7 +17,8 @@ import {
   updateUserStatusSchema,
   adminResetPasswordSchema,
 } from "./users.validation";
-import { createUser, adminResetPassword, ensureRoleProfile } from "./users.service";
+import { createUser, adminResetPassword, ensureRoleProfile, assertIdentityFree } from "./users.service";
+import { releaseWardenPost } from "../employees/employees.service";
 import { invalidateActiveCache } from "../../middlewares/authenticate";
 import { writeAuditLog } from "../../services/audit.service";
 import { likeOp } from "../../utils/search";
@@ -71,6 +72,8 @@ router.get("/:id", authorize("users:read"), asyncHandler(async (req, res) => {
 
 router.post("/", authorize("users:create"), validate(createUserSchema), asyncHandler(async (req, res) => {
   const body = { ...req.body };
+  // A student login without a student record is a ghost account: students are admitted, not "added as users".
+  if (body.role === "student") throw ApiError.badRequest("Student logins are created automatically when you admit a student (Students -> Admit student).");
   // Privilege escalation guard: only super_admin can create super_admin users.
   if (body.role === "super_admin" && req.user!.role !== "super_admin") {
     throw ApiError.forbidden("Only super_admin can assign the super_admin role");
@@ -110,6 +113,10 @@ router.put("/:id", authorize("users:update"), validate(updateUserSchema), asyncH
     if (body.branchId == null) throw ApiError.badRequest("User branch cannot be cleared");
     const branch = await Branch.findByPk(body.branchId);
     if (!branch || !branch.isActive) throw ApiError.badRequest("Selected branch is not active");
+  }
+  if (body.role === "student" && user.role !== "student") throw ApiError.badRequest("A login cannot be turned into a student by changing its role. Admit the student instead.");
+  if (body.username !== undefined || body.email !== undefined) {
+    await assertIdentityFree({ username: body.username, email: body.email }, user.id);
   }
   if (body.role !== undefined && body.role !== user.role) {
     if (!(await Role.findOne({ where: { name: body.role } }))) throw ApiError.badRequest(`Unknown role "${body.role}"`);
@@ -196,8 +203,10 @@ router.delete("/:id", authorize("users:delete"), asyncHandler(async (req, res) =
       await Notification.destroy({ where: { userId: user.id }, transaction: t });
       await Message.destroy({ where: { senderId: user.id }, transaction: t });
       await Student.update({ userId: null }, { where: { userId: user.id }, transaction: t });
-      await Teacher.update({ userId: null }, { where: { userId: user.id }, transaction: t });
-      await Staff.update({ userId: null }, { where: { userId: user.id }, transaction: t });
+      // The login is gone, so the employee leaves payroll/teacher lists (history is kept) and no longer runs a hostel.
+      for (const s of await Staff.findAll({ where: { userId: user.id }, attributes: ["id"], transaction: t })) await releaseWardenPost(Number(s.id), t);
+      await Teacher.update({ userId: null, isActive: false }, { where: { userId: user.id }, transaction: t });
+      await Staff.update({ userId: null, isActive: false }, { where: { userId: user.id }, transaction: t });
       await Parent.update({ userId: null }, { where: { userId: user.id }, transaction: t });
       await AuditLog.update({ userId: null }, { where: { userId: user.id }, transaction: t });
       await user.destroy({ transaction: t });
@@ -220,6 +229,7 @@ router.delete("/:id", authorize("users:delete"), asyncHandler(async (req, res) =
       username: `deleted_${user.id}_${user.username}`.slice(0, 120),
       email: `deleted_${user.id}_${user.email}`.slice(0, 180),
     });
+    await ensureRoleProfile(user); // profiles of an account that could not be removed are deactivated too
     await writeAuditLog({
       action: "delete",
       entity: "user",
