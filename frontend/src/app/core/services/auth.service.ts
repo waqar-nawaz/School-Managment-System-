@@ -61,8 +61,21 @@ export class AuthService {
       this.api.post('/auth/logout', { refreshToken: rt }).subscribe({ error: () => undefined });
     }
     this.storage.clear();
+    this.purgePrivateCaches();
     this.userSubject.next(null);
     this.router.navigate(['/auth/login']);
+  }
+
+  /**
+   * The installable (PWA) app must never leave payroll/student/medical data in the browser for the
+   * next person on a shared computer. Current builds cache only the app shell, but earlier builds
+   * cached API responses, so wipe those data caches on every sign-out.
+   */
+  private purgePrivateCaches(): void {
+    if (typeof caches === 'undefined') return;
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('ngsw:') && k.includes(':data:')).map((k) => caches.delete(k))))
+      .catch(() => undefined);
   }
 
   isLoggedIn(): boolean {

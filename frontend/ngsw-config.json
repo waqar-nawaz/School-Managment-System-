@@ -31,33 +31,13 @@
       }
     }
   ],
-  "dataGroups": [
-    {
-      "name": "api",
-      "urls": ["/api/**", "/auth/**", "/dashboard", "/users", "/students", "/teachers", "/staff", "/classes", "/sections", "/subjects", "/attendance", "/leaves", "/invoices", "/payments", "/payroll", "/messages/**", "/notifications/**", "/roles/**", "/permissions", "/audit-logs", "/settings", "/reports/**"],
-      "cacheConfig": {
-        "maxSize": 100,
-        "maxAge": "1h",
-        "timeout": "10s",
-        "strategy": "freshness"
-      }
-    },
-    {
-      "name": "uploads",
-      "urls": ["/uploads/**"],
-      "cacheConfig": {
-        "maxSize": 50,
-        "maxAge": "7d",
-        "timeout": "30s",
-        "strategy": "performance"
-      }
-    }
-  ],
+  "dataGroups": [],
   "navigationUrls": [
     "/**",
     "!/**/*.*",
     "!/**/api/**",
     "!/**/auth/**",
-    "!/**/ws/**"
+    "!/**/ws/**",
+    "!/**/uploads/**"
   ]
 }
