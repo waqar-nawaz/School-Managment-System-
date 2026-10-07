@@ -86,4 +86,13 @@ console.log('# deactivated employees leave payroll');
 const nextM=(()=>{const d=new Date();d.setUTCMonth(d.getUTCMonth()+1);return d.toISOString().slice(0,7)})();
 await call('PATCH','/users/'+acc.employee.userId+'/status',A,{isActive:false});
 const g3=await call('POST','/payroll/generate',A,{month:nextM}); const names=(g3.j.data.people||[]).map(p=>p.name); ok(g3.s===201&&!names.includes('Par1 Race'),'inactive employee is not on next month\'s payroll ('+g3.j.data.created+' prepared)');
+
+console.log('# employees see only their own payslips');
+const myRab=await call('GET','/payroll/my',tl.accessToken); ok(myRab.s===200&&myRab.j.data.items.length===1&&myRab.j.data.employee.name.startsWith('Rabia'),'teacher sees exactly her own slip ('+myRab.j?.data?.items?.length+')');
+const sl0=myRab.j.data.items[0]; ok(sl0&&Number(sl0.netPay)===64000&&sl0.status==='paid','...with the right amount and status ('+sl0?.netPay+', '+sl0?.status+')');
+const myAcc=await call('GET','/payroll/my',accLogin.accessToken); ok(myAcc.s===200&&myAcc.j.data.items.every(i=>Number(i.netPay)===40001)&&myAcc.j.data.items.length===1,'accountant sees only her own (net '+myAcc.j?.data?.items?.[0]?.netPay+')');
+const parentUser=(await call('POST','/users',A,{username:'par77',email:'par77@school.test',firstName:'P',lastName:'P',role:'parent',branchId:BR,password:'Passw0rd!x'})); const PL=(await login('par77','Passw0rd!x')).accessToken; const myPar=await call('GET','/payroll/my',PL); ok(myPar.s===403,'a parent cannot open employee payslips '+myPar.s);
+const nextMonthDraft=await call('POST','/payroll/generate',A,{month:nextM}); const mine2=await call('GET','/payroll/my',tl.accessToken); ok(mine2.j.data.items.length===1,'a new draft month is NOT visible to the employee until approved');
+await call('POST','/payroll/bulk-status',A,{month:nextM,from:'draft',to:'approved'}); const mine3=await call('GET','/payroll/my',tl.accessToken); ok(mine3.j.data.items.length===2&&mine3.j.data.items[0].month===nextM,'once approved it appears, newest first');
+
 console.log(`\n${pass} passed, ${fail} failed`); if(fail) console.log('FAILED:\n - '+fails.join('\n - '));

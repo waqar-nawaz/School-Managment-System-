@@ -38,6 +38,7 @@ export const MENU: MenuItem[] = [
   { label: 'Payments', path: '/payments', icon: 'credit-card', group: 'Finance', permission: 'payments:read' },
   { label: 'Fee Types', path: '/fee-types', icon: 'dollar', group: 'Finance', permission: 'fees:read' },
   { label: 'Expenses', path: '/expenses', icon: 'trending-down', group: 'Finance', permission: 'expenses:read' },
+  { label: 'My payslips', path: '/my-payslips', icon: 'file-text', group: 'People & HR', permission: 'payslips:self' },
   { label: 'Payroll', path: '/payroll', icon: 'dollar', group: 'Finance', permission: 'payroll:read' },
   { label: 'Payslips', path: '/payslips', icon: 'file-text', group: 'Finance', permission: 'payroll:read' },
 

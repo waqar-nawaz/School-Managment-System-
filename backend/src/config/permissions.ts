@@ -51,6 +51,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "health-records:read", "discipline-records:read", "discipline-records:update",
     "complaints:read", "complaints:create", "complaints:update",
     "inventory:read", "assets:read", "visitors:read", "visitors:create",
+    "payslips:self",
   ],
 
   teacher: [
@@ -71,6 +72,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "library:read", "book-issues:read",
     "leaves:read", "leaves:create", "leaves:update",
     "notifications:read", "notifications:update",
+    "payslips:self",
   ],
 
   parent: [
@@ -120,6 +122,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "reports:read", "reports:export",
     "leaves:approve",
     "notifications:read", "notifications:update",
+    "payslips:self",
   ],
 
   librarian: [
@@ -130,6 +133,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "book-fines:read", "book-fines:create", "book-fines:update",
     "notices:read", "events:read",
     "notifications:read", "notifications:update",
+    "payslips:self",
   ],
 
   transport_manager: [
@@ -142,6 +146,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "student-transport:read", "student-transport:create", "student-transport:update",
     "notices:read",
     "notifications:read", "notifications:update",
+    "payslips:self",
   ],
 
   hostel_warden: [
@@ -154,6 +159,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "hostel-allocations:read", "hostel-allocations:create", "hostel-allocations:update",
     "notices:read",
     "notifications:read", "notifications:update",
+    "payslips:self",
   ],
 
   receptionist: [
@@ -166,6 +172,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "messages:read", "messages:create", "messages:send",
     "notices:read", "events:read",
     "notifications:read", "notifications:update",
+    "payslips:self",
   ],
 
   // Generic support staff: read-only school info + own leaves/messages.
@@ -175,6 +182,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     "leaves:read", "leaves:create", "leaves:update",
     "messages:read", "messages:create", "messages:send",
     "notifications:read", "notifications:update",
+    "payslips:self",
   ],
 };
 

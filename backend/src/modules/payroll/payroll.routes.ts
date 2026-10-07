@@ -25,6 +25,30 @@ function monthOf(req: any): string {
 }
 const branchWhere = (req: any) => (req.user?.branchId != null ? { branchId: req.user.branchId } : {});
 
+/**
+ * An employee's own salary slips (approved or paid months only, newest first). No finance permission
+ * is needed: it only ever returns the caller's own rows (matched through their login).
+ */
+router.get("/my", authorize("payslips:self"), asyncHandler(async (req, res) => {
+  const userId = req.user!.id;
+  const [staff, teachers] = await Promise.all([
+    Staff.findAll({ where: { userId }, attributes: ["id"] }),
+    Teacher.findAll({ where: { userId }, attributes: ["id"] }),
+  ]);
+  const ors: any[] = [];
+  if (staff.length) ors.push({ staffId: { [Op.in]: staff.map((x) => Number(x.id)) } });
+  if (teachers.length) ors.push({ teacherId: { [Op.in]: teachers.map((x) => Number(x.id)) } });
+  const rows = ors.length
+    ? await PayrollItem.findAll({
+        where: { status: { [Op.in]: ["approved", "paid"] }, [Op.or]: ors },
+        attributes: ["id", "month", "basicSalary", "allowances", "deductions", "netPay", "status", "paidOn"],
+        order: [["month", "DESC"]], limit: 36,
+      })
+    : [];
+  const me = staff[0] ? await Staff.findByPk(staff[0].id, { attributes: ["staffNo", "firstName", "lastName", "designation"] }) : null;
+  ApiResponse.success(res, 200, "My payslips", { employee: me ? { staffNo: me.staffNo, name: `${me.firstName} ${me.lastName}`.trim(), designation: me.designation } : null, items: rows });
+}));
+
 /** Totals for the Payroll page header. */
 router.get("/summary", authorize("payroll:read"), asyncHandler(async (req, res) => {
   const month = monthOf(req);

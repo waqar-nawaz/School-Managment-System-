@@ -27,14 +27,15 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'syllabus:create', 'syllabus:update', 'lesson-plans:read', 'lesson-plans:create',
     'lesson-plans:update', 'fees:read', 'fee-types:read', 'invoices:read', 'payments:read',
     'expenses:read', 'payroll:read', 'payslips:read', 'leaves:read', 'leaves:create',
-    'leaves:update', 'library:read', 'book-issues:read', 'book-fines:read', 'routes:read',
-    'route-stops:read', 'vehicles:read', 'student-transport:read', 'hostels:read', 'rooms:read',
-    'beds:read', 'hostel-allocations:read', 'events:read', 'events:create', 'notices:read',
-    'notices:create', 'announcements:read', 'announcements:create', 'messages:read',
-    'messages:create', 'messages:send', 'notifications:read', 'certificates:read',
-    'certificates:create', 'certificates:update', 'health-records:read', 'discipline-records:read',
-    'discipline-records:update', 'complaints:read', 'complaints:create', 'complaints:update',
-    'inventory:read', 'assets:read', 'visitors:read', 'visitors:create',
+    'leaves:update', 'leaves:approve', 'library:read', 'book-issues:read', 'book-fines:read',
+    'routes:read', 'route-stops:read', 'vehicles:read', 'student-transport:read', 'hostels:read',
+    'rooms:read', 'beds:read', 'hostel-allocations:read', 'events:read', 'events:create',
+    'notices:read', 'notices:create', 'announcements:read', 'announcements:create',
+    'messages:read', 'messages:create', 'messages:send', 'notifications:read',
+    'notifications:update', 'certificates:read', 'certificates:create', 'certificates:update',
+    'health-records:read', 'discipline-records:read', 'discipline-records:update',
+    'complaints:read', 'complaints:create', 'complaints:update', 'inventory:read', 'assets:read',
+    'visitors:read', 'visitors:create', 'payslips:self',
   ],
 
   teacher: [
@@ -46,7 +47,8 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'lesson-plans:read', 'lesson-plans:create', 'lesson-plans:update', 'syllabus:read',
     'timetable:read', 'messages:read', 'messages:create', 'messages:send', 'notices:read',
     'events:read', 'announcements:read', 'report-cards:read', 'library:read', 'book-issues:read',
-    'leaves:read', 'leaves:create', 'leaves:update', 'notifications:read',
+    'leaves:read', 'leaves:create', 'leaves:update', 'notifications:read', 'notifications:update',
+    'payslips:self',
   ],
 
   parent: [
@@ -55,7 +57,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'assignments:read', 'notices:read', 'announcements:read', 'messages:read', 'messages:create',
     'messages:send', 'leaves:read', 'leaves:create', 'leaves:update', 'complaints:read',
     'complaints:create', 'timetable:read', 'events:read', 'certificates:read', 'library:read',
-    'book-issues:read', 'notifications:read',
+    'book-issues:read', 'notifications:read', 'notifications:update',
   ],
 
   student: [
@@ -63,7 +65,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'assignments:read', 'submissions:read', 'submissions:create', 'notices:read',
     'announcements:read', 'messages:read', 'messages:create', 'messages:send', 'timetable:read',
     'events:read', 'library:read', 'book-issues:read', 'leaves:read', 'leaves:create',
-    'leaves:update', 'notifications:read',
+    'leaves:update', 'notifications:read', 'notifications:update',
   ],
 
   accountant: [
@@ -71,16 +73,17 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'fees:read', 'fees:create', 'fee-types:read', 'fee-types:create', 'fee-types:update',
     'invoices:read', 'invoices:create', 'invoices:update', 'invoices:delete', 'payments:read',
     'payments:create', 'receipts:read', 'receipts:create', 'refunds:create', 'refunds:approve',
-    'expenses:read', 'expenses:create', 'expenses:update', 'payroll:read', 'payroll:create',
-    'payroll:update', 'payslips:read', 'payslips:create', 'reports:read', 'reports:export',
-    'notifications:read',
+    'expenses:read', 'expenses:create', 'expenses:update', 'expenses:approve', 'expenses:pay',
+    'payroll:read', 'payroll:create', 'payroll:update', 'payslips:read', 'payslips:create',
+    'reports:read', 'reports:export', 'leaves:approve', 'notifications:read',
+    'notifications:update', 'payslips:self',
   ],
 
   librarian: [
     'dashboard:read', 'students:read', 'library:read', 'library:create', 'library:update',
     'library:delete', 'book-issues:read', 'book-issues:create', 'book-issues:update',
     'book-fines:read', 'book-fines:create', 'book-fines:update', 'notices:read', 'events:read',
-    'notifications:read',
+    'notifications:read', 'notifications:update', 'payslips:self',
   ],
 
   transport_manager: [
@@ -88,26 +91,29 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'routes:delete', 'route-stops:read', 'route-stops:create', 'route-stops:update',
     'vehicles:read', 'vehicles:create', 'vehicles:update', 'driver-assignments:read',
     'driver-assignments:create', 'student-transport:read', 'student-transport:create',
-    'student-transport:update', 'notices:read', 'notifications:read',
+    'student-transport:update', 'notices:read', 'notifications:read', 'notifications:update',
+    'payslips:self',
   ],
 
   hostel_warden: [
     'dashboard:read', 'students:read', 'attendance:read', 'hostels:read', 'hostels:create',
     'hostels:update', 'rooms:read', 'rooms:create', 'rooms:update', 'beds:read', 'beds:create',
     'beds:update', 'hostel-allocations:read', 'hostel-allocations:create',
-    'hostel-allocations:update', 'notices:read', 'notifications:read',
+    'hostel-allocations:update', 'notices:read', 'notifications:read', 'notifications:update',
+    'payslips:self',
   ],
 
   receptionist: [
     'dashboard:read', 'admissions:read', 'admissions:create', 'admissions:update', 'students:read',
     'students:create', 'visitors:read', 'visitors:create', 'complaints:read', 'complaints:create',
     'certificates:read', 'certificates:create', 'messages:read', 'messages:create',
-    'messages:send', 'notices:read', 'events:read', 'notifications:read',
+    'messages:send', 'notices:read', 'events:read', 'notifications:read', 'notifications:update',
+    'payslips:self',
   ],
 
   staff: [
     'dashboard:read', 'notices:read', 'events:read', 'announcements:read', 'timetable:read',
     'leaves:read', 'leaves:create', 'leaves:update', 'messages:read', 'messages:create',
-    'messages:send', 'notifications:read',
+    'messages:send', 'notifications:read', 'notifications:update', 'payslips:self',
   ],
 };
