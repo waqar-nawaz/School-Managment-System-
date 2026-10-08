@@ -9,6 +9,7 @@ import { Payment, Receipt, Refund, Invoice } from "../../models";
 import { createCrudController } from "../../utils/crudFactory";
 import { studentScope } from "../../utils/access";
 import { getPermissionsForRole } from "../../services/rbac.service";
+import { round2, parseMoney, PAYMENT_METHODS } from "../../utils/money";
 import { writeAuditLog } from "../../services/audit.service";
 import { v4 as uuidv4 } from "uuid";
 
@@ -67,14 +68,22 @@ router.get("/:id", authorize("payments:read"), (req, res, next) => base.getOne(r
 // router.delete("/:id", authorize("payments:delete"), (req, res, next) => base.remove(req, res).catch(next));
 
 router.post("/:id/refund", authorize("refunds:create"), asyncHandler(async (req, res) => {
-  const amount = Number(req.body.amount ?? 0);
-  if (!Number.isFinite(amount) || !(amount > 0)) throw ApiError.badRequest("Refund amount must be positive");
+  const amount = parseMoney(req.body.amount, "Refund amount");
+  const reason = String(req.body.reason ?? "").trim();
+  if (reason.length < 3) throw ApiError.badRequest("Please write the reason for the refund");
+  if (reason.length > 500) throw ApiError.badRequest("The refund reason is too long (max 500 characters)");
+  const refundMethod = String(req.body.method || "bank").toLowerCase();
+  if (!(PAYMENT_METHODS as readonly string[]).includes(refundMethod)) throw ApiError.badRequest(`Invalid refund method: ${refundMethod}`);
   const callerBranch = req.user!.branchId;
-  // Creating a refund and approving it are separate controls: approve:true needs refunds:approve.
+  // Creating a refund and approving it are separate controls: approve:true needs refunds:approve,
+  // and (maker-checker) only an administrator may request AND approve the same refund.
   if (req.body.approve) {
     const perms = await getPermissionsForRole(req.user!.role);
     if (!perms.includes("*") && !perms.includes("refunds:approve")) {
       throw ApiError.forbidden("Missing permission: refunds:approve (submit the refund without approve to send it for approval)");
+    }
+    if (!perms.includes("*")) {
+      throw ApiError.forbidden("A refund you requested must be approved by someone else. Submit it without approve and ask the principal or an administrator to approve it.");
     }
   }
 
@@ -94,21 +103,23 @@ router.post("/:id/refund", authorize("refunds:create"), asyncHandler(async (req,
       where: { paymentId: payment.id, status: { [Op.in]: ["pending", "processed"] } },
       transaction: t,
     });
-    const refundable = Number(payment.amount) - Number(prior || 0);
+    const refundable = round2(Number(payment.amount) - Number(prior || 0));
     if (amount > refundable) throw ApiError.badRequest(`Refund exceeds refundable payment balance of ${refundable}`);
 
     const refundedOn = req.body.refundedOn ? new Date(req.body.refundedOn) : new Date();
     if (!Number.isFinite(refundedOn.getTime())) throw ApiError.badRequest("Refund date is not valid");
+    if (refundedOn.getTime() > Date.now() + 86400000) throw ApiError.badRequest("Refund date cannot be in the future");
 
     const refund = await Refund.create({
       paymentId: payment.id,
       invoiceId: payment.invoiceId,
       branchId: payment.branchId,
       amount,
-      method: req.body.method || "bank",
-      reason: req.body.reason || "",
+      method: refundMethod,
+      reason,
       refundedOn,
       status: req.body.approve ? "processed" : "pending",
+      requestedBy: req.user!.id,
       approvedBy: req.body.approve ? req.user!.id : null,
     }, { transaction: t });
 
@@ -116,7 +127,7 @@ router.post("/:id/refund", authorize("refunds:create"), asyncHandler(async (req,
       await syncPaymentStatus(payment, t);
       const invoice = await Invoice.findByPk(payment.invoiceId, { transaction: t, lock: t.LOCK.UPDATE });
       if (invoice && invoice.status !== "cancelled") {
-        const amountPaid = Math.max(0, Number(invoice.amountPaid) - amount);
+        const amountPaid = Math.max(0, round2(Number(invoice.amountPaid) - amount));
         const isOverdue = new Date(invoice.dueDate) < new Date();
         const nextStatus = amountPaid >= Number(invoice.totalDue) ? "paid"
           : amountPaid > 0 ? "partial"
@@ -166,13 +177,17 @@ router.patch("/:id/refunds/:refundId/approve", authorize("refunds:approve"), asy
       throw ApiError.badRequest(`Refund is already ${refund.status}`);
     }
 
+    if (refund.requestedBy && Number(refund.requestedBy) === Number(req.user!.id)) {
+      const perms = await getPermissionsForRole(req.user!.role);
+      if (!perms.includes("*")) throw ApiError.forbidden("You requested this refund, so someone else must approve it.");
+    }
     await refund.update({ status: "processed", approvedBy: req.user!.id, refundedOn: new Date() }, { transaction: t });
     await syncPaymentStatus(payment, t);
 
     const invoice = await Invoice.findByPk(payment.invoiceId, { transaction: t, lock: t.LOCK.UPDATE });
     // Guard: never overwrite a 'cancelled' invoice status (terminal state).
     if (invoice && invoice.status !== "cancelled") {
-      const amountPaid = Math.max(0, Number(invoice.amountPaid) - Number(refund.amount));
+      const amountPaid = Math.max(0, round2(Number(invoice.amountPaid) - Number(refund.amount)));
       const isOverdue = new Date(invoice.dueDate) < new Date();
       const nextStatus = amountPaid >= Number(invoice.totalDue) ? "paid"
         : amountPaid > 0 ? "partial"

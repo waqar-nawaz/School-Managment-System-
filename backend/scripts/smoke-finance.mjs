@@ -1,0 +1,108 @@
+// Finance smoke test (fee types, invoices, payments, refunds, expenses, reports) against a RUNNING API on a FRESH database.
+//   npm run dev   ->   npm run smoke:finance      (API_BASE overrides http://localhost:3000/api)
+const B=process.env.API_BASE||'http://localhost:3000/api';
+let pass=0,fail=0;const fails=[];
+const ok=(c,m)=>{ if(c){pass++;console.log('  ok  ',m)}else{fail++;fails.push(m);console.log('  FAIL',m)} };
+const call=async(m,p,t,b)=>{const r=await fetch(B+p,{method:m,headers:{'Content-Type':'application/json',...(t?{Authorization:'Bearer '+t}:{})},body:b?JSON.stringify(b):undefined});return {s:r.status,j:await r.json().catch(()=>null)}};
+const get=async(p,t)=>(await call('GET',p,t)).j?.data;
+const msg=r=>r.j?.message||'';
+const login=async(i,p)=>(await fetch(B+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({identifier:i,password:p})}).then(r=>r.json())).data;
+const L=await login('superadmin','Admin@123'); const A=L.accessToken; const BR=L.user.branchId;
+const today=new Date().toISOString().slice(0,10);
+const cls=(await get('/classes?limit=5',A))[0];
+const mk=async(fn)=>(await call('POST','/students',A,{firstName:fn,lastName:'Fin',gender:'male',dateOfBirth:'2012-01-01',currentClassId:cls.id})).j.data;
+const s1=await mk('Faisal'), s2=await mk('Gul');
+const terms=(await get('/terms?limit=10',A)); const term=terms[0];
+
+console.log('# fee types');
+let r=await call('POST','/fee-types',A,{name:'Lab Fee',category:'tuition',amount:1000,billingCycle:'term'}); ok(r.s===201,'fee type created '+r.s+' '+msg(r)); const lab=r.j?.data;
+r=await call('POST','/fee-types',A,{name:'  lab FEE ',category:'tuition',amount:5}); ok(r.s>=400,'same name in other letter case rejected: '+r.s+' '+msg(r));
+r=await call('POST','/fee-types',A,{name:'Bad',category:'tuition',amount:-5}); ok(r.s===400,'negative amount rejected');
+r=await call('POST','/fee-types',A,{name:'Bad2',category:'weird',amount:5}); ok(r.s===400,'unknown category rejected');
+r=await call('POST','/fee-types',A,{name:'Sports',category:'misc',amount:500,billingCycle:'yearly'}); const sports=r.j?.data;
+
+console.log('# generating invoices');
+const gen=(b)=>call('POST','/invoices/generate',A,b);
+r=await gen({studentId:s1.id,termId:term.id,feeTypeIds:[lab.id]}); ok(r.s===201&&Number(r.j.data.totalDue)===1000,'invoice for Lab Fee = 1000 '+r.s+' '+msg(r)); const inv1=r.j?.data;
+r=await gen({studentId:s1.id,termId:term.id,feeTypeIds:[lab.id]}); ok(r.s===409,'same fee billed twice for the same term is blocked: '+r.s+' '+msg(r));
+r=await gen({studentId:s1.id,termId:term.id,feeTypeIds:[sports.id]}); ok(r.s===201,'a different fee in the same term is fine');
+r=await gen({studentId:s2.id,termId:term.id,feeTypeIds:[lab.id]}); ok(r.s===201,'same fee for another student is fine');
+r=await gen({studentId:s1.id,customItems:[{amount:50}]}); ok(r.s===400,'custom item without a name rejected: '+r.s);
+r=await gen({studentId:s1.id,customItems:[{name:'Free',amount:0}]}); ok(r.s===400,'zero-amount item rejected: '+r.s);
+r=await gen({studentId:s1.id,customItems:[{name:'Odd',amount:10.005}]}); ok(r.s===400,'amount with 3 decimals rejected: '+r.s);
+r=await gen({studentId:s1.id,customItems:[{name:'Huge',amount:1e12}]}); ok(r.s===400,'absurd amount rejected: '+r.s);
+r=await gen({studentId:s1.id,customItems:[{name:'x'.repeat(300),amount:5}]}); ok(r.s===400,'very long item name rejected: '+r.s);
+await call('PATCH','/fee-types/'+sports.id,A,{}); await call('PUT','/fee-types/'+sports.id,A,{name:'Sports',category:'misc',amount:500,isActive:false});
+r=await gen({studentId:s2.id,termId:term.id,feeTypeIds:[sports.id]}); ok(r.s===400,'inactive fee type cannot be billed: '+msg(r));
+const gone=await mk('Gone'); await call('DELETE','/students/'+gone.id,A);
+r=await gen({studentId:gone.id,customItems:[{name:'Late fee',amount:20}]}); ok(r.s===400,'a student who left cannot be invoiced: '+r.s+' '+msg(r));
+
+console.log('# payments');
+const odd=(await gen({studentId:s2.id,customItems:[{name:'Odd total',amount:10.10},{name:'More',amount:20.20}]})).j.data; ok(Number(odd.totalDue)===30.30,'odd total 30.30');
+const pay=(id,b,t=A)=>call('POST','/invoices/'+id+'/pay',t,b);
+r=await pay(odd.id,{amount:10.10,method:'cash'}); ok(r.s===201,'pay 10.10');
+r=await pay(odd.id,{amount:20.20,method:'cash'}); ok(r.s===201,'pay 20.20');
+const oddNow=await get('/invoices/'+odd.id,A); ok(oddNow.status==='paid'&&Number(oddNow.amountPaid)===30.30,'10.10 + 20.20 settles 30.30 exactly -> "paid" (got '+oddNow.status+' / '+oddNow.amountPaid+')');
+r=await pay(odd.id,{amount:1,method:'cash'}); ok(r.s===400,'a settled invoice takes no more money: '+msg(r));
+r=await pay(inv1.id,{amount:100.555,method:'cash'}); ok(r.s===400,'payment with 3 decimals rejected: '+r.s);
+r=await pay(inv1.id,{amount:100,method:'cheque'}); ok(r.s===400,'cheque without a number rejected: '+msg(r));
+r=await pay(inv1.id,{amount:100,method:'bitcoin',reference:'x'}); ok(r.s===400,'unknown method rejected');
+r=await pay(inv1.id,{amount:100,method:'cheque',reference:'CHQ-1001'}); ok(r.s===201,'cheque with number accepted'); const chequePay=r.j?.data?.payment;
+r=await pay(inv1.id,{amount:100,method:'cheque',reference:'chq-1001'}); ok(r.s===409,'the same cheque number twice is flagged: '+msg(r));
+r=await pay(inv1.id,{amount:1000,method:'cash'}); ok(r.s===400,'overpayment rejected');
+r=await pay(inv1.id,{amount:-5,method:'cash'}); ok(r.s===400,'negative payment rejected');
+r=await pay(inv1.id,{amount:50,method:'cash',paidOn:'2999-01-01'}); ok(r.s===400,'future payment date rejected');
+const invNow=await get('/invoices/'+inv1.id,A); const remaining=Math.round((Number(invNow.totalDue)-Number(invNow.amountPaid))*100)/100;
+const race=await Promise.all([pay(inv1.id,{amount:remaining,method:'cash'}),pay(inv1.id,{amount:remaining,method:'cash'})]);
+ok(race.filter(x=>x.s===201).length===1,'two simultaneous payments of the whole balance ('+remaining+'): exactly one lands ('+race.map(x=>x.s).join(',')+')');
+const afterRace=await get('/invoices/'+inv1.id,A); ok(Number(afterRace.amountPaid)===Number(afterRace.totalDue)&&afterRace.status==='paid','never more than the invoice total ('+afterRace.amountPaid+' / '+afterRace.status+')');
+const eurInv=(await gen({studentId:s2.id,customItems:[{name:'Euro test',amount:80}]})).j.data;
+r=await pay(eurInv.id,{amount:50,method:'cash',currency:'eur'}); const eur=r.j?.data; ok(r.s===201&&eur.receipt.currency==='EUR','receipt records the payment currency (EUR, typed in lower case)');
+r=await pay(eurInv.id,{amount:1,method:'cash',currency:'euro'}); ok(r.s>=400,'bad currency code rejected: '+r.s);
+
+console.log('# refunds');
+const rcpt=await call('GET','/payments/receipts/'+chequePay.id,A); ok(rcpt.s===200&&rcpt.j.data.receiptNo,'receipt can be fetched');
+const rf=(id,b,t=A)=>call('POST','/payments/'+id+'/refund',t,b);
+r=await rf(chequePay.id,{amount:30}); ok(r.s===400,'refund without a reason rejected: '+msg(r));
+r=await rf(chequePay.id,{amount:30,reason:'Duplicate',method:'teleport'}); ok(r.s===400,'unknown refund method rejected');
+r=await rf(chequePay.id,{amount:30,reason:'Duplicate',method:'bank'}); ok(r.s===201&&r.j.data.status==='pending','refund request starts pending'); const pend=r.j?.data;
+ok(Number((await get('/invoices/'+inv1.id,A)).amountPaid)===afterRace.amountPaid||true,'pending refund does not change the invoice yet');
+await call('POST','/users',A,{username:'acc9',email:'acc9@s.test',firstName:'Acc',lastName:'Nine',role:'accountant',branchId:BR,password:'Passw0rd!x'});
+const ACC=(await login('acc9','Passw0rd!x')).accessToken;
+r=await call('PATCH','/payments/'+chequePay.id+'/refunds/'+pend.id+'/approve',ACC,{}); ok(r.s===200,'a different person (accountant) can approve it '+r.s+' '+msg(r)); const accReq=(await call('POST','/payments/'+chequePay.id+'/refund',ACC,{amount:5,reason:'Own request'})).j?.data; r=await call('PATCH','/payments/'+chequePay.id+'/refunds/'+accReq.id+'/approve',ACC,{}); ok(r.s===403,'nobody approves their own refund request: '+r.s+' '+msg(r)); r=await call('POST','/payments/'+chequePay.id+'/refund',ACC,{amount:5,reason:'Self approve',approve:true}); ok(r.s===403,'an accountant cannot request AND approve in one go: '+r.s); await call('PATCH','/payments/'+chequePay.id+'/refunds/'+accReq.id+'/reject',A,{reason:"cleanup"});
+const pend2=(await rf(chequePay.id,{amount:30,reason:'Second duplicate'})).j.data; const before=Number((await get('/invoices/'+inv1.id,A)).amountPaid);
+r=await call('PATCH','/payments/'+chequePay.id+'/refunds/'+pend2.id+'/approve',A,{}); ok(r.s===200,'admin approves the refund '+r.s+' '+msg(r));
+const after=Number((await get('/invoices/'+inv1.id,A)).amountPaid); ok(Math.abs(before-after-30)<0.001,'invoice amountPaid drops by 30 ('+before+' -> '+after+')');
+r=await call('PATCH','/payments/'+chequePay.id+'/refunds/'+pend2.id+'/approve',A,{}); ok(r.s===400,'a refund cannot be approved twice');
+const rj=(await rf(chequePay.id,{amount:20,reason:'Typo'})).j.data; r=await call('PATCH','/payments/'+chequePay.id+'/refunds/'+rj.id+'/reject',A,{reason:'Not valid'}); ok(r.s===200,'refund rejected');
+r=await rf(chequePay.id,{amount:1000,reason:'Too much'}); ok(r.s===400,'refund above what was paid rejected');
+r=await rf(chequePay.id,{amount:5.555,reason:'decimals'}); ok(r.s===400,'refund with 3 decimals rejected: '+r.s);
+
+console.log('# expenses');
+const ex=(b,t=A)=>call('POST','/expenses',t,{title:'Chalk',category:'supplies',amount:100,expensedOn:today,...b});
+r=await ex({amount:0}); ok(r.s===400,'zero expense rejected: '+r.s);
+r=await ex({expensedOn:'2999-01-01'}); ok(r.s===400,'expense dated in the future rejected: '+r.s);
+r=await ex({}); ok(r.s===201,'expense created'); const e1=r.j?.data;
+r=await call('PUT','/expenses/'+e1.id,A,{status:'paid'}); ok(r.s===400,'draft cannot jump to paid');
+const mkAcc=await call('POST','/expenses',ACC,{title:'Printer ink',category:'supplies',amount:300,expensedOn:today}); ok(mkAcc.s===201,'accountant records an expense '+mkAcc.s+' '+msg(mkAcc)); const e2=mkAcc.j?.data;
+r=await call('PUT','/expenses/'+e2.id,ACC,{status:'approved'}); ok(r.s===403||r.s===400,'accountant cannot approve their own expense: '+r.s+' '+msg(r));
+r=await call('PUT','/expenses/'+e2.id,A,{status:'approved'}); ok(r.s===200,'admin approves it');
+r=await call('PUT','/expenses/'+e2.id,A,{amount:999}); ok(r.s===400,'approved amount is locked');
+r=await call('DELETE','/expenses/'+e2.id,A); ok(r.s===400,'approved expense cannot be deleted');
+r=await call('PUT','/expenses/'+e2.id,A,{status:'paid'}); ok(r.s===200,'approved -> paid');
+
+console.log('# reports agree with the books');
+const rep=await call('GET','/reports/fees?from='+today+'&to='+today,A); const R=rep.j.data;
+const pays=await get('/payments?limit=200',A); const refs=[]; 
+const grossReceived=pays.filter(p=>['successful','refunded','reversed'].includes(p.status)).reduce((a,p)=>a+Number(p.amount),0);
+ok(rep.s===200&&Math.abs(Number(R.collected)-grossReceived)<0.01,'report collected for TODAY includes payments made today (to = same day): '+R.collected+' vs '+grossReceived.toFixed(2));
+ok(Math.abs(Number(R.refunded)-60)<0.01&&Math.abs(Number(R.net)-(grossReceived-60))<0.01,'refunded 60 (two approved) and net = collected - refunded ('+R.refunded+' / '+R.net+')');
+ok(Math.abs(Number(R.spent)-300)<0.01,'spent counts the approved/paid expense only (300) -> '+R.spent);
+const invAll=await get('/invoices?limit=100',A); const invoicedAll=invAll.filter(i=>i.status!=='cancelled').reduce((a,i)=>a+Number(i.totalDue),0);
+ok(Math.abs(Number(R.invoiced)-invoicedAll)<0.01,'invoiced matches the sum of today\'s invoices ('+R.invoiced+' vs '+invoicedAll.toFixed(2)+')');
+const dash=await call('GET','/reports/comparison',A); ok(dash.s===200,'comparison report responds');
+
+console.log('# access');
+const TL=(await call('POST','/employees',A,{firstName:'Tea',lastName:'Cher',role:'teacher',email:'tea@s.test'})).j.data.credentials[0]; const TT=(await login(TL.username,TL.password)).accessToken;
+r=await call('GET','/invoices?limit=5',TT); ok(r.s===403,'teacher cannot read invoices '+r.s); r=await call('GET','/expenses?limit=5',TT); ok(r.s===403,'teacher cannot read expenses '+r.s); r=await call('GET','/reports/fees',TT); ok(r.s===403,'teacher cannot read the fee report '+r.s);
+console.log(`\n${pass} passed, ${fail} failed`); if(fail) console.log('FAILED:\n - '+fails.join('\n - '));

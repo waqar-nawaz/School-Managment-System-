@@ -9,6 +9,8 @@ import {
 } from "../../../models";
 import { ResourceDefinition, getExisting } from "./shared";
 import { getPermissionsForRole } from "../../../services/rbac.service";
+import { sequelize } from "../../../database/sequelize";
+import { parseMoney } from "../../../utils/money";
 
 const validateFeeType = async (body: any, req: Request) => {
   const existing=await getExisting(FeeType,req); const name=String(body.name??existing?.name??"").trim(); const category=String(body.category??existing?.category??"").trim().toLowerCase();
@@ -17,17 +19,17 @@ const validateFeeType = async (body: any, req: Request) => {
   if(!Number.isInteger(branchId)||branchId<=0) throw ApiError.badRequest("User is not assigned to a branch");
   if(!name) throw ApiError.badRequest("Fee type name is required"); if(name.length>120) throw ApiError.badRequest("Fee type name is too long");
   if(category&&!["tuition","transport","hostel","misc"].includes(category)) throw ApiError.badRequest("Invalid fee category");
-  if(!Number.isFinite(amount)||amount<0) throw ApiError.badRequest("Fee amount must be non-negative");
+  parseMoney(amount,"Fee amount",{allowZero:true});
   if(!Number.isInteger(installments)||installments<1) throw ApiError.badRequest("installments must be a positive integer");
   if(!["term","monthly","yearly","one-time"].includes(billingCycle)) throw ApiError.badRequest("Invalid billingCycle");
-  const duplicate=await FeeType.findOne({where:{name,branchId,...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}}); if(duplicate) throw ApiError.badRequest("Fee type already exists in this branch");
+  const duplicate=await FeeType.findOne({where:{[Op.and]:[sequelize.where(sequelize.fn("lower",sequelize.col("name")),name.toLowerCase()),{branchId,...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}]}}); if(duplicate) throw ApiError.badRequest("Fee type already exists in this branch");
   body.name=name; body.category=category; body.amount=amount; body.installments=installments; body.billingCycle=billingCycle; body.branchId=branchId; return body;
 };
 
 const validateExpense = async (body: any, req: Request) => {
   const existing = await getExisting(Expense, req);
   const title = String(body.title ?? existing?.title ?? "").trim();
-  const amount = Number(body.amount ?? existing?.amount);
+  const amount = parseMoney(body.amount ?? existing?.amount, "Expense amount");
   const expensedOn = body.expensedOn !== undefined
     ? (body.expensedOn ? new Date(body.expensedOn) : null)
     : (existing?.expensedOn ? new Date(existing.expensedOn) : null);
@@ -37,8 +39,8 @@ const validateExpense = async (body: any, req: Request) => {
   if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
   if (!title) throw ApiError.badRequest("Expense title is required");
   if (title.length > 180) throw ApiError.badRequest("Expense title is too long");
-  if (!Number.isFinite(amount) || amount < 0) throw ApiError.badRequest("Expense amount must be non-negative");
   if (expensedOn && !Number.isFinite(expensedOn.getTime())) throw ApiError.badRequest("Invalid expensedOn");
+  if (expensedOn && expensedOn.getTime() > Date.now() + 86400000) throw ApiError.badRequest("An expense cannot be dated in the future");
   if (!["draft", "approved", "rejected", "paid", "cancelled"].includes(status)) {
     throw ApiError.badRequest("Invalid expense status");
   }
@@ -50,6 +52,10 @@ const validateExpense = async (body: any, req: Request) => {
 
   if (status === "approved" && !has("expenses:approve")) {
     throw ApiError.forbidden("Missing permission: expenses:approve");
+  }
+  // Maker-checker: whoever recorded an expense cannot approve it (only an administrator can do both).
+  if (status === "approved" && existing && String(existing.status).toLowerCase() !== "approved" && Number(existing.createdBy) === Number(req.user!.id) && !permissions.includes("*")) {
+    throw ApiError.forbidden("You recorded this expense, so someone else must approve it.");
   }
   if (status === "paid" && !has("expenses:pay")) {
     throw ApiError.forbidden("Missing permission: expenses:pay");

@@ -39,4 +39,8 @@ export class Refund extends BaseModel {
   @ForeignKey(() => User)
   @Column({ type: DataType.BIGINT.UNSIGNED })
   approvedBy!: number;
+
+  /** Who asked for the refund; a refund must be approved by somebody else (unless an admin does both). */
+  @Column({ type: DataType.BIGINT.UNSIGNED })
+  requestedBy!: number;
 }

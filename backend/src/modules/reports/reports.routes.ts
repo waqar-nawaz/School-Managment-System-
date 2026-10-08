@@ -108,7 +108,7 @@ router.get(
   authorize("reports:read"),
   asyncHandler(async (req, res) => {
     const from = dateParam(req.query.from, yearStart());
-    const to = dateParam(req.query.to, new Date());
+    const to = dateParam(req.query.to, new Date(), true);
     const branchId = branchIdOf(req);
 
     // Exclude cancelled invoices — they should not contribute to invoiced total.

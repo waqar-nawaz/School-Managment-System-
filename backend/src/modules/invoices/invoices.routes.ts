@@ -7,6 +7,7 @@ import { ApiResponse } from "../../utils/ApiResponse";
 import { ApiError } from "../../utils/ApiError";
 import { Invoice, FeeType, Student, Enrolment, Term, Payment, Receipt, StudentGuardian, Parent, HostelAllocation } from "../../models";
 import { sequelize } from "../../database/sequelize";
+import { round2, parseMoney, parseCurrency, PAYMENT_METHODS, isCash } from "../../utils/money";
 import { createCrudController } from "../../utils/crudFactory";
 import { studentScope } from "../../utils/access";
 import { writeAuditLog } from "../../services/audit.service";
@@ -56,9 +57,9 @@ async function newInvoice(opts: {
   student: Student; lineItems: LineItem[]; discount: number; tax: number; dueInDays: number;
   termId?: number | null; callerBranch?: number | null; transaction?: any;
 }): Promise<Invoice> {
-  const gross = opts.lineItems.reduce((a, b) => a + Number(b.amount), 0);
+  const gross = round2(opts.lineItems.reduce((a, b) => a + Number(b.amount), 0));
   if (opts.discount > gross) throw ApiError.badRequest("discount cannot exceed gross amount");
-  const totalDue = Math.round((gross - opts.discount + opts.tax) * 100) / 100;
+  const totalDue = round2(gross - opts.discount + opts.tax);
   const enrolment = await Enrolment.findOne({ where: { studentId: opts.student.id, status: "active" }, order: [["createdAt", "DESC"]], transaction: opts.transaction });
   return Invoice.create({
     invoiceNo: `INV-${uuidv4().slice(0, 8).toUpperCase()}`,
@@ -160,10 +161,8 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
     };
 
   // Validate discount/tax are non-negative.
-  const numDiscount = Number(discount);
-  const numTax = Number(tax);
-  if (!Number.isFinite(numDiscount) || numDiscount < 0) throw ApiError.badRequest("discount must be non-negative");
-  if (!Number.isFinite(numTax) || numTax < 0) throw ApiError.badRequest("tax must be non-negative");
+  const numDiscount = parseMoney(discount, "Discount", { allowZero: true });
+  const numTax = parseMoney(tax, "Tax", { allowZero: true });
   // Validate dueInDays is a non-negative integer ≤ 365.
   const numDueInDays = Number(dueInDays);
   if (!Number.isInteger(numDueInDays) || numDueInDays < 0 || numDueInDays > 365) {
@@ -172,6 +171,7 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
 
   const student = await Student.findByPk(studentId);
   if (!student) throw ApiError.notFound("Student not found");
+  if (student.isActive === false) throw ApiError.badRequest(`${student.firstName} ${student.lastName} has left school (inactive). Reactivate the student before creating an invoice.`);
   // Cross-tenant guard: caller may only invoice students in their own branch.
   const callerBranch = req.user!.branchId;
   if (callerBranch != null && Number(student.branchId) !== Number(callerBranch)) {
@@ -193,7 +193,7 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
     if (!(fee > 0)) throw ApiError.badRequest("The monthly hostel fee on this student's allocation is 0. Set it on the allocation first");
     const dup = (await invoicesWithRef([Number(studentId)], hostelRef(month))).get(Number(studentId));
     if (dup) throw ApiError.conflict(`The hostel fee for ${monthLabel(month)} is already on invoice ${dup}`);
-    lineItems.push({ name: hostelLineName(alloc, month), amount: fee, ref: hostelRef(month) });
+    lineItems.push({ name: hostelLineName(alloc, month), amount: round2(fee), ref: hostelRef(month) });
   }
   if (Array.isArray(feeTypeIds) && feeTypeIds.length) {
     // Scope fee types to caller's branch to prevent attaching other branches' fees.
@@ -203,13 +203,24 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
     if (fees.length !== new Set(feeTypeIds.map(Number)).size) {
       throw ApiError.badRequest("One or more selected fee types are inactive or don't exist in your branch");
     }
-    for (const f of fees) lineItems.push({ name: f.name, amount: Number(f.amount) });
+    // The same fee must not be billed twice to one student for one term (the commonest double-billing mistake).
+    if (termId) {
+      const prior = await Invoice.findAll({ where: { studentId, termId, status: { [Op.ne]: "cancelled" } }, attributes: ["invoiceNo", "lineItems"] });
+      for (const f of fees) {
+        const hit = prior.find((inv) => (Array.isArray(inv.lineItems) ? (inv.lineItems as LineItem[]) : []).some((li) => li.ref === `fee:${f.id}` || String(li.name).trim().toLowerCase() === f.name.trim().toLowerCase()));
+        if (hit) throw ApiError.conflict(`"${f.name}" is already billed to this student for this term (invoice ${hit.invoiceNo}). Cancel that invoice first if it was a mistake.`);
+      }
+    }
+    for (const f of fees) lineItems.push({ name: f.name, amount: round2(Number(f.amount)), ref: `fee:${f.id}` });
   }
+  if (customItems !== undefined && !Array.isArray(customItems)) throw ApiError.badRequest("customItems must be a list");
   if (Array.isArray(customItems)) {
+    if (customItems.length > 30) throw ApiError.badRequest("Too many extra items (max 30)");
     for (const ci of customItems) {
-      const amt = Number(ci.amount);
-      if (!Number.isFinite(amt) || amt < 0) throw ApiError.badRequest("custom item amount must be non-negative");
-      lineItems.push({ name: String(ci.name), amount: amt });
+      const name = String(ci?.name ?? "").trim();
+      if (!name) throw ApiError.badRequest("Every extra item needs a name");
+      if (name.length > 120) throw ApiError.badRequest("An extra item name is too long (max 120 characters)");
+      lineItems.push({ name, amount: parseMoney(ci?.amount, `Amount for "${name}"`) });
     }
   }
   if (!lineItems.length) throw ApiError.badRequest("Choose at least one fee, the hostel fee, or add a custom item");
@@ -356,18 +367,34 @@ router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, r
       if (!link) throw ApiError.forbidden("You can only pay invoices for your own children");
     }
 
-    const amount = Number(req.body.amount);
-    if (!Number.isFinite(amount) || amount <= 0) throw ApiError.badRequest("amount must be positive");
+    const amount = parseMoney(req.body.amount, "Payment amount");
     const paidOn = req.body.paidOn ? new Date(req.body.paidOn) : new Date();
     if (Number.isFinite(paidOn.getTime()) && paidOn.getTime() > Date.now() + 86400000) throw ApiError.badRequest("Payment date cannot be more than 1 day in the future");
     if (invoice.status === "cancelled") throw ApiError.badRequest("Cancelled invoices cannot receive payments");
-    const remaining = Math.max(0, Number(invoice.totalDue) - Number(invoice.amountPaid));
+    const remaining = Math.max(0, round2(Number(invoice.totalDue) - Number(invoice.amountPaid)));
+    if (remaining <= 0) throw ApiError.badRequest("This invoice is already fully paid");
     if (amount > remaining) throw ApiError.badRequest(`Payment exceeds remaining balance of ${remaining}`);
 
     // Validate payment method against the documented enum + common aliases the frontend sends.
-    const ALLOWED_METHODS = new Set(["cash", "card", "bank", "mobile", "online", "bank_transfer", "cheque"]);
     const method = String(req.body.method || "cash").toLowerCase();
-    if (!ALLOWED_METHODS.has(method)) throw ApiError.badRequest(`Invalid payment method: ${method}`);
+    if (!(PAYMENT_METHODS as readonly string[]).includes(method)) throw ApiError.badRequest(`Invalid payment method: ${method}`);
+    const reference = String(req.body.reference ?? "").trim();
+    if (reference.length > 100) throw ApiError.badRequest("Reference is too long (max 100 characters)");
+    // Anything but cash must carry a cheque / transaction number, and the same one cannot be entered twice.
+    if (!isCash(method)) {
+      if (!reference) throw ApiError.badRequest(`Enter the ${method === "cheque" ? "cheque number" : "transaction / reference number"} for a ${method.replace("_", " ")} payment`);
+      const twin = await Payment.findOne({
+        where: {
+          [Op.and]: [
+            sequelize.where(sequelize.fn("lower", sequelize.col("reference")), reference.toLowerCase()),
+            { method, status: { [Op.in]: ["successful", "refunded", "reversed"] }, ...(invoice.branchId != null ? { branchId: invoice.branchId } : {}) },
+          ],
+        },
+        transaction: t,
+      });
+      if (twin) throw ApiError.conflict(`${method === "cheque" ? "Cheque" : "Reference"} ${reference} was already recorded (receipt ${twin.receiptNo}).`);
+    }
+    const currency = parseCurrency(req.body.currency);
 
     const payment = await Payment.create({
       receiptNo: `PAY-${uuidv4().slice(0, 8).toUpperCase()}`,
@@ -376,14 +403,14 @@ router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, r
       branchId: invoice.branchId,
       amount,
       method,
-      reference: req.body.reference,
+      reference: reference || null,
       paidOn,
       status: "successful",
       notes: req.body.notes,
       recordedBy: req.user!.id,
     }, { transaction: t });
 
-    const paid = Number(invoice.amountPaid) + amount;
+    const paid = round2(Number(invoice.amountPaid) + amount);
     const status = paid >= Number(invoice.totalDue) ? "paid" : "partial";
     await invoice.update({ amountPaid: paid, status }, { transaction: t });
 
@@ -394,8 +421,8 @@ router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, r
       branchId: invoice.branchId,
       amount,
       headline: `Payment received for ${invoice.invoiceNo}`,
-      body: `Received ${amount} ${req.body.currency || "PKR"} towards ${invoice.invoiceNo}. Balance due: ${Math.max(0, Number(invoice.totalDue) - paid)}.`,
-      currency: req.body.currency || "PKR",
+      body: `Received ${amount} ${currency} towards ${invoice.invoiceNo}. Balance due: ${Math.max(0, round2(Number(invoice.totalDue) - paid))}.`,
+      currency,
     }, { transaction: t });
 
     await writeAuditLog({
@@ -410,7 +437,7 @@ router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, r
     });
 
     await t.commit();
-    ApiResponse.success(res, 201, "Payment recorded", { payment, receipt, balanceDue: Math.max(0, Number(invoice.totalDue) - paid) });
+    ApiResponse.success(res, 201, "Payment recorded", { payment, receipt, balanceDue: Math.max(0, round2(Number(invoice.totalDue) - paid)) });
   } catch (e) {
     await t.rollback();
     throw e;
