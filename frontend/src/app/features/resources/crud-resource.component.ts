@@ -196,7 +196,7 @@ const NO_EXPORT = new Set([
           </div>
         } @else {
           <div class="table-responsive">
-            <table class="table">
+            <table class="table table-cards">
               <thead>
                 <tr>
                   @for (col of config.columns; track col.key) { <th>{{ col.label }}</th> }
@@ -207,7 +207,7 @@ const NO_EXPORT = new Set([
                 @for (row of rows; track trackRow($index, row)) {
                   <tr>
                     @for (col of config.columns; track col.key) {
-                      <td>
+                      <td [attr.data-label]="col.label" [class.cell-first]="$first">
                         @switch (col.type) {
                           @case ('date') { <span>{{ row[col.key] | date: 'MMM d, y' }}</span> }
                           @case ('datetime') { <span>{{ row[col.key] | date: 'MMM d, y, h:mm a' }}</span> }
@@ -228,7 +228,7 @@ const NO_EXPORT = new Set([
                       </td>
                     }
                     @if (hasActions) {
-                      <td style="text-align:right;white-space:nowrap">
+                      <td class="cell-actions" style="text-align:right;white-space:nowrap">
                         <div class="row-menu">
                           <button type="button" class="icon-btn" (click)="toggleRowMenu(row.id, $event)" aria-label="Actions"><app-icon name="more-vertical" [size]="18" /></button>
                           @if (openMenuId === row.id) {

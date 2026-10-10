@@ -68,7 +68,9 @@ const STATUS_OPTIONS = (list: string[]) => list.map((v) => ({ label: v.replace(/
 const idCol: ColumnConfig = { key: 'id', label: 'ID', type: 'number' };
 const createdAtCol: ColumnConfig = { key: 'createdAt', label: 'Created', type: 'datetime' };
 const statusCol = (map = BADGE_COMMON): ColumnConfig => ({ key: 'status', label: 'Status', type: 'badge', badgeMap: map });
-const nameCol = (key = 'name', label = 'Name'): ColumnConfig => ({ key, label, type: 'text' });
+/** Column label defaults to the humanised key (category -> "Category"), so tables never show several columns all called "Name". */
+const humanize = (k: string): string => { const t = k.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase(); return t.charAt(0).toUpperCase() + t.slice(1); };
+const nameCol = (key = 'name', label = humanize(key)): ColumnConfig => ({ key, label, type: 'text' });
 const boolCol = (key: string, label: string): ColumnConfig => ({ key, label, type: 'bool' });
 
 function fields(pairs: Array<Pick<FieldConfig, 'key' | 'label'> & Partial<FieldConfig>>): FieldConfig[] {

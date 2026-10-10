@@ -62,21 +62,21 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
         </select>
       </div>
       <div class="table-responsive">
-        <table class="table">
+        <table class="table table-cards">
           <thead>
             <tr><th>No</th><th>Student</th><th>Amount</th><th>Discount</th><th>Due</th><th>Paid</th><th>Due Date</th><th>Status</th><th style="width:90px;text-align:right">Actions</th></tr>
           </thead>
           <tbody>
             @for (inv of invoices; track inv.id) {
               <tr>
-                <td>{{ inv.invoiceNo }}</td>
-                <td>{{ studentNameOf(inv) }}</td>
-                <td>{{ money(inv.amount) }}</td>
-                <td>{{ money(inv.discount ?? 0) }}</td>
-                <td>{{ money(inv.totalDue) }}</td>
-                <td>{{ money(inv.amountPaid ?? 0) }}</td>
-                <td>{{ inv.dueDate | date: 'MMM d, y' }}</td>
-                <td>
+                <td class="cell-first" data-label="Invoice">{{ inv.invoiceNo }}</td>
+                <td data-label="Student">{{ studentNameOf(inv) }}</td>
+                <td data-label="Amount">{{ money(inv.amount) }}</td>
+                <td data-label="Discount">{{ money(inv.discount ?? 0) }}</td>
+                <td data-label="Due">{{ money(inv.totalDue) }}</td>
+                <td data-label="Paid">{{ money(inv.amountPaid ?? 0) }}</td>
+                <td data-label="Due date">{{ inv.dueDate | date: 'MMM d, y' }}</td>
+                <td data-label="Status">
                   <span class="badge badge-{{ badgeOf(inv.status) }}">{{ inv.status }}</span>
                   @if (canChangeStatus && nextStatuses(inv).length) {
                     <select class="form-control form-control-sm" style="display:inline-block;width:auto;margin-left:6px" (change)="transition(inv, $event)">
@@ -85,7 +85,7 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
                     </select>
                   }
                 </td>
-                <td style="text-align:right">
+                <td class="cell-actions" style="text-align:right">
                   @if (canPay && inv.status !== 'paid' && inv.status !== 'cancelled') {
                     <button class="btn btn-sm btn-primary" (click)="openPay(inv)"><app-icon name="credit-card" [size]="14" /> Pay</button>
                   }

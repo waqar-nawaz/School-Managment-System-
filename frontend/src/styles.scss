@@ -195,8 +195,8 @@ table.table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .table tbody td { padding: 0.65rem 1rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .table tbody tr:hover { background: var(--row-hover); }
 .empty-cell { text-align: center; color: var(--text-muted); padding: 2rem 1rem !important; }
-.pagination-bar { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); flex-wrap: nowrap; }
-.pagination-right { display: flex; align-items: center; gap: 0.75rem; flex-wrap: nowrap; margin-left: auto; }
+.pagination-bar { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); flex-wrap: wrap; }
+.pagination-right { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-left: auto; }
 .pagination-count { white-space: nowrap; }
 select.form-control.pagination-size { width: auto; max-width: 130px; flex: 0 0 auto; }
 
@@ -442,3 +442,21 @@ code { background: var(--neutral-100); padding: 0.15rem 0.35rem; border-radius: 
 body.dark-theme .dash-card { border-color: rgba(255,255,255,0.08); }
 body.dark-theme .dash-card:hover { border-color: rgba(59,130,246,0.5); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
 body.dark-theme .dash-action { border-color: rgba(255,255,255,0.08); }
+
+
+/* ---------- Tables become cards on phones: add class "table-cards" and data-label on each <td> ---------- */
+@media (max-width: 760px) {
+  .table-responsive:has(.table-cards) { overflow-x: visible; }
+  .table-cards, .table-cards tbody, .table-cards tr, .table-cards td { display: block; width: 100%; }
+  .table-cards thead { display: none; }
+  .table-cards tbody tr { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0.6rem 0.85rem; margin-bottom: 0.75rem; }
+  .table-cards tbody tr:hover { background: var(--surface); }
+  .table-cards tbody td { border: 0; padding: 0.3rem 0; display: flex; justify-content: space-between; align-items: center; gap: 1rem; text-align: right !important; overflow-wrap: anywhere; white-space: normal !important; }
+  .table-cards td[data-label]::before { content: attr(data-label); font-weight: 600; font-size: 0.8rem; color: var(--text-muted); text-align: left; flex: 0 0 auto; }
+  .table-cards td.cell-first::before { content: none; }
+  .table-cards td.cell-first { font-weight: 700; font-size: 1rem; padding-bottom: 0.5rem; margin-bottom: 0.25rem; border-bottom: 1px solid var(--border); }
+  .table-cards td.cell-actions { justify-content: flex-end; padding-top: 0.5rem; }
+  .table-cards td.empty-cell { justify-content: center; }
+  .pagination-bar { justify-content: center; }
+  .pagination-right { margin-left: 0; justify-content: center; }
+}
