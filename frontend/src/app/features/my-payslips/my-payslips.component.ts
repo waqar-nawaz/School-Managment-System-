@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { formatMoney } from '../../core/utils/currency';
+import { printPayslip } from '../../shared/utils/payslip-print';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 
 /** An employee's own salary slips. Only approved or paid months appear; nothing else is visible. */
@@ -62,12 +63,9 @@ export class MyPayslipsComponent implements OnInit {
   }
 
   print(p: any): void {
-    const w = window.open('', '_blank', 'width=720,height=640');
-    if (!w) { this.toasts.error('Allow pop-ups to print.'); return; }
-    const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as Record<string, string>)[ch]);
-    w.document.write(`<html><head><title>Payslip ${esc(p.month)}</title><style>body{font-family:sans-serif;padding:32px;max-width:560px;margin:auto}table{width:100%;border-collapse:collapse}td{padding:6px 0;border-bottom:1px solid #ddd}td:last-child{text-align:right}.net td{font-weight:700;font-size:1.1em;border-top:2px solid #000}</style></head><body>
-      <h2>Payslip — ${esc(this.monthLabel(p.month))}</h2><p><strong>${esc(this.employee?.name)}</strong><br>${esc(this.employee?.staffNo)} ${this.employee?.designation ? '· ' + esc(this.employee.designation) : ''}<br>Status: ${p.status === 'paid' ? 'Paid' + (p.paidOn ? ' on ' + esc(String(p.paidOn).slice(0, 10)) : '') : 'Approved'}</p>
-      <table><tr><td>Basic salary</td><td>${esc(this.money(p.basicSalary))}</td></tr><tr><td>Allowances</td><td>${esc(this.money(p.allowances))}</td></tr><tr><td>Deductions</td><td>− ${esc(this.money(p.deductions))}</td></tr><tr class="net"><td>Net pay</td><td>${esc(this.money(p.netPay))}</td></tr></table></body></html>`);
-    w.document.close(); w.focus(); w.print();
+    printPayslip(this.api, {
+      month: p.month, name: this.employee?.name ?? '', staffNo: this.employee?.staffNo, designation: this.employee?.designation,
+      basicSalary: p.basicSalary, allowances: p.allowances, deductions: p.deductions, netPay: p.netPay, status: p.status, paidOn: p.paidOn,
+    }, () => this.toasts.error('Allow pop-ups to print.'));
   }
 }

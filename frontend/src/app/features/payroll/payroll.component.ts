@@ -6,6 +6,7 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { PermissionService } from '../../core/services/permission.service';
 import { formatMoney } from '../../core/utils/currency';
+import { printPayslip } from '../../shared/utils/payslip-print';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 
@@ -63,19 +64,19 @@ interface Summary {
     }
 
     <div class="card">
-      <div class="table-responsive">
+      <div class="table-responsive pr-table">
         <table class="table">
-          <thead><tr><th>Employee</th><th style="text-align:right">Basic</th><th style="text-align:right">Allowances</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net pay</th><th>Status</th><th style="width:210px;text-align:right">Actions</th></tr></thead>
+          <thead><tr><th>Employee</th><th style="text-align:right">Basic</th><th style="text-align:right">Allowances</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net pay</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
           <tbody>
             @for (p of rows; track p.id) {
               <tr>
-                <td>{{ p.payeeName || ('#' + (p.staffId || p.teacherId)) }}<div class="form-hint" style="margin:0">{{ p.staffNo }}{{ p.designation ? ' · ' + p.designation : '' }}</div></td>
-                <td style="text-align:right">{{ money(p.basicSalary) }}</td>
-                <td style="text-align:right">{{ money(p.allowances) }}</td>
-                <td style="text-align:right">{{ money(p.deductions) }}</td>
-                <td style="text-align:right"><strong>{{ money(p.netPay) }}</strong></td>
-                <td><span class="badge badge-{{ badge(p.status) }}">{{ p.status }}</span>{{ p.paidOn ? ' ' + (p.paidOn | date: 'MMM d') : '' }}</td>
-                <td style="text-align:right;white-space:nowrap">
+                <td class="c-head" data-label="Employee">{{ p.payeeName || ('#' + (p.staffId || p.teacherId)) }}<div class="form-hint" style="margin:0">{{ p.staffNo }}{{ p.designation ? ' · ' + p.designation : '' }}</div></td>
+                <td style="text-align:right" data-label="Basic">{{ money(p.basicSalary) }}</td>
+                <td style="text-align:right" data-label="Allowances">{{ money(p.allowances) }}</td>
+                <td style="text-align:right" data-label="Deductions">{{ money(p.deductions) }}</td>
+                <td style="text-align:right" data-label="Net pay"><strong>{{ money(p.netPay) }}</strong></td>
+                <td data-label="Status"><span class="badge badge-{{ badge(p.status) }}">{{ p.status }}</span>{{ p.paidOn ? ' ' + (p.paidOn | date: 'MMM d') : '' }}</td>
+                <td class="c-actions" style="text-align:right">
                   @if (p.status === 'draft' && canUpdate) { <button class="btn btn-sm btn-ghost" (click)="openEdit(p)"><app-icon name="edit" [size]="14" /> Amounts</button> }
                   @if (p.status === 'approved' && canUpdate) { <button class="btn btn-sm btn-ghost" (click)="reopen(p)">Re-open</button> }
                   @if (p.status !== 'draft') { <button class="btn btn-sm btn-ghost" (click)="printSlip(p)"><app-icon name="file-text" [size]="14" /> Slip</button> }
@@ -137,6 +138,22 @@ interface Summary {
     .step { display: flex; flex-direction: column; gap: .4rem; padding: .75rem; border: 1px solid rgba(127,127,127,.3); border-radius: 10px; align-items: flex-start; }
     .step.done { border-color: rgba(22,163,74,.6); background: rgba(22,163,74,.07); }
     .step span { font-size: .85rem; opacity: .75; }
+    .pr-table td.c-actions { display: table-cell; }
+    .pr-table td.c-actions .btn { margin: 0 0 .25rem .25rem; }
+    @media (max-width: 1280px) {
+      .pr-table { overflow-x: visible; }
+      .pr-table table, .pr-table tbody, .pr-table tr, .pr-table td { display: block; width: 100%; }
+      .pr-table thead { display: none; }
+      .pr-table tr { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: .65rem .85rem; margin: 0 0 .75rem; }
+      .pr-table tbody td { border: 0; padding: .3rem 0; display: flex; justify-content: space-between; gap: 1rem; text-align: right !important; }
+      .pr-table td::before { content: attr(data-label); font-weight: 600; opacity: .6; text-align: left; }
+      .pr-table td.c-head { font-weight: 700; border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: .25rem; text-align: left !important; }
+      .pr-table td.c-head::before, .pr-table td.c-actions::before { content: none; }
+      .pr-table td.c-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; padding-top: .6rem; }
+      .pr-table td.c-actions .btn { flex: 1 1 auto; justify-content: center; margin: 0; }
+      .pr-table tr:has(td[colspan]) { border: 0; }
+      .pr-table td[colspan]::before { content: none; }
+    }
     .notice { padding: .6rem .8rem; margin-bottom: 1rem; border-radius: 8px; background: rgba(245,158,11,.15); border: 1px solid rgba(245,158,11,.5); }
   `],
 })
@@ -224,12 +241,9 @@ export class PayrollComponent implements OnInit {
   }
 
   printSlip(p: any): void {
-    const w = window.open('', '_blank', 'width=720,height=640');
-    if (!w) { this.toasts.error('Allow pop-ups to print.'); return; }
-    const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as Record<string, string>)[ch]);
-    w.document.write(`<html><head><title>Payslip ${esc(p.month)}</title><style>body{font-family:sans-serif;padding:32px;max-width:560px;margin:auto}table{width:100%;border-collapse:collapse}td{padding:6px 0;border-bottom:1px solid #ddd}td:last-child{text-align:right}.net td{font-weight:700;font-size:1.1em;border-top:2px solid #000}</style></head><body>
-      <h2>Payslip — ${esc(p.month)}</h2><p><strong>${esc(p.payeeName)}</strong><br>${esc(p.staffNo)} ${p.designation ? '· ' + esc(p.designation) : ''}<br>Status: ${esc(p.status)}${p.paidOn ? ' on ' + esc(String(p.paidOn).slice(0, 10)) : ''}</p>
-      <table><tr><td>Basic salary</td><td>${esc(this.money(p.basicSalary))}</td></tr><tr><td>Allowances</td><td>${esc(this.money(p.allowances))}</td></tr><tr><td>Deductions</td><td>− ${esc(this.money(p.deductions))}</td></tr><tr class="net"><td>Net pay</td><td>${esc(this.money(p.netPay))}</td></tr></table></body></html>`);
-    w.document.close(); w.focus(); w.print();
+    printPayslip(this.api, {
+      month: p.month, name: p.payeeName, staffNo: p.staffNo, designation: p.designation,
+      basicSalary: p.basicSalary, allowances: p.allowances, deductions: p.deductions, netPay: p.netPay, status: p.status, paidOn: p.paidOn,
+    }, () => this.toasts.error('Allow pop-ups to print.'));
   }
 }
