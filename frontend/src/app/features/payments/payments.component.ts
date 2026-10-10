@@ -217,7 +217,7 @@ export class PaymentsComponent implements OnInit {
   private writeReceipt(w: Window, p: any, cfg: Record<string, string>): void {
     const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
     const school = esc(cfg['schoolName'] || 'School');
-    const contact = [cfg['address'], cfg['phone'], cfg['email']].filter(Boolean).map(esc).join(' · ');
+    const contact = [cfg['address'], cfg['phone'], cfg['contactEmail'] || cfg['email']].filter(Boolean).map(esc).join(' · ');
     const date = new Date(p.paidOn).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
     const refunded = p.status === 'refunded';
     const row = (k: string, v: unknown) => v ? `<tr><th>${k}</th><td>${esc(v)}</td></tr>` : '';
