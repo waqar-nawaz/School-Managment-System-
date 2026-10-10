@@ -38,20 +38,20 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           @for (m of METHODS; track m) { <option [value]="m">{{ m }}</option> }
         </select>
       </div>
-      <div class="table-wrap">
+      <div class="table-responsive pay-table">
         <table class="table">
           <thead><tr><th>Receipt</th><th>Student</th><th>Invoice</th><th>Amount</th><th>Method</th><th>Date</th><th>Status</th><th></th></tr></thead>
           <tbody>
             @for (p of rows; track p.id) {
               <tr>
-                <td>{{ p.receiptNo }}</td>
-                <td>{{ p.studentName }} <small>{{ p.admissionNo }}</small></td>
-                <td>{{ p.invoiceNo }}</td>
-                <td>{{ money(p.amount) }}</td>
-                <td>{{ p.method }}</td>
-                <td>{{ p.paidOn | date: 'mediumDate' }}</td>
-                <td>{{ p.status }}</td>
-                <td class="actions">
+                <td data-label="Receipt" class="c-head">{{ p.receiptNo }}</td>
+                <td data-label="Student">{{ p.studentName }} <small>{{ p.admissionNo }}</small></td>
+                <td data-label="Invoice">{{ p.invoiceNo }}</td>
+                <td data-label="Amount" class="c-amount">{{ money(p.amount) }}</td>
+                <td data-label="Method">{{ p.method }}</td>
+                <td data-label="Date">{{ p.paidOn | date: 'mediumDate' }}</td>
+                <td data-label="Status"><span class="pill" [class.ok]="p.status === 'successful'" [class.warn]="p.status !== 'successful'">{{ p.status }}</span></td>
+                <td class="actions c-actions">
                   <button class="btn btn-sm btn-ghost" (click)="printReceipt(p)"><app-icon name="file-text" [size]="14" /> Receipt</button>
                   @if (canRefund && p.status === 'successful') {
                     <button class="btn btn-sm btn-ghost" (click)="openRefund(p)">Refund</button>
@@ -59,7 +59,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                 </td>
               </tr>
             } @empty {
-              <tr><td colspan="8" class="empty">{{ loading ? 'Loading…' : 'No payments found' }}</td></tr>
+              <tr class="empty-row"><td colspan="8" class="empty">{{ loading ? 'Loading…' : 'No payments found' }}</td></tr>
             }
           </tbody>
         </table>
@@ -72,19 +72,19 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
         </div>
       </div>
     } @else {
-      <div class="table-wrap">
+      <div class="table-responsive pay-table">
         <table class="table">
           <thead><tr><th>Receipt</th><th>Student</th><th>Refund</th><th>Of payment</th><th>Reason</th><th>Requested</th><th></th></tr></thead>
           <tbody>
             @for (r of pending; track r.id) {
               <tr>
-                <td>{{ r.receiptNo }}</td>
-                <td>{{ r.studentName }} <small>{{ r.admissionNo }}</small></td>
-                <td>{{ money(r.amount) }} ({{ r.method }})</td>
-                <td>{{ money(r.paymentAmount) }}</td>
-                <td>{{ r.reason }}</td>
-                <td>{{ r.createdAt | date: 'medium' }}</td>
-                <td class="actions">
+                <td data-label="Receipt" class="c-head">{{ r.receiptNo }}</td>
+                <td data-label="Student">{{ r.studentName }} <small>{{ r.admissionNo }}</small></td>
+                <td data-label="Refund" class="c-amount">{{ money(r.amount) }} <small>({{ r.method }})</small></td>
+                <td data-label="Of payment">{{ money(r.paymentAmount) }}</td>
+                <td data-label="Reason">{{ r.reason }}</td>
+                <td data-label="Requested">{{ r.createdAt | date: 'medium' }}</td>
+                <td class="actions c-actions">
                   @if (canApprove && !mine(r)) {
                     <button class="btn btn-sm btn-primary" [disabled]="busy" (click)="decide(r, 'approve')">Approve</button>
                     <button class="btn btn-sm btn-ghost" [disabled]="busy" (click)="decide(r, 'reject')">Reject</button>
@@ -94,7 +94,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                 </td>
               </tr>
             } @empty {
-              <tr><td colspan="7" class="empty">No pending refund requests</td></tr>
+              <tr class="empty-row"><td colspan="7" class="empty">No pending refund requests</td></tr>
             }
           </tbody>
         </table>
@@ -133,11 +133,35 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     }
   `,
   styles: [`
-    .tabs { display: flex; gap: .5rem; margin-bottom: 1rem; }
+    :host { display: block; min-width: 0; max-width: 100%; }
+    .tabs { display: flex; gap: .5rem; margin-bottom: 1rem; flex-wrap: wrap; }
     .filters { display: flex; gap: .5rem; margin-bottom: 1rem; flex-wrap: wrap; }
-    .filters .form-control { max-width: 260px; }
+    .filters .form-control { flex: 1 1 200px; max-width: 280px; min-width: 0; }
     .actions { display: flex; gap: .35rem; flex-wrap: wrap; }
     .empty { text-align: center; opacity: .7; padding: 1.5rem; }
+    .pill { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 600; text-transform: capitalize; }
+    .pill.ok { background: rgba(22,163,74,.14); color: #15803d; }
+    .pill.warn { background: rgba(245,158,11,.18); color: #b45309; }
+    .pay-table small { opacity: .65; }
+    .pagination-bar { display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .75rem; }
+    /* Phones: each row becomes a card, so nothing is wider than the screen. */
+    @media (max-width: 760px) {
+      .filters .form-control { max-width: none; flex-basis: 100%; }
+      .pay-table { overflow-x: visible; }
+      .pay-table table, .pay-table tbody, .pay-table tr, .pay-table td { display: block; width: 100%; }
+      .pay-table thead { display: none; }
+      .pay-table tr { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: .65rem .85rem; margin-bottom: .75rem; box-shadow: var(--shadow); }
+      .pay-table tbody td { border: 0; padding: .3rem 0; display: flex; justify-content: space-between; gap: 1rem; text-align: right; overflow-wrap: anywhere; }
+      .pay-table td::before { content: attr(data-label); font-weight: 600; opacity: .6; text-align: left; flex: 0 0 auto; }
+      .pay-table td.c-head { font-weight: 700; font-size: 1rem; border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: .25rem; }
+      .pay-table td.c-amount { font-weight: 700; }
+      .pay-table td.c-actions { justify-content: flex-start; padding-top: .6rem; }
+      .pay-table td.c-actions::before, .pay-table td.c-head::before { content: none; }
+      .pay-table td.c-actions .btn { flex: 1 1 auto; justify-content: center; }
+      .pay-table tr.empty-row { border: 0; box-shadow: none; background: none; }
+      .pay-table tr.empty-row td::before { content: none; }
+      .pay-table tr.empty-row td { justify-content: center; }
+    }
   `],
 })
 export class PaymentsComponent implements OnInit {
@@ -181,20 +205,64 @@ export class PaymentsComponent implements OnInit {
   }
 
   printReceipt(p: any): void {
-    this.api.get<any>(`/payments/receipts/${p.id}`).subscribe({
-      next: (r) => {
-        const rc = r?.data ?? {};
-        const w = window.open('', '_blank', 'width=480,height=640');
-        if (!w) { this.toasts.error('Allow pop-ups to print the receipt'); return; }
-        const esc = (v: unknown) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
-        w.document.write(`<html><body style="font-family:sans-serif;padding:24px"><h2>Payment receipt</h2>
-          <p>Receipt: <b>${esc(p.receiptNo || rc.receiptNo)}</b></p><p>Student: ${esc(p.studentName)} (${esc(p.admissionNo)})</p>
-          <p>Invoice: ${esc(p.invoiceNo)}</p><p>Amount: <b>${esc(this.money(p.amount))}</b> (${esc(p.method)})</p>
-          <p>Date: ${esc(new Date(p.paidOn).toLocaleDateString())}</p></body></html>`);
-        w.document.close(); w.focus(); w.print();
-      },
-      error: () => this.toasts.error('Could not load the receipt'),
+    const w = window.open('', '_blank', 'width=720,height=900');
+    if (!w) { this.toasts.error('Allow pop-ups to print the receipt'); return; }
+    w.document.write('<p style="font-family:sans-serif;padding:24px">Preparing receipt…</p>');
+    this.api.get<Record<string, string>>('/settings/public').subscribe({
+      next: (r) => this.writeReceipt(w, p, r?.data ?? {}),
+      error: () => this.writeReceipt(w, p, {}),
     });
+  }
+
+  private writeReceipt(w: Window, p: any, cfg: Record<string, string>): void {
+    const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+    const school = esc(cfg['schoolName'] || 'School');
+    const contact = [cfg['address'], cfg['phone'], cfg['email']].filter(Boolean).map(esc).join(' · ');
+    const date = new Date(p.paidOn).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+    const refunded = p.status === 'refunded';
+    const row = (k: string, v: unknown) => v ? `<tr><th>${k}</th><td>${esc(v)}</td></tr>` : '';
+    w.document.open();
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receipt ${esc(p.receiptNo)}</title>
+<style>
+  @page { size: A5; margin: 10mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: #0f172a; margin: 0; padding: 24px; background: #fff; }
+  .sheet { max-width: 560px; margin: 0 auto; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; position: relative; }
+  .head { background: #1e3a8a; color: #fff; padding: 20px 24px; text-align: center; }
+  .head h1 { margin: 0; font-size: 22px; letter-spacing: .5px; }
+  .head p { margin: 4px 0 0; font-size: 12px; opacity: .85; }
+  .title { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-bottom: 1px dashed #cbd5e1; }
+  .title b { font-size: 15px; letter-spacing: 2px; text-transform: uppercase; }
+  .title span { font-size: 13px; color: #475569; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 9px 24px; text-align: left; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
+  th { width: 38%; color: #64748b; font-weight: 600; }
+  .total { background: #eff6ff; display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; }
+  .total span { font-size: 13px; color: #475569; text-transform: uppercase; letter-spacing: 1px; }
+  .total b { font-size: 26px; color: #1e3a8a; }
+  .stamp { position: absolute; right: 28px; top: 120px; transform: rotate(-14deg); border: 3px solid ${refunded ? '#b45309' : '#15803d'}; color: ${refunded ? '#b45309' : '#15803d'}; padding: 2px 14px; font-size: 22px; font-weight: 800; letter-spacing: 3px; border-radius: 6px; opacity: .75; }
+  .sign { display: flex; justify-content: space-between; padding: 44px 24px 16px; gap: 24px; }
+  .sign div { flex: 1; border-top: 1px solid #94a3b8; text-align: center; font-size: 12px; color: #64748b; padding-top: 6px; }
+  .foot { text-align: center; font-size: 11px; color: #94a3b8; padding: 0 24px 16px; }
+  .noprint { text-align: center; margin: 16px; }
+  @media print { body { padding: 0; } .noprint { display: none; } .sheet { border: 1px solid #94a3b8; } }
+</style></head><body>
+<div class="sheet">
+  <div class="head"><h1>${school}</h1>${contact ? `<p>${contact}</p>` : ''}</div>
+  <div class="title"><b>Fee Receipt</b><span>No. ${esc(p.receiptNo)}</span></div>
+  <div class="stamp">${refunded ? 'REFUNDED' : 'PAID'}</div>
+  <table>
+    ${row('Student', p.studentName)}${row('Admission no.', p.admissionNo)}${row('Invoice', p.invoiceNo)}
+    ${row('Date', date)}${row('Payment method', String(p.method || '').toUpperCase())}${row('Reference', p.reference)}
+  </table>
+  <div class="total"><span>Amount received</span><b>${esc(this.money(p.amount))}</b></div>
+  <div class="sign"><div>Received by</div><div>Parent / Guardian</div></div>
+  <div class="foot">This is a computer-generated receipt. Thank you.</div>
+</div>
+<div class="noprint"><button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer">Print / Save as PDF</button></div>
+<script>window.addEventListener('load',function(){setTimeout(function(){window.print()},300)})</script>
+</body></html>`);
+    w.document.close();
   }
 
   openRefund(p: any): void {
