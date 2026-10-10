@@ -47,6 +47,34 @@ async function syncPaymentStatus(payment: Payment, transaction: any): Promise<vo
 
 router.get("/", authorize("payments:read"), (req, res, next) => base.list(req, res).catch(next));
 // IMPORTANT: GET /receipts/:paymentId MUST come before GET /:id, otherwise Express matches "receipts" as an id param.
+// Pending refund requests awaiting approval (must stay before GET /:id).
+router.get("/refunds/pending", authorize("refunds:approve", "refunds:create"), asyncHandler(async (req, res) => {
+  const rows: any[] = await Refund.findAll({
+    where: { status: "pending", ...(req.user!.branchId != null ? { branchId: req.user!.branchId } : {}) },
+    include: [{
+      association: "payment",
+      attributes: ["id", "receiptNo", "amount", "method", "reference", "paidOn"],
+      include: [
+        { association: "student", attributes: ["firstName", "lastName", "admissionNo"] },
+        { association: "invoice", attributes: ["invoiceNo"] },
+      ],
+    }],
+    order: [["createdAt", "DESC"]],
+    limit: 200,
+  });
+  const data = rows.map((r) => {
+    const p = r.payment;
+    return {
+      id: r.id, paymentId: r.paymentId, amount: r.amount, reason: r.reason, method: r.method,
+      requestedBy: r.requestedBy, createdAt: r.createdAt,
+      receiptNo: p?.receiptNo ?? "", paymentAmount: p?.amount ?? null, invoiceNo: p?.invoice?.invoiceNo ?? "",
+      studentName: p?.student ? `${p.student.firstName} ${p.student.lastName}`.trim() : "",
+      admissionNo: p?.student?.admissionNo ?? "",
+    };
+  });
+  ApiResponse.success(res, 200, "Pending refunds", data);
+}));
+
 router.get("/receipts/:paymentId", authorize("payments:read"), asyncHandler(async (req, res) => {
   const callerBranch = req.user!.branchId;
   const where: any = { paymentId: req.params.paymentId };

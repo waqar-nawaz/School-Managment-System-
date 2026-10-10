@@ -251,9 +251,12 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
           <form (ngSubmit)="pay(p)" #p="ngForm">
             <div class="form-group">
               <label>Amount (balance {{ money(balanceOf(payTarget)) }})</label>
-              <input type="number" min="0" class="form-control" [(ngModel)]="payForm.amount" name="amount" required #amount="ngModel" />
-              @if (p.submitted && amount.invalid) {
-                <div class="field-error">Amount is required</div>
+              <div style="display:flex;gap:.5rem">
+                <input type="number" min="0.01" step="0.01" [max]="balanceOf(payTarget)" class="form-control" [(ngModel)]="payForm.amount" name="amount" required #amount="ngModel" />
+                <button type="button" class="btn btn-sm btn-ghost" (click)="payForm.amount = balanceOf(payTarget)">Full balance</button>
+              </div>
+              @if (p.submitted && (amount.invalid || payForm.amount > balanceOf(payTarget))) {
+                <div class="field-error">Enter an amount between 0.01 and {{ money(balanceOf(payTarget)) }}</div>
               }
             </div>
             <div class="form-group">
@@ -262,10 +265,13 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
                 @for (m of METHODS; track m) { <option [value]="m">{{ m }}</option> }
               </select>
             </div>
-            <div class="form-group"><label>Reference</label><input class="form-control" [(ngModel)]="payForm.reference" name="reference" /></div>
+            <div class="form-group">
+              <label>{{ payForm.method === 'cash' ? 'Reference (optional)' : 'Reference / cheque / transaction no. (required)' }}</label>
+              <input class="form-control" [(ngModel)]="payForm.reference" name="reference" [required]="payForm.method !== 'cash'" />
+            </div>
             <div class="form-group">
               <label>Paid on</label>
-              <input type="date" class="form-control" [(ngModel)]="payForm.paidOn" name="paidOn" />
+              <input type="date" class="form-control" [(ngModel)]="payForm.paidOn" name="paidOn" [max]="todayStr" />
             </div>
             <div class="form-group">
               <label>Currency</label>
@@ -306,6 +312,7 @@ export class InvoicesComponent implements OnInit {
   statusFilter = '';
   showGenerate = false;
   payTarget: any = null;
+  readonly todayStr = new Date().toLocaleDateString('en-CA');
   busy = false;
   loading = false;
   page = 1;
@@ -521,7 +528,7 @@ export class InvoicesComponent implements OnInit {
   }
 
   pay(form: NgForm): void {
-    if (form.invalid) {
+    if (form.invalid || Number(this.payForm.amount) > this.balanceOf(this.payTarget)) {
       form.form.markAllAsTouched();
       return;
     }
