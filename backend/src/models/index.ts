@@ -191,6 +191,8 @@ export function defineAssociations(): void {
   AdmissionApplication.belongsTo(Branch, { as: "branch", foreignKey: "branchId" });
 
   // Enrolment / attendance
+  ClassSubject.belongsTo(SchoolClass, { as: "class", foreignKey: "classId" });
+  ClassSubject.belongsTo(Subject, { as: "subject", foreignKey: "subjectId" });
   Student.hasMany(Enrolment, { as: "enrolments", foreignKey: "studentId" });
   Enrolment.belongsTo(Student, { foreignKey: "studentId" });
   Enrolment.belongsTo(SchoolClass, { as: "class", foreignKey: "classId" });

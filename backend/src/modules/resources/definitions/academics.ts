@@ -1,7 +1,8 @@
 /** Roles, branches and academic structure (years, terms, classes, sections, subjects, enrolments) */
 import { Request } from "express";
 import { ApiError } from "../../../utils/ApiError";
-import { Op } from "sequelize";
+import { Op, literal } from "sequelize";
+import { sequelize } from "../../../database/sequelize";
 import {
   Role,
   Permission,
@@ -17,6 +18,10 @@ import {
   User,
 } from "../../../models";
 import { ResourceDefinition, getExisting } from "./shared";
+import { studentScope } from "../../../utils/access";
+
+/** Date-only (UTC) key so a year stored with a time-of-day still contains its own first/last day. */
+const dayKey = (d: Date | string) => new Date(d).toISOString().slice(0, 10);
 
 const validateSubject = async (body: any, req: Request) => {
   const existing = await getExisting(Subject, req);
@@ -195,25 +200,24 @@ const validateTerm = async (body: any, req: Request) => {
 
   const start = body.startDate !== undefined ? new Date(body.startDate) : (existing?.startDate ? new Date(existing.startDate) : null);
   const end = body.endDate !== undefined ? new Date(body.endDate) : (existing?.endDate ? new Date(existing.endDate) : null);
-  const yearStart = new Date(year.startDate);
-  const yearEnd = new Date(year.endDate);
+  const yearStart = dayKey(year.startDate);
+  const yearEnd = dayKey(year.endDate);
 
   if (start && !Number.isFinite(start.getTime())) throw ApiError.badRequest("Invalid term startDate");
   if (end && !Number.isFinite(end.getTime())) throw ApiError.badRequest("Invalid term endDate");
   if (start && end && start >= end) throw ApiError.badRequest("Term startDate must be before endDate");
-  if (start && (start < yearStart || start > yearEnd)) throw ApiError.badRequest("Term startDate must be within the academic year");
-  if (end && (end < yearStart || end > yearEnd)) throw ApiError.badRequest("Term endDate must be within the academic year");
+  if (start && (dayKey(start) < yearStart || dayKey(start) > yearEnd)) throw ApiError.badRequest("Term startDate must be within the academic year");
+  if (end && (dayKey(end) < yearStart || dayKey(end) > yearEnd)) throw ApiError.badRequest("Term endDate must be within the academic year");
 
-  const duplicate = await Term.findOne({
-    where: {
-      academicYearId,
-      branchId,
-      ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}),
-    },
+  const siblings = await Term.findAll({
+    where: { academicYearId, branchId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
   });
-  if (duplicate && String(duplicate.name).trim().toLowerCase() === name.toLowerCase()) {
+  if (siblings.some((t) => String(t.name).trim().toLowerCase() === name.toLowerCase())) {
     throw ApiError.badRequest("Term already exists in this academic year");
   }
+  const isCurrent = body.isCurrent !== undefined ? Boolean(body.isCurrent) : Boolean(existing?.isCurrent);
+  if (isCurrent && siblings.some((t) => t.isCurrent)) throw ApiError.badRequest("Another term is already marked as current");
+  body.isCurrent = isCurrent;
 
   body.academicYearId = academicYearId;
   body.name = name;
@@ -259,10 +263,20 @@ const validateEnrolment = async (body: any, req: Request) => {
   if (!year) throw ApiError.badRequest("Academic year not found or outside your branch");
   if (year.isClosed && status === "active") throw ApiError.badRequest("A closed academic year cannot have an active enrolment");
 
-  const duplicate = await Enrolment.findOne({
-    where: { studentId, academicYearId, branchId, status: "active", ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
-  });
-  if (duplicate) throw ApiError.badRequest("Student already has an active enrolment for this academic year");
+  const rollNo = String(body.rollNo ?? existing?.rollNo ?? "").trim();
+  if (rollNo.length > 50) throw ApiError.badRequest("Roll number must be 50 characters or fewer");
+
+  const other = { ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) };
+  const anyForYear = await Enrolment.findOne({ where: { studentId, academicYearId, branchId, ...other } });
+  if (anyForYear) throw ApiError.badRequest("Student already has an enrolment for this academic year");
+  if (rollNo && sectionId) {
+    const clash = await Enrolment.findOne({
+      where: { academicYearId, classId, sectionId, rollNo, branchId, status: "active", ...other },
+    });
+    if (clash && status === "active") throw ApiError.badRequest("Roll number already used in this section");
+  }
+  body.rollNo = rollNo || null;
+  if (!existing && !body.enrolledOn) body.enrolledOn = new Date();
 
   body.studentId = studentId; body.academicYearId = academicYearId; body.classId = classId;
   body.sectionId = sectionId; body.status = status; body.branchId = branchId;
@@ -331,7 +345,7 @@ const validateBranch = async (body: any, req: Request) => {
   const isActive = body.isActive !== undefined ? Boolean(body.isActive) : Boolean(existing?.isActive ?? true);
   if (!name) throw ApiError.badRequest("Branch name is required");
   if (code && !/^[A-Za-z0-9_-]{1,50}$/.test(code)) throw ApiError.badRequest("Invalid branch code");
-  if (email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) throw ApiError.badRequest("Invalid branch email");
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw ApiError.badRequest("Invalid branch email");
   const duplicate = await Branch.findOne({
     where: { name, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
   });
@@ -348,6 +362,27 @@ const validateBranch = async (body: any, req: Request) => {
   return body;
 };
 
+/** Keep the student record (current class/section) in step with an active enrolment. */
+const syncStudentFromEnrolment = async (row: any) => {
+  if (row.status !== "active") return;
+  await Student.update(
+    { currentClassId: row.classId, currentSectionId: row.sectionId ?? null } as any,
+    { where: { id: row.studentId } },
+  );
+};
+
+const enrolmentSearch = (q: string) => {
+  const like = sequelize.escape(`%${q}%`);
+  return {
+    [Op.or]: [
+      { rollNo: { [Op.iLike]: `%${q}%` } },
+      literal(
+        `"Enrolment"."studentId" IN (SELECT id FROM students WHERE "firstName" ILIKE ${like} OR "lastName" ILIKE ${like} OR "admissionNo" ILIKE ${like} OR CONCAT("firstName", ' ', "lastName") ILIKE ${like})`,
+      ),
+    ],
+  } as any;
+};
+
 export const ACADEMICS_RESOURCES: ResourceDefinition[] = [
   { path: "roles", model: Role, searchable: ["name", "label", "description"], permission: "roles", beforeCreate: validateRole, beforeUpdate: validateRole },
   { path: "permissions", model: Permission, searchable: ["key", "label", "category"], permission: "permissions", readonly: true },
@@ -356,19 +391,71 @@ export const ACADEMICS_RESOURCES: ResourceDefinition[] = [
     path: "academic-years", model: AcademicYear, searchable: ["name"], permission: "academic",
     beforeCreate: validateAcademicYear,
     beforeUpdate: validateAcademicYear,
+    beforeRemove: async (req) => {
+      const id = Number(req.params.id);
+      if ((await Enrolment.count({ where: { academicYearId: id } })) || (await Term.count({ where: { academicYearId: id } }))) {
+        throw ApiError.badRequest("This academic year is in use (it has terms or enrolments) and cannot be deleted");
+      }
+    },
   },
   {
     path: "terms", model: Term, searchable: ["name"], permission: "academic",
     beforeCreate: validateTerm,
     beforeUpdate: validateTerm,
   },
-  { path: "classes", model: SchoolClass, searchable: ["name", "level"], permission: "classes", beforeCreate: validateSchoolClass, beforeUpdate: validateSchoolClass },
+  {
+    path: "classes", model: SchoolClass, searchable: ["name", "level"], permission: "classes", beforeCreate: validateSchoolClass, beforeUpdate: validateSchoolClass,
+    beforeRemove: async (req) => {
+      const id = Number(req.params.id);
+      if ((await Section.count({ where: { classId: id } })) || (await Enrolment.count({ where: { classId: id } })) || (await ClassSubject.count({ where: { classId: id } })) || (await Student.count({ where: { currentClassId: id } }))) {
+        throw ApiError.badRequest("This class is in use (it has sections, subjects or students) and cannot be deleted");
+      }
+    },
+  },
   { path: "sections", model: Section, searchable: ["name"], permission: "sections", beforeCreate: validateSection, beforeUpdate: validateSection },
-  { path: "subjects", model: Subject, searchable: ["name", "code"], permission: "subjects", beforeCreate: validateSubject, beforeUpdate: validateSubject },
-  { path: "class-subjects", model: ClassSubject, searchable: [], permission: "subjects", beforeCreate: validateClassSubject, beforeUpdate: validateClassSubject },
+  {
+    path: "subjects", model: Subject, searchable: ["name", "code"], permission: "subjects", beforeCreate: validateSubject, beforeUpdate: validateSubject,
+    beforeRemove: async (req) => {
+      if (await ClassSubject.count({ where: { subjectId: Number(req.params.id) } })) throw ApiError.badRequest("This subject is in use (assigned to a class) and cannot be deleted");
+    },
+  },
+  {
+    path: "class-subjects", model: ClassSubject, searchable: [], permission: "subjects",
+    beforeCreate: validateClassSubject, beforeUpdate: validateClassSubject,
+    includes: [
+      { model: SchoolClass, as: "class", attributes: ["id", "name"], required: false },
+      { model: Subject, as: "subject", attributes: ["id", "name", "code"], required: false },
+    ],
+    decorate: (row: any) => {
+      const r = row?.get ? row.get({ plain: true }) : { ...row };
+      r.className = r.class?.name ?? null;
+      r.subjectName = r.subject?.name ?? null;
+      delete r.class; delete r.subject;
+      return r;
+    },
+  },
   {
     path: "enrolments", model: Enrolment, searchable: ["rollNo", "status"], permission: "students",
     beforeCreate: validateEnrolment,
     beforeUpdate: validateEnrolment,
+    scopeWhere: (req) => studentScope(req),
+    afterCreate: syncStudentFromEnrolment,
+    afterUpdate: syncStudentFromEnrolment,
+    toSearchWhere: enrolmentSearch,
+    includes: [
+      { model: Student, attributes: ["id", "firstName", "lastName", "admissionNo"], required: false },
+      { model: SchoolClass, as: "class", attributes: ["id", "name"], required: false },
+      { model: Section, as: "section", attributes: ["id", "name"], required: false },
+    ],
+    decorate: (row: any) => {
+      const r = row?.get ? row.get({ plain: true }) : { ...row };
+      const st = r.Student;
+      r.studentName = st ? `${st.firstName ?? ""} ${st.lastName ?? ""}`.trim() : null;
+      r.admissionNo = st?.admissionNo ?? null;
+      r.className = r.class?.name ?? null;
+      r.sectionName = r.section?.name ?? null;
+      delete r.Student; delete r.class; delete r.section;
+      return r;
+    },
   },
 ];

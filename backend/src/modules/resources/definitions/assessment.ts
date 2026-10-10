@@ -2,6 +2,7 @@
 import { Request } from "express";
 import { ApiError } from "../../../utils/ApiError";
 import { Op } from "sequelize";
+import { studentScope, ownStudentIds } from "../../../utils/access";
 import {
   AcademicYear,
   Term,
@@ -27,6 +28,19 @@ import {
   User,
 } from "../../../models";
 import { ResourceDefinition, getExisting } from "./shared";
+
+const dayKey = (d: Date | string) => new Date(d).toISOString().slice(0, 10);
+const pad = (mins: number) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Letter grade for a percentage from the branch grade scale (null when no scale matches). */
+const gradeFor = async (branchId: number, pct: number): Promise<string | null> => {
+  const scales = await GradeScale.findAll({ where: { branchId }, order: [["minPercentage", "DESC"]] });
+  const p = round2(pct);
+  return scales.find((g) => p >= Number(g.minPercentage) && p <= Number(g.maxPercentage))?.grade ?? null;
+};
+
+const teacherOfUser = async (req: Request) => (req.user?.role === "teacher" ? Teacher.findOne({ where: { userId: req.user.id } }) : null);
 
 const validateExamResult = async (body: any, req: Request) => {
   const existing = await getExisting(ExamResult, req);
@@ -66,6 +80,8 @@ const validateExamResult = async (body: any, req: Request) => {
 
   body.examId = examId; body.studentId = studentId; body.subjectId = subjectId;
   body.maxMarks = max; body.marksObtained = obtained; body.branchId = branchId;
+  body.grade = await gradeFor(branchId, (obtained / max) * 100);
+  if (!existing) body.enteredBy = req.user?.id; else delete body.enteredBy;
   return body;
 };
 
@@ -98,8 +114,8 @@ const validateExamSchedule = async (body: any, req: Request) => {
 
   const exam = await Exam.findOne({ where: { id: examId, branchId } });
   if (!exam) throw ApiError.badRequest("Exam not found or outside your branch");
-  if (exam.startDate && date < new Date(exam.startDate)) throw ApiError.badRequest("Exam schedule date is before the exam start date");
-  if (exam.endDate && date > new Date(exam.endDate)) throw ApiError.badRequest("Exam schedule date is after the exam end date");
+  if (exam.startDate && dayKey(date) < dayKey(exam.startDate)) throw ApiError.badRequest("Exam schedule date is before the exam start date");
+  if (exam.endDate && dayKey(date) > dayKey(exam.endDate)) throw ApiError.badRequest("Exam schedule date is after the exam end date");
 
   const schoolClass = await SchoolClass.findOne({ where: { id: classId, branchId } });
   if (!schoolClass || !schoolClass.isActive) throw ApiError.badRequest("Selected class is not active or outside your branch");
@@ -116,15 +132,23 @@ const validateExamSchedule = async (body: any, req: Request) => {
   const classSubject = await ClassSubject.findOne({ where: { classId, subjectId, branchId } });
   if (!classSubject) throw ApiError.badRequest("Subject is not assigned to the selected class");
 
-  const duplicate = await ExamSchedule.findOne({
-    where: { examId, classId, sectionId: sectionId ?? null, subjectId, branchId, date, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
+  const others = await ExamSchedule.findAll({
+    where: { examId, classId, branchId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) },
   });
-  if (duplicate) throw ApiError.badRequest("This subject is already scheduled for the selected class on this date");
+  for (const o of others) {
+    if (dayKey(o.date) !== dayKey(date)) continue;
+    const sameScope = o.sectionId == null || sectionId == null || Number(o.sectionId) === Number(sectionId);
+    if (!sameScope) continue;
+    if (Number(o.subjectId) === subjectId) throw ApiError.badRequest("This subject is already scheduled for the selected class on this date");
+    const os = parseTimeMinutes(o.startTime), oe = parseTimeMinutes(o.endTime);
+    if (os !== null && oe !== null && start < oe && end > os) {
+      throw ApiError.badRequest("Another paper for this class overlaps this time slot");
+    }
+  }
 
   body.examId = examId; body.classId = classId; body.sectionId = sectionId;
   body.subjectId = subjectId; body.date = date; body.branchId = branchId;
-  body.startTime = String(body.startTime ?? existing?.startTime ?? "").trim();
-  body.endTime = String(body.endTime ?? existing?.endTime ?? "").trim();
+  body.startTime = pad(start); body.endTime = pad(end);
   return body;
 };
 
@@ -139,13 +163,14 @@ const validateExam = async (body: any, req: Request) => {
   const type = String(body.examType ?? existing?.examType ?? 'midterm');
   const status = String(body.status ?? existing?.status ?? 'draft');
   if (!name || !Number.isInteger(academicYearId) || academicYearId <= 0) throw ApiError.badRequest('name and academicYearId are required');
+  if (name.length > 120) throw ApiError.badRequest('Exam name must be 120 characters or fewer');
   if (!['weekly','monthly','midterm','final','quiz'].includes(type)) throw ApiError.badRequest('Invalid exam type');
   if (!['draft','published','completed','cancelled'].includes(status)) throw ApiError.badRequest('Invalid exam status');
   if (!start || !end || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start > end) throw ApiError.badRequest('Invalid exam date range');
   if (!Number.isInteger(maxMarks) || maxMarks <= 0) throw ApiError.badRequest('maxMarks must be a positive integer');
-  const year = await AcademicYear.findByPk(academicYearId);
-  if (!year) throw ApiError.badRequest('Academic year not found');
-  if (start < new Date(year.startDate) || end > new Date(year.endDate)) throw ApiError.badRequest('Exam dates must be within the academic year');
+  const year = await AcademicYear.findOne({ where: { id: academicYearId, branchId: Number(req.user?.branchId) } });
+  if (!year) throw ApiError.badRequest('Academic year not found or outside your branch');
+  if (dayKey(start) < dayKey(year.startDate) || dayKey(end) > dayKey(year.endDate)) throw ApiError.badRequest('Exam dates must be within the academic year');
   if (termId) { const term = await Term.findByPk(termId); if (!term || Number(term.academicYearId) !== academicYearId) throw ApiError.badRequest('Selected term does not belong to the academic year'); }
   body.name=name; body.academicYearId=academicYearId; body.termId=termId; body.startDate=start; body.endDate=end; body.maxMarks=maxMarks; body.examType=type; body.status=status; body.branchId=req.user?.branchId;
   return body;
@@ -173,7 +198,7 @@ const validateAssignment = async (body: any, req: Request) => {
   const branchId = Number(req.user?.branchId);
   if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
   if (!title || !Number.isInteger(classId) || classId <= 0 || !Number.isInteger(subjectId) || subjectId <= 0) throw ApiError.badRequest("title, classId and subjectId are required");
-  if (title.length > 200) throw ApiError.badRequest("Assignment title must be 200 characters or fewer");
+  if (title.length > 160) throw ApiError.badRequest("Assignment title must be 160 characters or fewer");
   if (!Number.isInteger(maxMarks) || maxMarks <= 0) throw ApiError.badRequest("maxMarks must be a positive integer");
   if (dueDate && !Number.isFinite(dueDate.getTime())) throw ApiError.badRequest("Invalid dueDate");
   const schoolClass = await SchoolClass.findOne({ where: { id: classId, branchId } });
@@ -181,19 +206,32 @@ const validateAssignment = async (body: any, req: Request) => {
   const subject = await Subject.findOne({ where: { id: subjectId, branchId } });
   if (!subject || !subject.isActive) throw ApiError.badRequest("Subject not found, inactive, or outside your branch");
   if (!(await ClassSubject.findOne({ where: { classId, subjectId, branchId } }))) throw ApiError.badRequest("Subject is not assigned to the selected class");
-  const teacherId = body.createdBy ?? existing?.createdBy;
+  const ownTeacher = await teacherOfUser(req);
+  // A teacher always owns what they create; only admins may pick another author.
+  const teacherId = ownTeacher ? (existing?.createdBy ?? ownTeacher.id) : (body.createdBy ?? existing?.createdBy);
   if (teacherId) {
     const teacher = await Teacher.findOne({ where: { id: Number(teacherId), branchId }, include: [{ model: User }] });
     if (!teacher || !teacher.isActive || Number(teacher.user?.branchId) !== branchId) throw ApiError.badRequest("Assignment teacher does not belong to your branch");
   }
   body.title = title; body.classId = classId; body.subjectId = subjectId; body.maxMarks = maxMarks; body.dueDate = dueDate; body.branchId = branchId;
+  body.createdBy = teacherId ? Number(teacherId) : null;
   return body;
 };
 
 const validateSubmission = async (body: any, req: Request) => {
   const existing = await getExisting(Submission, req);
   const assignmentId = Number(body.assignmentId ?? existing?.assignmentId);
-  const studentId = Number(body.studentId ?? existing?.studentId);
+  let studentIdRaw = body.studentId ?? existing?.studentId;
+  if (req.user?.role === "student") {
+    const own = await ownStudentIds(req);
+    const mine = own?.[0];
+    if (!mine) throw ApiError.forbidden("No student record is linked to your account");
+    if (body.studentId !== undefined && Number(body.studentId) !== mine) throw ApiError.forbidden("You can only submit your own work");
+    studentIdRaw = mine;
+    // Students cannot grade themselves.
+    delete body.marksAwarded; delete body.feedback; delete body.status;
+  }
+  const studentId = Number(studentIdRaw);
   const marks = body.marksAwarded !== undefined ? Number(body.marksAwarded) : (existing?.marksAwarded != null ? Number(existing.marksAwarded) : null);
   const submittedAt = body.submittedAt !== undefined ? (body.submittedAt ? new Date(body.submittedAt) : null) : (existing?.submittedAt ? new Date(existing.submittedAt) : null);
   const branchId = Number(req.user?.branchId);
@@ -207,11 +245,15 @@ const validateSubmission = async (body: any, req: Request) => {
   if (!enrolment) throw ApiError.badRequest("Student is not enrolled in the assignment class");
   if (marks != null && (!Number.isFinite(marks) || marks < 0 || marks > Number(assignment.maxMarks))) throw ApiError.badRequest("marksAwarded must be between 0 and assignment maxMarks");
   if (submittedAt && !Number.isFinite(submittedAt.getTime())) throw ApiError.badRequest("Invalid submittedAt");
-  const status = String(body.status ?? existing?.status ?? "submitted");
+  let status = String(body.status ?? existing?.status ?? "submitted");
   if (!["submitted","graded","returned","late"].includes(status)) throw ApiError.badRequest("Invalid submission status");
+  const when = submittedAt ?? (existing ? null : new Date());
+  if (!existing) body.submittedAt = when;
+  if (marks != null && body.marksAwarded !== undefined && ["submitted", "late"].includes(status)) status = "graded";
+  else if (!existing && body.status === undefined && assignment.dueDate && when && dayKey(when) > dayKey(assignment.dueDate)) status = "late";
   const duplicate = await Submission.findOne({ where: { assignmentId, studentId, branchId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
   if (duplicate) throw ApiError.badRequest("Submission already exists for this assignment and student");
-  body.assignmentId = assignmentId; body.studentId = studentId; body.marksAwarded = marks; body.submittedAt = submittedAt; body.status = status; body.branchId = branchId;
+  body.assignmentId = assignmentId; body.studentId = studentId; body.marksAwarded = marks; body.submittedAt = body.submittedAt ?? submittedAt; body.status = status; body.branchId = branchId;
   return body;
 };
 
@@ -237,6 +279,17 @@ const validateGradebook = async (body: any, req: Request) => {
   }
   const duplicate = await GradebookEntry.findOne({ where: { studentId, termId, subjectId, branchId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
   if (duplicate) throw ApiError.badRequest("Gradebook entry already exists for this student, term and subject");
+  const num = (v: any) => (v === undefined || v === null || v === "" ? null : Number(v));
+  const ca = body.continuousAvg !== undefined ? num(body.continuousAvg) : num(existing?.continuousAvg);
+  const ex = body.examScore !== undefined ? num(body.examScore) : num(existing?.examScore);
+  let total = body.total !== undefined ? num(body.total) : num(existing?.total);
+  // total = plain average of the parts that exist, unless someone typed a total explicitly.
+  if (body.total === undefined && (body.continuousAvg !== undefined || body.examScore !== undefined)) {
+    const parts = [ca, ex].filter((v): v is number => v !== null);
+    total = parts.length ? round2(parts.reduce((a, b) => a + b, 0) / parts.length) : null;
+  }
+  body.total = total;
+  body.grade = total === null ? null : await gradeFor(branchId, total);
   body.studentId=studentId; body.termId=termId; body.subjectId=subjectId; body.branchId=branchId;
   return body;
 };
@@ -278,8 +331,33 @@ const validatePeriod = async (body: any, req: Request) => {
   if(sectionId){const section=await Section.findOne({where:{id:sectionId,branchId}}); if(!section||!section.isActive||Number(section.classId)!==classId) throw ApiError.badRequest("Selected section does not belong to the selected class");}
   if(subjectId){const subject=await Subject.findOne({where:{id:subjectId,branchId}}); if(!subject||!subject.isActive||!(await ClassSubject.findOne({where:{classId,subjectId,branchId}}))) throw ApiError.badRequest("Subject is not assigned to the selected class");}
   if(teacherId){const teacher=await Teacher.findOne({where:{id:teacherId,branchId},include:[{model:User}]}); if(!teacher||!teacher.isActive||Number(teacher.user?.branchId)!==branchId) throw ApiError.badRequest("Teacher does not belong to your branch");}
-  body.classId=classId; body.sectionId=sectionId; body.subjectId=subjectId; body.teacherId=teacherId; body.dayOfWeek=day; body.startTime=String(start).trim(); body.endTime=String(end).trim(); body.branchId=branchId; return body;
+  const others = await Period.findAll({ where: { branchId, dayOfWeek: day, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
+  for (const o of others) {
+    const os = parse(o.startTime), oe = parse(o.endTime);
+    if (os === null || oe === null || !(sm < oe && em > os)) continue;
+    const sameClass = Number(o.classId) === classId && (o.sectionId == null || sectionId == null || Number(o.sectionId) === Number(sectionId));
+    if (sameClass) throw ApiError.badRequest("This time overlaps another period of the same class/section");
+    if (teacherId && o.teacherId != null && Number(o.teacherId) === teacherId) throw ApiError.badRequest("Teacher already has a period at this time");
+  }
+  body.classId=classId; body.sectionId=sectionId; body.subjectId=subjectId; body.teacherId=teacherId; body.dayOfWeek=day; body.startTime=pad(sm); body.endTime=pad(em); body.branchId=branchId; return body;
 };
+
+/** Rebuild every timetable's weeklyGrid from its periods (class + section). */
+const rebuildGrids = async (branchId: number | null | undefined) => {
+  const tables = await Timetable.findAll({ where: branchId != null ? { branchId } : {} });
+  for (const t of tables) {
+    const periods = await Period.findAll({
+      where: { classId: t.classId, branchId: t.branchId, ...(t.sectionId ? { sectionId: { [Op.or]: [t.sectionId, null] } } : {}) },
+      order: [["startTime", "ASC"]],
+    });
+    const grid: Record<string, unknown[]> = {};
+    for (const p of periods) {
+      (grid[p.dayOfWeek] ??= []).push({ id: Number(p.id), startTime: p.startTime, endTime: p.endTime, subjectId: p.subjectId ?? null, teacherId: p.teacherId ?? null, room: p.room ?? null });
+    }
+    await t.update({ weeklyGrid: grid });
+  }
+  };
+const refreshGrids = async (_row: any, req: Request) => rebuildGrids(req.user?.branchId);
 
 const validateReportCard = async (body: any, req: Request) => {
   const existing = await getExisting(ReportCard, req);
@@ -294,11 +372,56 @@ const validateReportCard = async (body: any, req: Request) => {
   const duplicate = await ReportCard.findOne({ where: { enrolmentId, termId, ...(existing?.id ? { id: { [Op.ne]: existing.id } } : {}) } });
   if (duplicate) throw ApiError.badRequest('Report card already exists for this enrolment and term');
   body.enrolmentId=enrolmentId; body.studentId=enrolment.studentId; body.termId=termId; body.branchId=req.user?.branchId;
+  Object.assign(body, await computeReportCard(enrolment, termId));
+  // Remarks / publish flag are the only hand-edited fields; totals always come from the results.
   return body;
 };
 
-const validateTeachingPlan = async (body: any, req: Request) => {
-  const isLessonPlan = !!body?.__lessonPlan;
+/** Totals, grade and per-subject breakdown from the student's exam results for the term (or whole year). */
+const computeReportCard = async (enrolment: any, termId: number | null) => {
+  const exams = await Exam.findAll({
+    where: { academicYearId: enrolment.academicYearId, branchId: enrolment.branchId, status: { [Op.ne]: "cancelled" }, ...(termId ? { termId } : {}) },
+    attributes: ["id"],
+  });
+  const results = exams.length
+    ? await ExamResult.findAll({ where: { studentId: enrolment.studentId, examId: exams.map((e) => e.id) }, include: [{ model: Subject, attributes: ["id", "name"] }] })
+    : [];
+  const bySubject = new Map<number, { subjectId: number; subject: string; obtained: number; max: number }>();
+  for (const r of results as any[]) {
+    const cur = bySubject.get(Number(r.subjectId)) ?? { subjectId: Number(r.subjectId), subject: r.subject?.name ?? r.Subject?.name ?? String(r.subjectId), obtained: 0, max: 0 };
+    cur.obtained += Number(r.marksObtained ?? 0); cur.max += Number(r.maxMarks ?? 0);
+    bySubject.set(Number(r.subjectId), cur);
+  }
+  const rows = [...bySubject.values()];
+  const obtained = rows.reduce((a, r) => a + r.obtained, 0);
+  const total = rows.reduce((a, r) => a + r.max, 0);
+  const percentage = total > 0 ? round2((obtained / total) * 100) : 0;
+  const subjectWise = [];
+  for (const r of rows) subjectWise.push({ ...r, percentage: r.max ? round2((r.obtained / r.max) * 100) : 0, grade: r.max ? await gradeFor(Number(enrolment.branchId), (r.obtained / r.max) * 100) : null });
+  return {
+    subjectWise, obtainedMarks: round2(obtained), totalMarks: round2(total), percentage,
+    grade: total > 0 ? await gradeFor(Number(enrolment.branchId), percentage) : null,
+  };
+};
+
+/** Dense rank by percentage among report cards of the same class, year and term. */
+const rerankClass = async (card: any) => {
+  const enrolment = await Enrolment.findByPk(card.enrolmentId);
+  if (!enrolment) return;
+  const mates = await Enrolment.findAll({ where: { classId: enrolment.classId, academicYearId: enrolment.academicYearId, branchId: enrolment.branchId }, attributes: ["id"] });
+  const cards = await ReportCard.findAll({ where: { enrolmentId: mates.map((m) => m.id), termId: card.termId ?? null } });
+  cards.sort((a, b) => Number(b.percentage ?? 0) - Number(a.percentage ?? 0));
+  let rank = 0, prev: number | null = null;
+  for (const [i, c] of cards.entries()) {
+    const pct = Number(c.percentage ?? 0);
+    if (prev === null || pct < prev) rank = i + 1;
+    prev = pct;
+    if (Number(c.rankInClass) !== rank) await c.update({ rankInClass: rank });
+  }
+  await card.reload();
+};
+
+const validateTeachingPlan = async (body: any, req: Request, isLessonPlan: boolean) => {
   const model = isLessonPlan ? LessonPlan : Syllabus;
   const existing = await getExisting(model, req);
   const branchId = Number(req.user?.branchId);
@@ -335,7 +458,10 @@ const validateTeachingPlan = async (body: any, req: Request) => {
     throw ApiError.badRequest(`Invalid ${dateField}`);
   }
 
-  if (isLessonPlan && body.teacherId !== undefined) {
+  const ownTeacher = await teacherOfUser(req);
+  if (isLessonPlan && ownTeacher) {
+    body.teacherId = Number(existing?.teacherId ?? ownTeacher.id);
+  } else if (isLessonPlan && body.teacherId !== undefined && body.teacherId !== null && body.teacherId !== "") {
     const teacherId = Number(body.teacherId);
     if (!Number.isInteger(teacherId) || teacherId <= 0) throw ApiError.badRequest("Invalid teacherId");
     const teacher = await Teacher.findOne({ where: { id: teacherId, branchId } });
@@ -343,17 +469,43 @@ const validateTeachingPlan = async (body: any, req: Request) => {
     body.teacherId = teacherId;
   }
 
+  // `teacherId` only exists on lesson plans; `__lessonPlan` from a client is just noise.
   delete body.__lessonPlan;
+  if (!isLessonPlan) delete body.teacherId;
   body.title = title;
   body.classId = classId;
   body.subjectId = subjectId;
   if (dateRaw !== undefined) body[dateField] = plannedDate;
+  else if (!isLessonPlan && !existing) body.publishedAt = new Date();
   body.branchId = branchId;
   return body;
 };
 
+/** Ids from the URL for delete guards. */
+const rid = (req: Request) => Number(req.params.id);
+const inUse = (what: string, by: string) => ApiError.badRequest(`This ${what} is in use (${by}) and cannot be deleted`);
+
+const familyReportScope = async (req: Request) => {
+  const own = await studentScope(req);
+  return Object.keys(own).length ? { ...own, isPublished: true } : {};
+};
+
+/** Parents/students only see assignments of their own classes (and only published ones). */
+const assignmentScope = async (req: Request) => {
+  const own = await ownStudentIds(req);
+  if (own === null) return {};
+  const rows = await Enrolment.findAll({ where: { studentId: own, status: { [Op.notIn]: ["withdrawn", "expelled"] } }, attributes: ["classId"] });
+  return { classId: [...new Set(rows.map((r) => Number(r.classId)))], isPublished: true };
+};
+
 export const ASSESSMENT_RESOURCES: ResourceDefinition[] = [
-  { path: "exams", model: Exam, searchable: ["name", "examType", "status"], permission: "exams", beforeCreate: validateExam, beforeUpdate: validateExam },
+  {
+    path: "exams", model: Exam, searchable: ["name", "examType", "status"], permission: "exams", beforeCreate: validateExam, beforeUpdate: validateExam,
+    beforeRemove: async (req) => {
+      const id = rid(req);
+      if ((await ExamResult.count({ where: { examId: id } })) || (await ExamSchedule.count({ where: { examId: id } }))) throw inUse("exam", "it has results or a schedule");
+    },
+  },
   {
     path: "exam-schedules", model: ExamSchedule, searchable: ["room", "startTime"], permission: "exams",
     beforeCreate: validateExamSchedule,
@@ -361,21 +513,30 @@ export const ASSESSMENT_RESOURCES: ResourceDefinition[] = [
   },
   {
     path: "exam-results", model: ExamResult, searchable: ["grade", "remarks"], permission: "exam-results",
+    scopeWhere: (req) => studentScope(req),
     beforeCreate: validateExamResult,
     beforeUpdate: validateExamResult,
   },
   {
     path: "report-cards", model: ReportCard, searchable: ["grade"], permission: "exam-results",
+    scopeWhere: familyReportScope,
     // studentId is required by the model but not on the form — derive it from the enrolment.
     beforeCreate: validateReportCard,
     beforeUpdate: validateReportCard,
+    afterCreate: (row) => rerankClass(row),
+    afterUpdate: (row) => rerankClass(row),
+    afterRemove: (row) => rerankClass(row),
   },
-  { path: "assignments", model: Assignment, searchable: ["title", "description"], permission: "assignments", beforeCreate: validateAssignment, beforeUpdate: validateAssignment },
-  { path: "submissions", model: Submission, searchable: ["status"], permission: "assignments", beforeCreate: validateSubmission, beforeUpdate: validateSubmission },
-  { path: "gradebook", model: GradebookEntry, searchable: ["grade"], permission: "gradebook", beforeCreate: validateGradebook, beforeUpdate: validateGradebook },
+  {
+    path: "assignments", model: Assignment, searchable: ["title", "description"], permission: "assignments",
+    scopeWhere: assignmentScope, beforeCreate: validateAssignment, beforeUpdate: validateAssignment,
+    beforeRemove: async (req) => { if (await Submission.count({ where: { assignmentId: rid(req) } })) throw inUse("assignment", "it has submissions"); },
+  },
+  { path: "submissions", model: Submission, searchable: ["status"], permission: "submissions", scopeWhere: (req) => studentScope(req), beforeCreate: validateSubmission, beforeUpdate: validateSubmission },
+  { path: "gradebook", model: GradebookEntry, searchable: ["grade"], permission: "gradebook", scopeWhere: (req) => studentScope(req), beforeCreate: validateGradebook, beforeUpdate: validateGradebook },
   { path: "grade-scales", model: GradeScale, searchable: ["name", "grade"], permission: "gradebook", beforeCreate: validateGradeScale, beforeUpdate: validateGradeScale },
-  { path: "timetable", model: Timetable, searchable: ["name"], permission: "timetable", beforeCreate: validateTimetable, beforeUpdate: validateTimetable },
-  { path: "periods", model: Period, searchable: ["dayOfWeek", "room"], permission: "timetable", beforeCreate: validatePeriod, beforeUpdate: validatePeriod },
-  { path: "syllabus", model: Syllabus, searchable: ["title"], permission: "syllabus", beforeCreate: (body, req) => validateTeachingPlan(body, req), beforeUpdate: (body, req) => validateTeachingPlan(body, req) },
-  { path: "lesson-plans", model: LessonPlan, searchable: ["title"], permission: "lesson-plans", beforeCreate: (body, req) => validateTeachingPlan({ ...body, __lessonPlan: true }, req), beforeUpdate: (body, req) => validateTeachingPlan({ ...body, __lessonPlan: true }, req) },
+  { path: "timetable", model: Timetable, searchable: ["name"], permission: "timetable", beforeCreate: validateTimetable, beforeUpdate: validateTimetable, afterCreate: refreshGrids, afterUpdate: refreshGrids },
+  { path: "periods", model: Period, searchable: ["dayOfWeek", "room"], permission: "timetable", beforeCreate: validatePeriod, beforeUpdate: validatePeriod, afterCreate: refreshGrids, afterUpdate: refreshGrids, afterRemove: refreshGrids },
+  { path: "syllabus", model: Syllabus, searchable: ["title"], permission: "syllabus", beforeCreate: (body, req) => validateTeachingPlan(body, req, false), beforeUpdate: (body, req) => validateTeachingPlan(body, req, false) },
+  { path: "lesson-plans", model: LessonPlan, searchable: ["title"], permission: "lesson-plans", beforeCreate: (body, req) => validateTeachingPlan(body, req, true), beforeUpdate: (body, req) => validateTeachingPlan(body, req, true) },
 ];

@@ -23,15 +23,11 @@ const validateApplication = async (body: any, req: any, current?: AdmissionAppli
   const appliedClass = String(body.appliedClass ?? current?.appliedClass ?? "").trim();
   const status = String(body.status ?? current?.status ?? "enquiry").trim().toLowerCase();
   const dateApplied = body.dateApplied !== undefined ? new Date(body.dateApplied) : (current?.dateApplied ?? new Date());
-  const dateOfBirth = body.dateOfBirth !== undefined && body.dateOfBirth !== null && body.dateOfBirth !== ""
-    ? new Date(body.dateOfBirth)
-    : (current?.dateOfBirth ?? null);
-  const gender = body.gender !== undefined && body.gender !== null && body.gender !== ""
-    ? String(body.gender).trim().toLowerCase()
-    : (current?.gender ?? null);
-  const email = body.email !== undefined && body.email !== null && body.email !== ""
-    ? String(body.email).trim().toLowerCase()
-    : (current?.email ?? null);
+  // Sending null/"" clears the field; leaving the key out keeps what is stored.
+  const blank = (v: unknown) => v === null || v === "";
+  const dateOfBirth = body.dateOfBirth === undefined ? (current?.dateOfBirth ?? null) : blank(body.dateOfBirth) ? null : new Date(body.dateOfBirth);
+  const gender = body.gender === undefined ? (current?.gender ?? null) : blank(body.gender) ? null : String(body.gender).trim().toLowerCase();
+  const email = body.email === undefined ? (current?.email ?? null) : blank(body.email) ? null : String(body.email).trim().toLowerCase();
   const applicationNo = String(body.applicationNo ?? current?.applicationNo ?? "").trim();
   const phone = body.phone !== undefined ? cleanPhone(body.phone, "Phone") : (current?.phone ?? null);
   const guardianName = body.guardianName !== undefined ? (String(body.guardianName ?? "").trim() || null) : (current?.guardianName ?? null);
@@ -43,7 +39,8 @@ const validateApplication = async (body: any, req: any, current?: AdmissionAppli
   if (!applicationNo) throw ApiError.badRequest("applicationNo is required");
   if (!ADMISSION_STATUS.includes(status as any)) throw ApiError.badRequest("Invalid status");
   if (!Number.isFinite(dateApplied.getTime())) throw ApiError.badRequest("Invalid dateApplied");
-  if (dateApplied > new Date()) throw ApiError.badRequest("dateApplied cannot be in the future");
+  // Compare by day, allowing "today" in timezones ahead of UTC.
+  if (dateApplied.toISOString().slice(0, 10) > new Date(Date.now() + 14 * 3600 * 1000).toISOString().slice(0, 10)) throw ApiError.badRequest("dateApplied cannot be in the future");
   if (dateOfBirth && (!Number.isFinite(dateOfBirth.getTime()) || dateOfBirth > new Date())) throw ApiError.badRequest("Invalid dateOfBirth");
   if (gender) cleanGender(gender);
   if (studentName.length > 120) throw ApiError.badRequest("Student name is too long (max 120)");

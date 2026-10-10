@@ -24,7 +24,29 @@ function localDateString(d = new Date()): string {
 function dateFromQuery(req: { query: Record<string, unknown>; body?: Record<string, unknown> }): string {
   const d = String(req.body?.date || req.query.date || localDateString());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw ApiError.badRequest("date must be YYYY-MM-DD");
+  const parsed = new Date(`${d}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== d) throw ApiError.badRequest("date is not a real calendar date");
   return d;
+}
+
+/** Latest date attendance may be taken for: today anywhere on earth (UTC+14 is a day ahead of UTC). */
+function assertNotFuture(date: string): void {
+  const limit = new Date(Date.now() + 14 * 3600 * 1000).toISOString().slice(0, 10);
+  if (date > limit) throw ApiError.badRequest("Attendance cannot be taken for a future date");
+}
+
+/** Students of a class/section: active enrolments plus students assigned via currentClassId/currentSectionId. */
+async function classRoster(scope: Record<string, unknown>, classId: number, sectionId?: number): Promise<Array<{ studentId: number; rollNo: string | null }>> {
+  const enrolments = await Enrolment.findAll({
+    where: { ...scope, classId, ...(sectionId ? { sectionId } : {}), status: "active" },
+  });
+  const roster = new Map<number, string | null>(enrolments.map((e) => [Number(e.studentId), e.rollNo ?? null]));
+  const legacy = await Student.findAll({
+    where: { ...scope, currentClassId: classId, ...(sectionId ? { currentSectionId: sectionId } : {}), isActive: true },
+    attributes: ["id"],
+  });
+  for (const s of legacy) if (!roster.has(Number(s.id))) roster.set(Number(s.id), null);
+  return [...roster].map(([studentId, rollNo]) => ({ studentId, rollNo }));
 }
 
 function branchFilter(req: { user?: { branchId?: number | null } }): Record<string, unknown> {
@@ -57,25 +79,7 @@ router.get("/register", authorize("attendance:read"), allowRoles("super_admin","
   const sectionWhere = sectionId ? { sectionId } : {};
   const scope = branchFilter(req);
 
-  const enrolments = await Enrolment.findAll({
-    where: { ...scope, classId, ...sectionWhere, status: "active" },
-  });
-  let roster: Array<{ studentId: number; rollNo: string | null }> = enrolments.map((e) => ({
-    studentId: Number(e.studentId),
-    rollNo: e.rollNo,
-  }));
-  if (!roster.length) {
-    const byClass = await Student.findAll({
-      where: {
-        ...scope,
-        currentClassId: classId,
-        ...(sectionId ? { currentSectionId: sectionId } : {}),
-        isActive: true,
-      },
-      attributes: ["id"],
-    });
-    roster = byClass.map((s) => ({ studentId: Number(s.id), rollNo: null }));
-  }
+  const roster = await classRoster(scope, classId, sectionId);
 
   const records = await Attendance.findAll({ where: { ...scope, date, classId, ...sectionWhere } });
   const studentIds = roster.map((r) => r.studentId);
@@ -126,6 +130,7 @@ async function assertTeacherMayMark(req: any, classId: number, sectionId?: numbe
 /** Bulk mark/save attendance for a class on a date. */
 router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncHandler(async (req, res) => {
   const date = dateFromQuery(req);
+  assertNotFuture(date);
   const { classId, sectionId, entries } = req.body as {
     classId?: number;
     sectionId?: number;
@@ -143,34 +148,7 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
   const cls = await SchoolClass.findByPk(Number(classId));
   const resolvedBranchId = cls?.branchId ?? req.user?.branchId ?? null;
   const scope = resolvedBranchId != null ? { branchId: resolvedBranchId } : {};
-  const enrolments = await Enrolment.findAll({
-    where: {
-      ...scope,
-      classId: Number(classId),
-      ...(sectionId !== undefined ? { sectionId: Number(sectionId) } : {}),
-      status: "active",
-    },
-    attributes: ["studentId"],
-  });
-
-  // Some existing students are assigned through Student.currentClassId/currentSectionId
-  // without an Enrolment row. The register endpoint already supports that legacy/current
-  // assignment, so bulk save must use the same roster or the UI shows students that cannot
-  // actually be saved (e.g. "Student 18 is not enrolled").
-  const enrolledIds = enrolments.map(e => Number(e.studentId));
-  const fallbackStudents = await Student.findAll({
-    where: {
-      ...scope,
-      currentClassId: Number(classId),
-      ...(sectionId !== undefined ? { currentSectionId: Number(sectionId) } : {}),
-      isActive: true,
-    },
-    attributes: ["id"],
-  });
-  const allowedStudentIds = new Set([
-    ...enrolledIds,
-    ...fallbackStudents.map(s => Number(s.id)),
-  ]);
+  const allowedStudentIds = new Set((await classRoster(scope, Number(classId), sectionId !== undefined ? Number(sectionId) : undefined)).map((r) => r.studentId));
   const cleaned = entries.map((e) => {
     const studentId = Number(e.studentId);
     if (!allowedStudentIds.has(studentId)) {
@@ -180,23 +158,28 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
     if (!ATTENDANCE_STATUS.includes(status as any)) {
       throw ApiError.badRequest(`Invalid attendance status for student ${studentId}`);
     }
-    const lateMinutes = Number(e.lateMinutes || 0);
-    if (!Number.isFinite(lateMinutes) || lateMinutes < 0) {
+    const rawLate = Number(e.lateMinutes || 0);
+    if (!Number.isFinite(rawLate) || rawLate < 0 || rawLate > 600) {
       throw ApiError.badRequest(`Invalid lateMinutes for student ${studentId}`);
     }
+    // Minutes only make sense for "late"; a reason only for non-present statuses.
+    const lateMinutes = status === "late" ? Math.round(rawLate) : 0;
+    const reason = status === "present" ? "" : String(e.reason ?? "").trim().slice(0, 255);
     return {
       ...scope,
       studentId,
       date,
       status,
       lateMinutes,
-      reason: e.reason || "",
+      reason,
       takenBy: req.user!.id,
       classId: Number(classId),
       sectionId: sectionId !== undefined ? Number(sectionId) : null,
     };
   });
 
+  // One row per student (last entry wins) — a duplicate in one INSERT would fail the whole save.
+  const unique = [...new Map(cleaned.map((c) => [c.studentId, c])).values()];
   const t = await Attendance.sequelize!.transaction();
   try {
     // Use bulkCreate with updateOnDuplicate instead of N+1 sequential upserts.
@@ -204,8 +187,8 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
     // NOTE: "branchId" is intentionally NOT in the updateOnDuplicate list — it should be
     // set only on INSERT (which the `cleaned` array already does). Overwriting it on every
     // conflict would re-stamp historical rows if a class is ever moved to another branch.
-    if (cleaned.length) {
-      await Attendance.bulkCreate(cleaned, {
+    if (unique.length) {
+      await Attendance.bulkCreate(unique, {
         transaction: t,
         updateOnDuplicate: ["status", "lateMinutes", "reason", "takenBy", "classId", "sectionId", "updatedAt"],
         // Conflict target for ON CONFLICT: without it Postgres uses the primary key and a second
@@ -226,10 +209,10 @@ router.post("/bulk", authorize("attendance:create", "attendance:update"), asyncH
     role: req.user!.role,
     branchId: req.user?.branchId,
     ip: req.ip,
-    newData: { date, classId: Number(classId), sectionId, count: cleaned.length },
+    newData: { date, classId: Number(classId), sectionId, count: unique.length },
   });
 
-  ApiResponse.success(res, 200, `Attendance saved for ${cleaned.length} students`, null);
+  ApiResponse.success(res, 200, `Attendance saved for ${unique.length} students`, null);
 }));
 
 /** Attendance summary across a month/date range. */

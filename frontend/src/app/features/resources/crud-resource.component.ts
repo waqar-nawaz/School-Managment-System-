@@ -1150,13 +1150,14 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     const version = this.resourceKey;
     for (const col of cfg.columns) {
       const field = cfg.fields.find((f) => f.key === col.key && f.type === 'ref' && f.ref);
-      if (!field?.ref) continue;
+      const refCfg = field?.ref ?? col.ref;
+      if (!refCfg) continue;
       const known = this.refNames[col.key] ?? {};
       const ids = Array.from(new Set(this.rows.map((r) => r[col.key]).filter((v) => v != null && v !== '').map(String)))
         .filter((id) => !(id in known))
         .slice(0, 200);
       if (!ids.length) continue;
-      const { api, labelKey, secondaryKey } = field.ref;
+      const { api, labelKey, secondaryKey } = refCfg;
       this.api.get<Record<string, unknown>[]>(api, { ids: ids.join(','), limit: 200 }).subscribe({
         next: (res) => {
           if (version !== this.resourceKey) return;
@@ -1184,6 +1185,8 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.formReadOnly = false;
     // A newly admitted student must start in the Active list.
     if (this.resourceKey === 'students') this.formValues['isActive'] = true;
+    // Homework is visible to students unless the teacher unticks this.
+    if (this.resourceKey === 'assignments') this.formValues['isPublished'] = true;
     this.fieldErrors = {};
     this.refOptions = {};
     this.refSearch = {};
@@ -1196,6 +1199,14 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   openEdit(row: Row): void {
     this.editingId = row.id as number ?? null;
     this.formValues = { ...row };
+    // <input type="date"> only understands yyyy-MM-dd; an ISO timestamp would show as an empty box.
+    for (const f of this.config?.fields ?? []) {
+      const v = this.formValues[f.key];
+      if (f.type === 'dateonly' && typeof v === 'string' && v.length > 10) {
+        const d = new Date(v);
+        if (Number.isFinite(d.getTime())) this.formValues[f.key] = d.toISOString().slice(0, 10);
+      }
+    }
     if (this.resourceKey === "book-issues" && row.dueDate) {
       const d = new Date(row.dueDate);
       this.formValues["dueDate"] = Number.isNaN(d.getTime()) ? String(row.dueDate).slice(0, 10) : d.toISOString().slice(0, 10);
@@ -1481,7 +1492,11 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         continue;
       }
       let v = this.formValues[f.key];
-      if (v === '' || v === null || v === undefined) v = this.formDefault(f);
+      if (v === '' || v === null || v === undefined) {
+        v = this.formDefault(f);
+        // Editing: an emptied optional field must actually be cleared, not silently kept.
+        if (v === undefined && this.editingId && !f.required && f.type !== 'bool') v = null;
+      }
       if (v !== undefined) {
         // Convert comma-separated recipient IDs into a number[] for the backend.
         if (f.key === 'recipientIds' && typeof v === 'string') {
@@ -1604,7 +1619,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
       case 'dateonly': {
         const d = new Date(raw as string);
         if (!Number.isFinite(d.getTime())) return String(raw);
-        return d.toLocaleDateString('en-CA');
+        return field.type === 'dateonly' ? d.toISOString().slice(0, 10) : d.toLocaleDateString('en-CA');
       }
       case 'select': {
         const v = String(raw);

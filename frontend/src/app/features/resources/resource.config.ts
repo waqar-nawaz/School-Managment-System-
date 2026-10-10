@@ -29,6 +29,8 @@ export interface ColumnConfig {
   label: string;
   type: 'text' | 'date' | 'datetime' | 'number' | 'money' | 'badge' | 'bool' | 'bedSummary';
   badgeMap?: Record<string, string>;
+  /** Show a readable name for an id column that has no form field (e.g. report-card student). */
+  ref?: { api: string; labelKey: string; secondaryKey?: string };
 }
 
 export interface ResourceConfig {
@@ -121,7 +123,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   terms: {
     key: 'terms', label: 'Terms', api: '/terms',
     columns: [nameCol('name', 'Term'), { key: 'startDate', label: 'Starts', type: 'date' }, { key: 'endDate', label: 'Ends', type: 'date' }, boolCol('isCurrent', 'Current')],
-    fields: fields([refField('academicYearId', 'Academic year', '/academic-years', 'name', undefined, true), { key: 'name', label: 'Term name', required: true }, { key: 'startDate', label: 'Start', type: 'dateonly' }, { key: 'endDate', label: 'End', type: 'dateonly' }]),
+    fields: fields([refField('academicYearId', 'Academic year', '/academic-years', 'name', undefined, true), { key: 'name', label: 'Term name', required: true }, { key: 'startDate', label: 'Start', type: 'dateonly' }, { key: 'endDate', label: 'End', type: 'dateonly' }, { key: 'isCurrent', label: 'Current term', type: 'bool' }]),
   },
   classes: {
     key: 'classes', label: 'Classes', api: '/classes',
@@ -140,7 +142,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   enrolments: {
     key: 'enrolments', label: 'Enrolments', api: '/enrolments',
-    columns: [{ key: 'studentId', label: 'Student', type: 'number' }, { key: 'classId', label: 'Class', type: 'number' }, { key: 'sectionId', label: 'Section', type: 'number' }, nameCol('rollNo', 'Roll No'), statusCol()],
+    columns: [nameCol('studentName', 'Student'), nameCol('className', 'Class'), nameCol('sectionName', 'Section'), nameCol('rollNo', 'Roll No'), statusCol()],
     fields: fields([
       refField('studentId', 'Student', '/students', 'firstName', 'admissionNo', true),
       refField('academicYearId', 'Academic year', '/academic-years', 'name', undefined, true),
@@ -228,8 +230,8 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   'report-cards': {
     key: 'report-cards', label: 'Report Cards', api: '/report-cards',
-    columns: [{ key: 'studentId', label: 'Student', type: 'number' }, { key: 'termId', label: 'Term', type: 'number' }, { key: 'percentage', label: '%', type: 'number' }, { key: 'grade', label: 'Grade', type: 'text' }, { key: 'rankInClass', label: 'Rank', type: 'number' }, boolCol('isPublished', 'Published')],
-    fields: fields([refField('enrolmentId', 'Enrolment (student)', '/enrolments', 'studentId', undefined, true), refField('termId', 'Term', '/terms', 'name'), { key: 'teacherRemarks', label: 'Teacher remarks', type: 'textarea' }, { key: 'isPublished', label: 'Publish', type: 'bool' }]),
+    columns: [{ key: 'studentId', label: 'Student', type: 'number', ref: { api: '/students', labelKey: 'firstName', secondaryKey: 'admissionNo' } }, { key: 'termId', label: 'Term', type: 'number', ref: { api: '/terms', labelKey: 'name' } }, { key: 'percentage', label: '%', type: 'number' }, { key: 'grade', label: 'Grade', type: 'text' }, { key: 'rankInClass', label: 'Rank', type: 'number' }, boolCol('isPublished', 'Published')],
+    fields: fields([refField('enrolmentId', 'Enrolment (student)', '/enrolments', 'studentName', 'className', true), refField('termId', 'Term', '/terms', 'name'), { key: 'teacherRemarks', label: 'Teacher remarks', type: 'textarea' }, { key: 'isPublished', label: 'Publish', type: 'bool' }]),
   },
   assignments: {
     key: 'assignments', label: 'Assignments / Homework', api: '/assignments',
@@ -239,9 +241,11 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
       { key: 'description', label: 'Description', type: 'textarea' },
       { key: 'instructions', label: 'Instructions', type: 'textarea' },
       refField('classId', 'Class', '/classes', 'name', undefined, true),
-      refField('subjectId', 'Subject', '/subjects', 'name'),
+      refField('subjectId', 'Subject', '/subjects', 'name', undefined, true),
       { key: 'dueDate', label: 'Due date', type: 'dateonly' },
       { key: 'maxMarks', label: 'Max marks', type: 'number', required: true },
+      refField('createdBy', 'Teacher (leave empty to use yourself)', '/teachers', 'firstName', 'staffNo'),
+      { key: 'isPublished', label: 'Published to students', type: 'bool' },
     ]),
   },
   submissions: {
@@ -266,8 +270,8 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   periods: {
     key: 'periods', label: 'Periods', api: '/periods',
-    columns: [{ key: 'classId', label: 'Class', type: 'number' }, { key: 'sectionId', label: 'Section', type: 'number' }, nameCol('dayOfWeek', 'Day'), nameCol('startTime', 'Start'), nameCol('endTime', 'End'), nameCol('room', 'Room')],
-    fields: fields([refField('classId', 'Class', '/classes', 'name', undefined, true), refField('sectionId', 'Section', '/sections', 'name'), { key: 'dayOfWeek', label: 'Day', type: 'select', options: STATUS_OPTIONS(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']), required: true }, { key: 'startTime', label: 'Start time', required: true }, { key: 'endTime', label: 'End time', required: true }, refField('subjectId', 'Subject', '/subjects', 'name'), { key: 'room', label: 'Room' }]),
+    columns: [{ key: 'classId', label: 'Class', type: 'number' }, { key: 'sectionId', label: 'Section', type: 'number' }, nameCol('dayOfWeek', 'Day'), nameCol('startTime', 'Start'), nameCol('endTime', 'End'), { key: 'subjectId', label: 'Subject', type: 'number', ref: { api: '/subjects', labelKey: 'name' } }, { key: 'teacherId', label: 'Teacher', type: 'number', ref: { api: '/teachers', labelKey: 'firstName', secondaryKey: 'staffNo' } }, nameCol('room', 'Room')],
+    fields: fields([refField('classId', 'Class', '/classes', 'name', undefined, true), refField('sectionId', 'Section', '/sections', 'name'), { key: 'dayOfWeek', label: 'Day', type: 'select', options: STATUS_OPTIONS(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']), required: true }, { key: 'startTime', label: 'Start time', required: true }, { key: 'endTime', label: 'End time', required: true }, refField('subjectId', 'Subject', '/subjects', 'name'), refField('teacherId', 'Teacher', '/teachers', 'firstName', 'staffNo'), { key: 'room', label: 'Room' }]),
   },
   'fee-types': {
     key: 'fee-types', label: 'Fee Types', api: '/fee-types',
@@ -435,7 +439,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   'lesson-plans': {
     key: 'lesson-plans', label: 'Lesson Plans', api: '/lesson-plans',
     columns: [nameCol('title'), { key: 'classId', label: 'Class', type: 'number' }, { key: 'subjectId', label: 'Subject', type: 'number' }, { key: 'plannedDate', label: 'Planned', type: 'date' }, boolCol('isCompleted', 'Done')],
-    fields: fields([{ key: 'title', label: 'Title', required: true }, refField('subjectId', 'Subject', '/subjects', 'name'), refField('classId', 'Class', '/classes', 'name'), { key: 'objectives', label: 'Objectives', type: 'textarea' }, { key: 'materials', label: 'Materials', type: 'textarea' }, { key: 'plannedDate', label: 'Planned date', type: 'dateonly' }, { key: 'isCompleted', label: 'Completed', type: 'bool' }]),
+    fields: fields([{ key: 'title', label: 'Title', required: true }, refField('classId', 'Class', '/classes', 'name', undefined, true), refField('subjectId', 'Subject', '/subjects', 'name'), refField('teacherId', 'Teacher (empty = yourself)', '/teachers', 'firstName', 'staffNo'), { key: 'objectives', label: 'Objectives', type: 'textarea' }, { key: 'materials', label: 'Materials', type: 'textarea' }, { key: 'plannedDate', label: 'Planned date', type: 'dateonly' }, { key: 'isCompleted', label: 'Completed', type: 'bool' }]),
   },
   'health-records': {
     key: 'health-records', label: 'Health Records', api: '/health-records',

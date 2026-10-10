@@ -27,6 +27,7 @@ function buildRouter(def: ResourceDefinition): Router {
     sensitiveColumns: def.sensitiveColumns,
     includes: def.includes,
     decorate: def.decorate,
+    toSearchWhere: def.toSearchWhere,
   } as CrudOptions);
 
   router.use(authenticate);

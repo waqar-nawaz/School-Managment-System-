@@ -74,7 +74,7 @@ interface SectionOption {
             <option [ngValue]="s.id">{{ s.name }}</option>
           }
         </select>
-        <input type="date" class="form-control" style="max-width:170px" [(ngModel)]="date" />
+        <input type="date" class="form-control" style="max-width:170px" [(ngModel)]="date" [max]="today" />
         <button class="btn btn-primary" (click)="loadRegister()" [disabled]="!classId">
           <app-icon name="search" [size]="15" /> Load register
         </button>
@@ -166,7 +166,8 @@ export class AttendanceComponent implements OnInit {
   classId: number | null = null;
   sectionId: number | null = null;
   // Local date — avoids UTC-vs-local timezone bug (e.g. UTC+5 saves yesterday between 00:00–05:00 PKT).
-  date = new Date().toLocaleDateString('en-CA');
+  today = new Date().toLocaleDateString('en-CA');
+  date = this.today;
   loadedDate: string | null = null;
   entries: RegisterEntry[] = [];
   myAttendance: Array<{ id?: number; date: string; status: string; lateMinutes?: number; reason?: string }> = [];
@@ -257,7 +258,11 @@ export class AttendanceComponent implements OnInit {
   }
 
   markAll(status: string): void {
-    for (const e of this.entries) e.status = status;
+    for (const e of this.entries) {
+      e.status = status;
+      if (status !== 'late') e.lateMinutes = 0;
+      if (status === 'present') e.reason = '';
+    }
   }
 
   save(): void {
@@ -265,6 +270,10 @@ export class AttendanceComponent implements OnInit {
     // writing date-X entries under date Y.
     if (this.dateChanged) {
       this.toasts.error('Date changed — click "Load register" to refresh first');
+      return;
+    }
+    if (this.date > this.today) {
+      this.toasts.error('Attendance cannot be taken for a future date');
       return;
     }
     this.saving = true;
