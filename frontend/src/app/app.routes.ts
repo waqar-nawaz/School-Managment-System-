@@ -121,6 +121,12 @@ export const routes: Routes = [
         loadComponent: () => import('./features/my-payslips/my-payslips.component').then((m) => m.MyPayslipsComponent),
       },
       {
+        path: 'expenses',
+        data: { permission: 'expenses:read' },
+        canActivate: [PermissionGuard],
+        loadComponent: () => import('./features/expenses/expenses.component').then((m) => m.ExpensesComponent),
+      },
+      {
         path: 'payments',
         data: { permission: 'payments:read' },
         canActivate: [PermissionGuard],
