@@ -1,5 +1,5 @@
 import { Component, HostListener, Input, OnDestroy, OnInit } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { switchMap, tap, takeUntil, debounceTime } from 'rxjs/operators';
 import { currencyCode } from '../../core/utils/currency';
@@ -383,7 +383,14 @@ const LOOKUP_PERMISSION: Record<string, string> = {
                                   {{ opt.label }}
                                 </button>
                               } @empty {
-                                <div class="ref-empty">{{ refEmptyText(field) }}</div>
+                                <div class="ref-empty">
+                                  {{ refEmptyText(field) }}
+                                  @if (canAssignSubjects(field)) {
+                                    <button type="button" class="btn btn-sm btn-primary" style="margin-top:8px" (mousedown)="assignSubjectsToClass()">
+                                      Assign subjects to this class
+                                    </button>
+                                  }
+                                </div>
                               }
                             </div>
                           }
@@ -742,6 +749,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.refOpenKey = null;
     this.calculatePermissions();
     this.load();
+    this.openAssignFromQuery();
   }
 
   resourceKey = '';
@@ -788,6 +796,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
   constructor(
     public readonly api: ApiService,
     private readonly route: ActivatedRoute,
+    private readonly router: Router,
     private readonly toasts: ToastService,
     private readonly perms: PermissionService
   ) {}
@@ -1468,6 +1477,32 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.formValues[field.key] = null;
     this.refOpenKey = field.key;
     this.loadRefOptions(field, q);
+  }
+
+  /** True when the subject list is empty because the chosen class has no subjects yet and the user may add some. */
+  canAssignSubjects(field: FieldConfig): boolean {
+    if (!CLASS_BOUND_SUBJECT_FORMS.includes(this.resourceKey) || field.key !== 'subjectId') return false;
+    const classId = this.formValues['classId'];
+    return classId !== null && classId !== undefined && classId !== '' && !this.refSearch[field.key] && this.perms.hasPermission('subjects:create');
+  }
+
+  /** Jump to Class Subjects with the Add form already open for the class chosen here. */
+  assignSubjectsToClass(): void {
+    const classId = this.formValues['classId'];
+    if (classId === null || classId === undefined || classId === '') return;
+    void this.router.navigate(['/class-subjects'], { queryParams: { assignClass: classId } });
+  }
+
+  /** Arrived from "Assign subjects to this class": open the Add form with that class selected. */
+  private openAssignFromQuery(): void {
+    if (this.resourceKey !== 'class-subjects' || !this.canCreate) return;
+    const classId = Number(this.route.snapshot.queryParamMap.get('assignClass'));
+    if (!Number.isInteger(classId) || classId <= 0) return;
+    this.openCreate();
+    this.formValues['classId'] = classId;
+    const field = this.config?.fields.find((f) => f.key === 'classId');
+    if (field) this.loadRefOptions(field, '');
+    void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
   }
 
   /** Why a dropdown is empty — a class with no assigned subjects needs a pointer, not just "No matches". */
