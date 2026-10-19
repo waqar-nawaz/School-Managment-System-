@@ -18,6 +18,7 @@ import expensesRoutes from "../modules/expenses/expenses.routes";
 import bookIssuesRoutes from "../modules/book-issues/book-issues.routes";
 import mediaRoutes from "../modules/media/media.routes";
 import certificatesRoutes from "../modules/certificates/certificates.routes";
+import lookupsRoutes from "../modules/lookups/lookups.routes";
 import resourcesRoutes from "../modules/resources";
 
 const router = Router();
@@ -41,6 +42,8 @@ router.use("/expenses", expensesRoutes);
 router.use("/book-issues", bookIssuesRoutes);
 router.use("/media", mediaRoutes);
 router.use("/certificates", certificatesRoutes);
+
+router.use("/lookups", lookupsRoutes);
 
 // Config-driven CRUD for every remaining resource.
 router.use("/", resourcesRoutes);

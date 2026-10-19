@@ -53,10 +53,12 @@ const blankForm = () => ({
           <input class="form-control" placeholder="Search name, admission no, guardian, phone…" [(ngModel)]="search" (ngModelChange)="searchInput$.next()" />
           @if (search) { <button type="button" class="search-clear" (click)="search = ''; reload()" aria-label="Clear search"><app-icon name="x" [size]="14" /></button> }
         </div>
-        <select class="form-control students-filter" [(ngModel)]="classFilter" (ngModelChange)="sectionFilter = ''; reload()">
-          <option value="">All classes</option>
-          @for (c of classes; track c.id) { <option [value]="c.id">{{ c.name }}</option> }
-        </select>
+        @if (classes.length) {
+          <select class="form-control students-filter" [(ngModel)]="classFilter" (ngModelChange)="sectionFilter = ''; reload()">
+            <option value="">All classes</option>
+            @for (c of classes; track c.id) { <option [value]="c.id">{{ c.name }}</option> }
+          </select>
+        }
         @if (classFilter) {
           <select class="form-control students-filter students-filter-sm" [(ngModel)]="sectionFilter" (ngModelChange)="reload()">
             <option value="">All sections</option>
@@ -427,8 +429,14 @@ export class StudentsComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.sub.push(this.searchInput$.pipe(debounceTime(300)).subscribe(() => this.reload()));
-    this.api.get<any[]>('/classes', { limit: 200 }).subscribe({ next: (r) => (this.classes = r?.data ?? []), error: () => {} });
-    this.api.get<any[]>('/sections', { limit: 500 }).subscribe({ next: (r) => (this.sections = r?.data ?? []), error: () => {} });
+    // Parents and students may open this page but cannot list classes/sections; skip the filters for them
+    // instead of firing requests that return 403 (and show an error toast).
+    if (this.perms.hasPermission('classes:read')) {
+      this.api.get<any[]>('/classes', { limit: 200 }).subscribe({ next: (r) => (this.classes = r?.data ?? []), error: () => {} });
+    }
+    if (this.perms.hasPermission('sections:read')) {
+      this.api.get<any[]>('/sections', { limit: 500 }).subscribe({ next: (r) => (this.sections = r?.data ?? []), error: () => {} });
+    }
     this.load();
     // Deep link from Admissions -> "View student".
     const open = Number(this.route.snapshot.queryParamMap.get('open'));

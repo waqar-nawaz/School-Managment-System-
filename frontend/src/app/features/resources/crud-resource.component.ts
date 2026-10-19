@@ -44,6 +44,19 @@ const NO_EXPORT = new Set([
   'payments', 'admissions', 'invoices',
 ]);
 
+/** Forms where the subject must be one assigned to the selected class (see Class Subjects). */
+const CLASS_BOUND_SUBJECT_FORMS = ['assignments', 'exam-schedules', 'periods', 'syllabus', 'lesson-plans'];
+
+/** Permission that lets a user list each table directly; without it the name-only /lookups endpoint is used. */
+const LOOKUP_PERMISSION: Record<string, string> = {
+  '/classes': 'classes:read',
+  '/sections': 'sections:read',
+  '/subjects': 'subjects:read',
+  '/teachers': 'teachers:read',
+  '/academic-years': 'academic:read',
+  '/terms': 'academic:read',
+};
+
 @Component({
   selector: 'app-crud-resource',
   standalone: true,
@@ -370,7 +383,7 @@ const NO_EXPORT = new Set([
                                   {{ opt.label }}
                                 </button>
                               } @empty {
-                                <div class="ref-empty">No matches</div>
+                                <div class="ref-empty">{{ refEmptyText(field) }}</div>
                               }
                             </div>
                           }
@@ -510,7 +523,9 @@ const NO_EXPORT = new Set([
     @if (confirm && config) {
       <app-confirm-dialog
         title="Delete record"
-        [message]="'Delete ' + config.label + ' #' + (confirm ? confirm.id : '') + '? This cannot be undone.'"
+        [message]="'Delete ' + singularLabel + ' #' + (confirm ? confirm.id : '') + '? This cannot be undone.'"
+        confirmLabel="Delete"
+        [danger]="true"
         (confirm)="doDelete()"
         (close)="confirm = null" />
     }
@@ -1157,7 +1172,15 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
         .filter((id) => !(id in known))
         .slice(0, 200);
       if (!ids.length) continue;
-      const { api, labelKey, secondaryKey } = refCfg;
+      let { api, labelKey, secondaryKey } = refCfg;
+      // Students, parents and teachers can see rows that point at a class / subject / teacher without being
+      // allowed to list those tables. Use the name-only lookup instead of a request that would 403 (and toast).
+      const lookupPerm = LOOKUP_PERMISSION[api];
+      if (lookupPerm && !this.perms.hasPermission(lookupPerm)) {
+        api = `/lookups${api}`;
+        labelKey = 'name';
+        secondaryKey = undefined;
+      }
       this.api.get<Record<string, unknown>[]>(api, { ids: ids.join(','), limit: 200 }).subscribe({
         next: (res) => {
           if (version !== this.resourceKey) return;
@@ -1187,6 +1210,11 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     if (this.resourceKey === 'students') this.formValues['isActive'] = true;
     // Homework is visible to students unless the teacher unticks this.
     if (this.resourceKey === 'assignments') this.formValues['isPublished'] = true;
+    // Records are active by default (the backend default is true). An untouched checkbox used to be
+    // sent as false, which silently created inactive classes/subjects/sections that no other form could use.
+    for (const f of this.config?.fields ?? []) {
+      if (f.type === 'bool' && f.key === 'isActive') this.formValues['isActive'] = true;
+    }
     this.fieldErrors = {};
     this.refOptions = {};
     this.refSearch = {};
@@ -1340,15 +1368,40 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
       if (!this.editingId) params['filter[status]'] = 'available';
     }
 
+    // Inactive classes/sections/subjects are rejected by the API ("Class not found, inactive..."), so a new
+    // record must not offer them. While editing, keep them so the already-saved value still shows its name.
+    if (!this.editingId && ['/classes', '/sections', '/subjects'].includes(api)) {
+      params['filter[isActive]'] = true;
+    }
+
     // Apply refFilter if declared (e.g. only show hostel_warden employees in the warden dropdown).
     if (field.refFilter) {
       params[`filter[${field.refFilter.field}]`] = field.refFilter.value;
     }
 
-    this.api.get<Record<string, unknown>[]>(api, params).subscribe({
+    // The API only accepts a subject that is assigned to the chosen class (Class Subjects). Offer exactly those,
+    // instead of every subject followed by "Subject is not assigned to the selected class" on save.
+    let fetchApi = api;
+    let subjectsOfClass = false;
+    if (CLASS_BOUND_SUBJECT_FORMS.includes(this.resourceKey) && field.key === 'subjectId') {
+      const classId = this.formValues['classId'];
+      if (classId !== null && classId !== undefined && classId !== '') {
+        fetchApi = '/class-subjects';
+        params['filter[classId]'] = classId;
+        subjectsOfClass = true;
+      }
+    }
+
+    this.api.get<Record<string, unknown>[]>(fetchApi, params).subscribe({
       next: (res) => {
         if (loadVersion !== this.refLoadVersion) return;
         let rows = (res?.data as Record<string, unknown>[]) ?? [];
+        if (subjectsOfClass) {
+          const needle = q.trim().toLowerCase();
+          rows = rows
+            .map((r) => ({ id: r['subjectId'], name: r['subjectName'] }))
+            .filter((r) => !needle || String(r.name ?? '').toLowerCase().includes(needle));
+        }
 
         // Defense in depth: the API filter is authoritative for the query, but
         // the allocation UI must never show a room/bed from a stale response.
@@ -1417,6 +1470,17 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     this.loadRefOptions(field, q);
   }
 
+  /** Why a dropdown is empty — a class with no assigned subjects needs a pointer, not just "No matches". */
+  refEmptyText(field: FieldConfig): string {
+    if (CLASS_BOUND_SUBJECT_FORMS.includes(this.resourceKey) && field.key === 'subjectId') {
+      const classId = this.formValues['classId'];
+      if (classId !== null && classId !== undefined && classId !== '' && !this.refSearch[field.key]) {
+        return 'No subjects are assigned to this class yet. Add them under Class Subjects.';
+      }
+    }
+    return 'No matches';
+  }
+
   selectRef(key: string, opt: { value: unknown; label: string }): void {
     this.formValues[key] = opt.value;
     this.refSelectedLabel[key] = opt.label;
@@ -1430,6 +1494,14 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
       this.refSelectedLabel['currentSectionId'] = '';
       this.refSearch['currentSectionId'] = '';
       this.refOptions['currentSectionId'] = [];
+    }
+
+    // A subject picked for the previous class may not belong to the new one.
+    if (CLASS_BOUND_SUBJECT_FORMS.includes(this.resourceKey) && key === 'classId') {
+      this.formValues['subjectId'] = null;
+      this.refSelectedLabel['subjectId'] = '';
+      this.refSearch['subjectId'] = '';
+      this.refOptions['subjectId'] = undefined;
     }
 
     if (this.resourceKey === 'hostel-allocations' && key === 'hostelId') {
@@ -1537,6 +1609,12 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     if (f.type === 'bool') return false;
     if (f.type === 'number') return undefined;
     return undefined;
+  }
+
+  /** "Classes" -> "Class" for dialog wording. */
+  get singularLabel(): string {
+    const l = this.config?.label ?? 'record';
+    return l.endsWith('ses') ? l.slice(0, -2) : l.endsWith('ies') ? l.slice(0, -3) + 'y' : l.endsWith('s') ? l.slice(0, -1) : l;
   }
 
   askDelete(row: Row): void {

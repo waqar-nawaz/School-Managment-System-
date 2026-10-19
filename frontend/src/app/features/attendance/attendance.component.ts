@@ -33,13 +33,19 @@ interface SectionOption {
     <div class="page-header">
       <div>
         <h1 class="page-title">Attendance</h1>
-        <p class="page-subtitle">{{ isStudent ? "View your own attendance" : "Select a class &amp; date, load the register, mark and save" }}</p>
+        <p class="page-subtitle">{{ isStudent ? "View your own attendance" : isParent ? "View your children's attendance" : "Select a class &amp; date, load the register, mark and save" }}</p>
       </div>
     </div>
 
-    @if (isStudent) {
+    @if (isStudent || isParent) {
       <div class="card">
         <div class="card-toolbar">
+          @if (isParent) {
+            <select class="form-control" style="max-width:240px" [(ngModel)]="childId" (ngModelChange)="loadMyAttendance()">
+              @if (!children.length) { <option [ngValue]="null">No linked children</option> }
+              @for (c of children; track c.id) { <option [ngValue]="c.id">{{ c.name }}</option> }
+            </select>
+          }
           <input type="month" class="form-control" style="max-width:170px" [(ngModel)]="month" (ngModelChange)="loadMyAttendance()" />
         </div>
         @if (myAttendance.length) {
@@ -59,7 +65,7 @@ interface SectionOption {
       </div>
     }
 
-    @if (!isStudent) {
+    @if (!isStudent && !isParent) {
     <div class="card">
       <div class="card-toolbar">
         <select class="form-control" style="max-width:200px" [(ngModel)]="classId" (ngModelChange)="onClassChange()">
@@ -162,6 +168,8 @@ interface SectionOption {
 export class AttendanceComponent implements OnInit {
   readonly STATUSES = ['present', 'absent', 'late', 'excused', 'holiday'];
   classes: ClassOption[] = [];
+  children: Array<{ id: number; name: string }> = [];
+  childId: number | null = null;
   sections: SectionOption[] = [];
   classId: number | null = null;
   sectionId: number | null = null;
@@ -196,9 +204,28 @@ export class AttendanceComponent implements OnInit {
       this.perms.hasPermission('attendance:create') || this.perms.hasPermission('attendance:update');
   }
 
+  get isParent(): boolean {
+    return this.perms.isRole("parent");
+  }
+
   ngOnInit(): void {
     if (this.isStudent) {
       this.loadMyAttendance();
+      return;
+    }
+    if (this.isParent) {
+      // A parent only has the children linked to their account (the students list is scoped server-side).
+      this.api.get<any[]>('/students', { limit: 50 }).subscribe({
+        next: (res) => {
+          this.children = ((res?.data as any[]) ?? []).map((s) => ({
+            id: Number(s.id),
+            name: [s.firstName, s.lastName].filter(Boolean).join(' ') || `Student #${s.id}`,
+          }));
+          this.childId = this.children[0]?.id ?? null;
+          this.loadMyAttendance();
+        },
+        error: () => {},
+      });
       return;
     }
     this.api.get<ClassOption[]>('/classes', { page: 1, limit: 100 }).subscribe({
@@ -208,8 +235,10 @@ export class AttendanceComponent implements OnInit {
   }
 
   loadMyAttendance(): void {
-    if (!this.isStudent) return;
-    this.api.get<Array<{ id?: number; date: string; status: string; lateMinutes?: number; reason?: string }>>("/attendance/me", { month: this.month }).subscribe({
+    if (!this.isStudent && !this.isParent) return;
+    if (this.isParent && !this.childId) { this.myAttendance = []; return; }
+    const url = this.isParent ? `/attendance/student/${this.childId}` : "/attendance/me";
+    this.api.get<Array<{ id?: number; date: string; status: string; lateMinutes?: number; reason?: string }>>(url, { month: this.month }).subscribe({
       next: (res) => (this.myAttendance = (res?.data as any[]) ?? []),
       error: () => (this.myAttendance = []),
     });
