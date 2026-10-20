@@ -1,4 +1,4 @@
-import { Op, Transaction } from "sequelize";
+import { Op, QueryTypes, Transaction } from "sequelize";
 import { sequelize } from "../../database/sequelize";
 import { logger } from "../../config/logger";
 import { User, Staff, Teacher, Settings, Hostel } from "../../models";
@@ -20,13 +20,16 @@ export const roleLabel = (role: string): string => ROLE_LABEL[role] ?? role.repl
  */
 export async function nextStaffNo(branchId: number | null, t: Transaction): Promise<string> {
   await sequelize.query("SELECT pg_advisory_xact_lock(727102)", { transaction: t });
-  const where: any = { staffNo: { [Op.like]: "EMP-%" }, ...(branchId != null ? { branchId } : {}) };
-  const [lastStaff, lastTeacher] = await Promise.all([
-    Staff.findOne({ where, order: [["staffNo", "DESC"]], attributes: ["staffNo"], transaction: t }),
-    Teacher.findOne({ where, order: [["staffNo", "DESC"]], attributes: ["staffNo"], transaction: t }),
-  ]);
-  const n = (v?: string | null) => parseInt(String(v ?? "").slice(4), 10) || 0;
-  const next = Math.max(n(lastStaff?.staffNo), n(lastTeacher?.staffNo)) + 1;
+  // Highest NUMERIC part among EMP-<digits> numbers. Sorting the text instead breaks as soon as someone edits
+  // a number to something like "EMP-UI01" (it sorts first, reads as 0, and the next number collides), or once
+  // numbers reach five digits ("EMP-10000" sorts before "EMP-9999").
+  const [row] = (await sequelize.query(
+    `SELECT MAX(CAST(SUBSTRING(s."staffNo" FROM 5) AS BIGINT)) AS "last"
+       FROM (SELECT "staffNo", "branchId" FROM staff UNION ALL SELECT "staffNo", "branchId" FROM teachers) s
+      WHERE s."staffNo" ~ '^EMP-[0-9]{1,15}$'${branchId != null ? ' AND s."branchId" = :branchId' : ""}`,
+    { replacements: { branchId }, type: QueryTypes.SELECT, transaction: t }
+  )) as Array<{ last: string | null }>;
+  const next = Number(row?.last ?? 0) + 1;
   return `EMP-${String(next).padStart(4, "0")}`;
 }
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivate, Router, UrlTree } from '@angular/router';
-import { MENU } from '../../config/menu';
+import { MENU, canSeeMenuItem } from '../../config/menu';
 import { PermissionService } from '../services/permission.service';
 
 /**
@@ -15,7 +15,7 @@ export class ResourceGuard implements CanActivate {
     const key = route.paramMap.get('resource') ?? '';
     const entry = MENU.find((m) => m.path === `/${key}`);
     if (!entry) return this.router.createUrlTree(['/not-found']);
-    if (entry.permission && !this.perms.hasPermission(entry.permission)) {
+    if (!canSeeMenuItem(entry, (p) => this.perms.hasPermission(p))) {
       return this.router.createUrlTree(['/forbidden']);
     }
     return true;

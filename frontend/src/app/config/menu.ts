@@ -4,7 +4,14 @@ export interface MenuItem {
   icon: string;
   group?: string;
   permission?: string;
+  /** Visible when the user holds ANY of these (used instead of `permission`). */
+  anyOf?: string[];
   roles?: string[];
+}
+
+export function canSeeMenuItem(item: MenuItem, has: (permission: string) => boolean): boolean {
+  if (item.anyOf?.length) return item.anyOf.some(has);
+  return !item.permission || has(item.permission);
 }
 
 export const MENU: MenuItem[] = [
@@ -32,7 +39,7 @@ export const MENU: MenuItem[] = [
   { label: 'Periods', path: '/periods', icon: 'clock', group: 'Academics', permission: 'timetable:read' },
   { label: 'Syllabus', path: '/syllabus', icon: 'list', group: 'Academics', permission: 'syllabus:read' },
   { label: 'Lesson Plans', path: '/lesson-plans', icon: 'folder', group: 'Academics', permission: 'lesson-plans:read' },
-  { label: 'Leave Requests', path: '/leaves', icon: 'clock', group: 'People & HR', permission: 'leaves:read' },
+  { label: 'Leave Requests', path: '/leaves', icon: 'clock', group: 'People & HR', anyOf: ['leaves:read', 'leaves:approve'] },
 
   { label: 'Invoices', path: '/invoices', icon: 'file-text', group: 'Finance', permission: 'invoices:read' },
   { label: 'Payments', path: '/payments', icon: 'credit-card', group: 'Finance', permission: 'payments:read' },

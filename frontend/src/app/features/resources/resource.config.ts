@@ -295,7 +295,7 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   leaves: {
     key: 'leaves', label: 'Leave Requests', api: '/leaves',
-    subtitle: 'Request and approve leave. Teachers and staff can apply; admins approve.',
+    subtitle: 'Every employee can request leave; approvers review requests (never their own). Approved leave can be cancelled before it starts.',
     columns: [
       nameCol('userName', 'Employee'),
       { key: 'leaveType', label: 'Type', type: 'badge', badgeMap: { sick: 'danger', casual: 'warning', annual: 'info', unpaid: '', maternity: 'success' } },

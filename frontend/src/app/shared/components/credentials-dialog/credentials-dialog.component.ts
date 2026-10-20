@@ -18,7 +18,7 @@ export interface LoginCredential { role: string; name: string; username: string;
           <button type="button" class="modal-close" (click)="close.emit()" aria-label="Close"><app-icon name="x" [size]="16" /></button>
         </div>
         <div class="cred-warn">
-          <strong>Save these now.</strong> Passwords are shown only this once. Give them to the family and ask them to change the password after the first login.
+          <strong>Save these now.</strong> Passwords are shown only this once. Give them to {{ hasFamily ? 'the family' : 'the employee' }} and ask them to change the password after the first login.
         </div>
         <div class="table-responsive">
           <table class="table">
@@ -26,7 +26,7 @@ export interface LoginCredential { role: string; name: string; username: string;
             <tbody>
               @for (c of credentials; track c.username) {
                 <tr>
-                  <td><span class="badge badge-{{ c.role === 'student' ? 'info' : 'success' }}">{{ c.role === 'parent' ? 'Parent' : 'Student' }}</span></td>
+                  <td><span class="badge badge-{{ c.role === 'student' ? 'info' : c.role === 'parent' ? 'success' : 'warning' }}">{{ roleLabel(c) }}</span></td>
                   <td>{{ c.name }}</td>
                   <td><code>{{ c.username }}</code></td>
                   <td><code>{{ c.password }}</code></td>
@@ -56,8 +56,17 @@ export class CredentialsDialogComponent {
 
   constructor(private readonly toasts: ToastService) {}
 
+  /** Students and parents are labelled as such; every other login is an employee. */
+  roleLabel(c: LoginCredential): string {
+    return c.role === 'parent' ? 'Parent' : c.role === 'student' ? 'Student' : 'Employee';
+  }
+
+  get hasFamily(): boolean {
+    return this.credentials.some((c) => c.role === 'parent' || c.role === 'student');
+  }
+
   private line(c: LoginCredential): string {
-    return `${c.role === 'parent' ? 'Parent' : 'Student'} — ${c.name}\nUsername: ${c.username}\nPassword: ${c.password}`;
+    return `${this.roleLabel(c)} — ${c.name}\nUsername: ${c.username}\nPassword: ${c.password}`;
   }
 
   private async toClipboard(text: string, ok: string): Promise<void> {
@@ -77,7 +86,7 @@ export class CredentialsDialogComponent {
     if (!w) { this.toasts.error('Allow pop-ups to print.'); return; }
     const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as Record<string, string>)[ch]);
     w.document.write(`<html><head><title>Login details</title><style>body{font-family:sans-serif;padding:24px}.card{border:1px solid #999;border-radius:8px;padding:12px 16px;margin:0 0 12px;page-break-inside:avoid}code{font-size:1.1em}</style></head><body><h2>${esc(this.title)}</h2>${
-      this.credentials.map((c) => `<div class="card"><strong>${c.role === 'parent' ? 'Parent' : 'Student'}: ${esc(c.name)}</strong><br>Username: <code>${esc(c.username)}</code><br>Password: <code>${esc(c.password)}</code></div>`).join('')
+      this.credentials.map((c) => `<div class="card"><strong>${this.roleLabel(c)}: ${esc(c.name)}</strong><br>Username: <code>${esc(c.username)}</code><br>Password: <code>${esc(c.password)}</code></div>`).join('')
     }<p>Please change your password after your first login.</p></body></html>`);
     w.document.close();
     w.focus();

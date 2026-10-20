@@ -6,6 +6,7 @@ import { currencyCode } from '../../core/utils/currency';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { PermissionService } from '../../core/services/permission.service';
+import { AuthService } from '../../core/services/auth.service';
 import { FieldConfig, resolveResource, ResourceConfig } from './resource.config';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -84,7 +85,7 @@ const LOOKUP_PERMISSION: Record<string, string> = {
           @if (canExport && rows.length) {
             <button class="btn btn-ghost" (click)="exportCsv()"><app-icon name="download" [size]="15" /> Export CSV</button>
           }
-          @if (config.canCreate !== false && canCreate && !(resourceKey === 'leaves' && canApproveLeaves)) {
+          @if (config.canCreate !== false && canCreate) {
             <button class="btn btn-primary" (click)="openCreate()">
               <app-icon name="plus" [size]="15" /> {{ config.createLabel ?? 'Add new' }}
             </button>
@@ -264,14 +265,15 @@ const LOOKUP_PERMISSION: Record<string, string> = {
                                 }
                               } @else if (resourceKey === 'leaves') {
                                 <button type="button" class="row-menu-item" (click)="openView(row); openMenuId = null"><app-icon name="eye" [size]="15" /> View details</button>
-                                @if (row['status'] === 'pending') {
-                                  @if (canApproveLeaves) {
-                                    <button type="button" class="row-menu-item" (click)="leaveAction(row, 'approved'); openMenuId = null"><app-icon name="check" [size]="15" /> Approve</button>
-                                    <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'rejected'); openMenuId = null"><app-icon name="x" [size]="15" /> Reject</button>
-                                  } @else {
-                                    <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit request</button>
-                                    <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'cancelled'); openMenuId = null"><app-icon name="x" [size]="15" /> Cancel request</button>
-                                  }
+                                @if (canDecideLeave(row)) {
+                                  <button type="button" class="row-menu-item" (click)="leaveAction(row, 'approved'); openMenuId = null"><app-icon name="check" [size]="15" /> Approve</button>
+                                  <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'rejected'); openMenuId = null"><app-icon name="x" [size]="15" /> Reject</button>
+                                }
+                                @if (!canApproveLeaves && row['status'] === 'pending') {
+                                  <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit request</button>
+                                }
+                                @if (canCancelLeave(row)) {
+                                  <button type="button" class="row-menu-item danger" (click)="leaveAction(row, 'cancelled'); openMenuId = null"><app-icon name="x" [size]="15" /> Cancel leave</button>
                                 }
                               } @else {
                                 @if (rowEditable) { <button type="button" class="row-menu-item" (click)="openEdit(row); openMenuId = null"><app-icon name="edit" [size]="15" /> Edit</button> }
@@ -508,19 +510,23 @@ const LOOKUP_PERMISSION: Record<string, string> = {
             <button type="button" class="btn btn-ghost" (click)="closeForm()">
               <app-icon name="x" [size]="14" /> Close
             </button>
-            @if (formValues['status'] === 'pending') {
-              @if (canApproveLeaves) {
-                <button type="button" class="btn btn-danger" (click)="closeForm(); leaveAction(formValues, 'rejected')">
-                  <app-icon name="x" [size]="14" /> Reject
-                </button>
-                <button type="button" class="btn btn-primary" (click)="closeForm(); leaveAction(formValues, 'approved')">
-                  <app-icon name="check" [size]="14" /> Approve
-                </button>
-              } @else {
-                <button type="button" class="btn btn-primary" (click)="closeForm(); openEdit(formValues)">
-                  <app-icon name="edit" [size]="14" /> Edit request
-                </button>
-              }
+            @if (canDecideLeave(formValues)) {
+              <button type="button" class="btn btn-danger" (click)="closeForm(); leaveAction(formValues, 'rejected')">
+                <app-icon name="x" [size]="14" /> Reject
+              </button>
+              <button type="button" class="btn btn-primary" (click)="closeForm(); leaveAction(formValues, 'approved')">
+                <app-icon name="check" [size]="14" /> Approve
+              </button>
+            }
+            @if (!canApproveLeaves && formValues['status'] === 'pending') {
+              <button type="button" class="btn btn-primary" (click)="closeForm(); openEdit(formValues)">
+                <app-icon name="edit" [size]="14" /> Edit request
+              </button>
+            }
+            @if (canCancelLeave(formValues)) {
+              <button type="button" class="btn btn-ghost" (click)="closeForm(); leaveAction(formValues, 'cancelled')">
+                <app-icon name="x" [size]="14" /> Cancel leave
+              </button>
             }
           </div>
         </div>
@@ -798,7 +804,8 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     private readonly route: ActivatedRoute,
     private readonly router: Router,
     private readonly toasts: ToastService,
-    private readonly perms: PermissionService
+    private readonly perms: PermissionService,
+    private readonly auth: AuthService
   ) {}
 
   ngOnInit(): void {
@@ -1096,7 +1103,7 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     }
 
     const isApprover = this.canApproveLeaves;
-    const isRequester = this.perms.isRole("student", "teacher", "parent", "staff", "librarian", "hostel_warden", "transport_manager", "receptionist", "accountant");
+    const isRequester = !isApprover;
 
     if (isApprover) {
       // Approvers editing a leave: show adminComment + status, hide status on create
@@ -1117,6 +1124,28 @@ export class CrudResourceComponent implements OnInit, OnDestroy {
     }
 
     return fields;
+  }
+
+  /** The leave belongs to the signed-in user. */
+  isOwnLeave(row: Row): boolean {
+    return Number(row['userId']) === Number(this.auth.user?.id);
+  }
+
+  /** Approve / reject: only pending leaves, and never your own (the top administrator excepted). */
+  canDecideLeave(row: Row): boolean {
+    return this.canApproveLeaves && row['status'] === 'pending' && (!this.isOwnLeave(row) || this.perms.isRole('super_admin'));
+  }
+
+  /** Approvers can cancel pending/approved leaves; an employee can cancel their own until it starts. */
+  canCancelLeave(row: Row): boolean {
+    const status = row['status'];
+    if (this.canApproveLeaves) return status === 'pending' || status === 'approved';
+    if (!this.isOwnLeave(row)) return false;
+    if (status === 'pending') return true;
+    if (status !== 'approved') return false;
+    const start = new Date(String(row['startDate']));
+    const now = new Date();
+    return Number.isFinite(start.getTime()) && start.getTime() > Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   }
 
   get canApproveLeaves(): boolean {

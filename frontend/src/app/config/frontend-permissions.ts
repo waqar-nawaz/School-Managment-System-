@@ -75,7 +75,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'payments:create', 'receipts:read', 'receipts:create', 'refunds:create', 'refunds:approve',
     'expenses:read', 'expenses:create', 'expenses:update', 'expenses:approve', 'expenses:pay',
     'payroll:read', 'payroll:create', 'payroll:update', 'payslips:read', 'payslips:create',
-    'reports:read', 'reports:export', 'leaves:approve', 'notifications:read',
+    'reports:read', 'reports:export', 'leaves:read', 'leaves:create', 'leaves:update', 'leaves:approve', 'notifications:read',
     'notifications:update', 'payslips:self',
   ],
 
@@ -83,7 +83,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'dashboard:read', 'students:read', 'library:read', 'library:create', 'library:update',
     'library:delete', 'book-issues:read', 'book-issues:create', 'book-issues:update',
     'book-fines:read', 'book-fines:create', 'book-fines:update', 'notices:read', 'events:read',
-    'notifications:read', 'notifications:update', 'payslips:self',
+    'notifications:read', 'notifications:update', 'leaves:read', 'leaves:create', 'leaves:update', 'payslips:self',
   ],
 
   transport_manager: [
@@ -92,7 +92,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'vehicles:read', 'vehicles:create', 'vehicles:update', 'driver-assignments:read',
     'driver-assignments:create', 'student-transport:read', 'student-transport:create',
     'student-transport:update', 'notices:read', 'notifications:read', 'notifications:update',
-    'payslips:self',
+    'leaves:read', 'leaves:create', 'leaves:update', 'payslips:self',
   ],
 
   hostel_warden: [
@@ -100,7 +100,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'hostels:update', 'rooms:read', 'rooms:create', 'rooms:update', 'beds:read', 'beds:create',
     'beds:update', 'hostel-allocations:read', 'hostel-allocations:create',
     'hostel-allocations:update', 'notices:read', 'notifications:read', 'notifications:update',
-    'payslips:self',
+    'leaves:read', 'leaves:create', 'leaves:update', 'payslips:self',
   ],
 
   receptionist: [
@@ -108,7 +108,7 @@ export const ROLE_PERMISSIONS: PermissionMap = {
     'students:create', 'visitors:read', 'visitors:create', 'complaints:read', 'complaints:create',
     'certificates:read', 'certificates:create', 'messages:read', 'messages:create',
     'messages:send', 'notices:read', 'events:read', 'notifications:read', 'notifications:update',
-    'payslips:self',
+    'leaves:read', 'leaves:create', 'leaves:update', 'payslips:self',
   ],
 
   staff: [

@@ -1,4 +1,5 @@
 /** People profiles (parents, teachers, staff) */
+import { assertSaneHireDate, assertSaneSalary } from "../../../utils/hrValidation";
 import { Request } from "express";
 import { ApiError } from "../../../utils/ApiError";
 import { Op } from "sequelize";
@@ -57,10 +58,12 @@ const validateStaffProfile = async (body: any, req: Request, model: any, label: 
   if (body.hireDate !== undefined && body.hireDate !== null && body.hireDate !== "" && !Number.isFinite(new Date(body.hireDate).getTime())) {
     throw ApiError.badRequest("Hire date is not a valid date");
   }
+  if (body.hireDate) assertSaneHireDate(new Date(body.hireDate));
   if (body.hireDate === "") body.hireDate = null;
   if (body.basicSalary !== undefined && body.basicSalary !== "") {
     const sal = Number(body.basicSalary);
     if (!Number.isFinite(sal) || sal < 0) throw ApiError.badRequest("Basic salary must be zero or more");
+    assertSaneSalary(sal);
     body.basicSalary = sal;
   } else if (body.basicSalary === "") delete body.basicSalary;
 

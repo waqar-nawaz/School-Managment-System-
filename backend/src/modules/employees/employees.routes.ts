@@ -1,3 +1,4 @@
+import { assertSaneHireDate, assertSaneSalary } from "../../utils/hrValidation";
 import { Router } from "express";
 
 import { authenticate } from "../../middlewares/authenticate";
@@ -39,10 +40,12 @@ router.post("/", authorize("users:create"), authorize("staff:create"), asyncHand
   const gender = cleanGender(b.gender);
   const salary = b.basicSalary === undefined || b.basicSalary === "" || b.basicSalary === null ? 0 : Number(b.basicSalary);
   if (!Number.isFinite(salary) || salary < 0) throw ApiError.badRequest("Basic salary must be zero or more");
+  assertSaneSalary(salary);
   let hireDate = new Date();
   if (b.hireDate) {
     hireDate = new Date(String(b.hireDate));
     if (!Number.isFinite(hireDate.getTime())) throw ApiError.badRequest("Hire date is not a valid date");
+    assertSaneHireDate(hireDate);
   }
 
   const password = generateRandomPassword();

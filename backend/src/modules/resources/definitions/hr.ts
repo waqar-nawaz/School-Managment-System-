@@ -14,6 +14,25 @@ import { ResourceDefinition, plain } from "./shared";
 import { findPersonDuplicate } from "../../payroll/payroll.util";
 import { notify } from "../../../services/notification.service";
 
+/** Sanity limits for a single leave request. */
+const MAX_LEAVE_DAYS = 365;
+const MAX_BACKDATE_DAYS = 30;
+const MAX_REASON_LENGTH = 1000;
+
+const utcDay = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+const todayUtcDay = () => { const n = new Date(); return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()); };
+
+/** Rejects unrealistic requests (years long, far in the past, essay-length reasons). */
+function assertReasonableLeave(startDate: Date, days: number, reason: unknown): void {
+  if (days > MAX_LEAVE_DAYS) throw ApiError.badRequest(`A single leave request cannot be longer than ${MAX_LEAVE_DAYS} days`);
+  if (utcDay(startDate) < todayUtcDay() - MAX_BACKDATE_DAYS * 86400000) {
+    throw ApiError.badRequest(`Leave cannot start more than ${MAX_BACKDATE_DAYS} days in the past`);
+  }
+  if (typeof reason === "string" && reason.length > MAX_REASON_LENGTH) {
+    throw ApiError.badRequest(`Reason must be ${MAX_REASON_LENGTH} characters or fewer`);
+  }
+}
+
 export const HR_RESOURCES: ResourceDefinition[] = [
   {
     path: "payroll", model: PayrollItem, searchable: ["month", "status"], permission: "payroll",
@@ -231,6 +250,8 @@ export const HR_RESOURCES: ResourceDefinition[] = [
         throw ApiError.badRequest("User does not belong to your branch");
       }
 
+      assertReasonableLeave(startDate, days, body.reason);
+
       const overlap = await LeaveRequest.findOne({
         where: {
           userId,
@@ -270,13 +291,20 @@ export const HR_RESOURCES: ResourceDefinition[] = [
         if (Number(current.userId) !== Number(req.user?.id)) {
           throw ApiError.forbidden("You can only update your own leave request");
         }
-        if (current.status !== "pending") {
-          throw ApiError.badRequest("Only pending leave requests can be changed by the requester");
-        }
 
         const requestedStatus = body.status === undefined ? "pending" : String(body.status).toLowerCase();
+        // An approved leave can still be called off by its owner until the first day arrives.
+        const cancellingApprovedBeforeStart =
+          requestedStatus === "cancelled" && current.status === "approved" && utcDay(new Date(current.startDate)) > todayUtcDay();
+        if (current.status !== "pending" && !cancellingApprovedBeforeStart) {
+          throw ApiError.badRequest(
+            current.status === "approved" && requestedStatus === "cancelled"
+              ? "This leave has already started; ask an approver to cancel it"
+              : "Only pending leave requests can be changed by the requester"
+          );
+        }
         if (!["pending", "cancelled"].includes(requestedStatus)) {
-          throw ApiError.forbidden("You can only cancel your own pending leave request");
+          throw ApiError.forbidden("You can only cancel your own leave request");
         }
 
         if (requestedStatus === "cancelled") {
@@ -299,13 +327,32 @@ export const HR_RESOURCES: ResourceDefinition[] = [
         delete body.adminComment;
         delete body.processedBy;
       } else {
+        const requestedStatus = String(body.status ?? "").toLowerCase();
+
+        // An approver can call off a pending or approved leave (for example when plans change).
+        if (requestedStatus === "cancelled") {
+          if (!["pending", "approved"].includes(String(current.status))) {
+            throw ApiError.badRequest("Only pending or approved leave requests can be cancelled");
+          }
+          const cancelNote = String(body.adminComment ?? "").trim();
+          return {
+            userId: current.userId,
+            branchId: current.branchId,
+            status: "cancelled",
+            processedBy: req.user?.id,
+            adminComment: cancelNote || current.adminComment || "",
+          };
+        }
+
         if (current.status !== "pending") {
           throw ApiError.badRequest("Only pending leave requests can be approved or rejected");
         }
-
-        const requestedStatus = String(body.status ?? "").toLowerCase();
         if (!["approved", "rejected"].includes(requestedStatus)) {
           throw ApiError.badRequest("Approver must approve or reject a pending leave request");
+        }
+        // Nobody signs off their own leave; the top administrator is the one exception.
+        if (Number(current.userId) === Number(req.user?.id) && req.user?.role !== "super_admin") {
+          throw ApiError.forbidden("You cannot approve or reject your own leave request; ask another approver");
         }
 
         const comment = String(body.adminComment ?? "").trim();
@@ -341,6 +388,8 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       if (!["sick", "casual", "annual", "unpaid", "maternity"].includes(leaveType)) {
         throw ApiError.badRequest("Invalid leave type");
       }
+      // Approvers do not change dates or reasons, so only a requester's edit is checked here.
+      if (!canApprove) assertReasonableLeave(startDate, days, body.reason);
 
       const overlap = await LeaveRequest.findOne({
         where: {
@@ -373,7 +422,19 @@ export const HR_RESOURCES: ResourceDefinition[] = [
 
     afterUpdate: async (row) => {
       const status = String(row.status ?? "");
-      if (!["approved", "rejected"].includes(status) || !row.userId) return;
+      if (!row.userId) return;
+      // Cancelled by an approver (not by the requester themselves): tell the requester.
+      if (status === "cancelled" && row.processedBy && Number(row.processedBy) !== Number(row.userId)) {
+        await notify({
+          userId: Number(row.userId),
+          title: "Leave request cancelled",
+          body: `Your ${row.leaveType ?? ""} leave request was cancelled. ${String(row.adminComment ?? "").trim()}`.trim(),
+          channel: "system",
+          data: { type: "leave", leaveId: Number(row.id), status, route: "/leaves" },
+        });
+        return;
+      }
+      if (!["approved", "rejected"].includes(status)) return;
 
       await notify({
         userId: Number(row.userId),
@@ -390,7 +451,7 @@ export const HR_RESOURCES: ResourceDefinition[] = [
       const l = await LeaveRequest.findByPk(Number(req.params.id));
       if (!l) throw ApiError.notFound("Leave not found");
       if (["approved", "pending"].includes(String(l.status))) {
-        throw ApiError.badRequest(`Cannot delete a ${l.status} leave; cancel it instead`);
+        throw ApiError.badRequest(`Cannot delete ${l.status === "approved" ? "an approved" : "a pending"} leave; cancel it first`);
       }
     },
   },

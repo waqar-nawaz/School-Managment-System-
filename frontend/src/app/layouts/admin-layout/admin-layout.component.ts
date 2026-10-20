@@ -2,7 +2,7 @@ import { Component, HostListener, OnDestroy, signal } from '@angular/core';
 import { RouterOutlet, Router, RouterLink, RouterLinkActive, NavigationEnd, NavigationStart } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { Subscription } from 'rxjs';
-import { MENU } from '../../config/menu';
+import { MENU, canSeeMenuItem } from '../../config/menu';
 import { ApiService } from '../../core/services/api.service';
 import { setCurrencyCode } from '../../core/utils/currency';
 import { PermissionService } from '../../core/services/permission.service';
@@ -267,7 +267,7 @@ export class AdminLayoutComponent implements OnDestroy {
       error: () => {},
     });
     for (const item of MENU) {
-      if (item.permission && !this.perms.hasPermission(item.permission)) continue;
+      if (!canSeeMenuItem(item, (p) => this.perms.hasPermission(p))) continue;
       let group = this.groups.find((g) => g.name === (item.group ?? 'Other'));
       if (!group) {
         group = { name: item.group ?? 'Other', items: [] };
