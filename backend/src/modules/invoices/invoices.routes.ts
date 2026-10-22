@@ -10,6 +10,7 @@ import { sequelize } from "../../database/sequelize";
 import { round2, parseMoney, parseCurrency, PAYMENT_METHODS, isCash } from "../../utils/money";
 import { createCrudController } from "../../utils/crudFactory";
 import { studentScope } from "../../utils/access";
+import { searchWithStudent } from "../../utils/studentSearch";
 import { writeAuditLog } from "../../services/audit.service";
 import { v4 as uuidv4 } from "uuid";
 
@@ -18,7 +19,8 @@ router.use(authenticate);
 
 const base = createCrudController<Invoice>({
   model: Invoice,
-  searchable: ["invoiceNo", "status"],
+  searchable: ["invoiceNo"],
+  toSearchWhere: searchWithStudent(["invoiceNo"]),
   defaultSort: [["issueDate", "DESC"]],
   includes: [{ association: "payments" }, { association: "student" }],
   allowedFilters: ["status", "studentId", "termId", "branchId", "issueDate", "dueDate"],
@@ -126,6 +128,25 @@ router.put("/:id", authorize("invoices:update"), asyncHandler(async (req, res, n
       if (!ALLOWED_METADATA.has(k)) delete body[k];
     }
   }
+  if (body.dueDate !== undefined) {
+    const due = new Date(body.dueDate);
+    if (!body.dueDate || !Number.isFinite(due.getTime())) throw ApiError.badRequest("Due date is not valid");
+    if (due.getTime() < new Date(invoice.issueDate).getTime() - 86400000) throw ApiError.badRequest("Due date cannot be before the invoice was issued");
+    if (due.getUTCFullYear() > new Date().getUTCFullYear() + 5) throw ApiError.badRequest("Due date is too far in the future");
+    body.dueDate = due;
+  }
+  if (body.termId !== undefined && body.termId !== null && body.termId !== "") {
+    const termId = Number(body.termId);
+    if (!Number.isInteger(termId) || termId <= 0 || !(await Term.findOne({ where: { id: termId, ...(callerBranch != null ? { branchId: callerBranch } : {}) } }))) throw ApiError.badRequest("Selected term was not found in your branch");
+    body.termId = termId;
+  } else if (body.termId === "") body.termId = null;
+  if (typeof body.notes === "string" && body.notes.length > 1000) throw ApiError.badRequest("Notes are too long (max 1000 characters)");
+  // Keep the overdue flag truthful when the due date moves (the nightly job only flags, never clears).
+  if (body.dueDate && !(invoice.status === "paid" || invoice.status === "cancelled")) {
+    const late = body.dueDate.getTime() < Date.now();
+    if (invoice.status === "overdue" && !late) body.status = Number(invoice.amountPaid) > 0 ? "partial" : "pending";
+    else if (late && (invoice.status === "pending" || invoice.status === "partial")) body.status = "overdue";
+  }
   if (Object.keys(body).length === 0) {
     throw ApiError.badRequest("Invoice is locked — use PATCH /:id/status for status changes or void+re-generate for amount changes");
   }
@@ -168,6 +189,17 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
   if (!Number.isInteger(numDueInDays) || numDueInDays < 0 || numDueInDays > 365) {
     throw ApiError.badRequest("dueInDays must be an integer between 0 and 365");
   }
+
+  const asId = (v: unknown, label: string): number => {
+    const n = Number(v);
+    if (!Number.isInteger(n) || n <= 0) throw ApiError.badRequest(`${label} is not valid`);
+    return n;
+  };
+  if (studentId === undefined || studentId === null || studentId === ("" as any)) throw ApiError.badRequest("Choose a student");
+  asId(studentId, "Student");
+  if (termId) asId(termId, "Term");
+  if (feeTypeIds !== undefined && !Array.isArray(feeTypeIds)) throw ApiError.badRequest("feeTypeIds must be a list");
+  (feeTypeIds ?? []).forEach((id) => asId(id, "Fee type"));
 
   const student = await Student.findByPk(studentId);
   if (!student) throw ApiError.notFound("Student not found");
@@ -224,6 +256,8 @@ router.post("/generate", authorize("invoices:create"), asyncHandler(async (req, 
     }
   }
   if (!lineItems.length) throw ApiError.badRequest("Choose at least one fee, the hostel fee, or add a custom item");
+  const gross = round2(lineItems.reduce((a, b) => a + Number(b.amount), 0));
+  if (round2(gross - numDiscount + numTax) <= 0) throw ApiError.badRequest("The invoice total must be more than zero. Reduce the discount, or leave the invoice out if the student pays nothing");
 
   const invoice = await newInvoice({ student, lineItems, discount: numDiscount, tax: numTax, dueInDays: numDueInDays, termId: termId ?? null, callerBranch });
 
@@ -369,7 +403,9 @@ router.post("/:id/pay", authorize("payments:create"), asyncHandler(async (req, r
 
     const amount = parseMoney(req.body.amount, "Payment amount");
     const paidOn = req.body.paidOn ? new Date(req.body.paidOn) : new Date();
-    if (Number.isFinite(paidOn.getTime()) && paidOn.getTime() > Date.now() + 86400000) throw ApiError.badRequest("Payment date cannot be more than 1 day in the future");
+    if (!Number.isFinite(paidOn.getTime())) throw ApiError.badRequest("Payment date is not valid");
+    if (paidOn.getUTCFullYear() < 2000) throw ApiError.badRequest("Payment date is too far in the past");
+    if (paidOn.getTime() > Date.now() + 86400000) throw ApiError.badRequest("Payment date cannot be more than 1 day in the future");
     if (invoice.status === "cancelled") throw ApiError.badRequest("Cancelled invoices cannot receive payments");
     const remaining = Math.max(0, round2(Number(invoice.totalDue) - Number(invoice.amountPaid)));
     if (remaining <= 0) throw ApiError.badRequest("This invoice is already fully paid");

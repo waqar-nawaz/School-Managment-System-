@@ -10,6 +10,7 @@ import { createCrudController } from "../../utils/crudFactory";
 import { studentScope } from "../../utils/access";
 import { getPermissionsForRole } from "../../services/rbac.service";
 import { round2, parseMoney, PAYMENT_METHODS } from "../../utils/money";
+import { searchWithStudent } from "../../utils/studentSearch";
 import { writeAuditLog } from "../../services/audit.service";
 import { v4 as uuidv4 } from "uuid";
 
@@ -18,7 +19,8 @@ router.use(authenticate);
 
 const base = createCrudController<Payment>({
   model: Payment,
-  searchable: ["receiptNo", "method", "status", "reference"],
+  searchable: ["receiptNo", "reference"],
+  toSearchWhere: searchWithStudent(["receiptNo", "reference", "method"]),
   defaultSort: [["paidOn", "DESC"]],
   allowedFilters: ["status", "method", "studentId", "invoiceId", "branchId", "paidOn"],
   scopeWhere: (req) => studentScope(req, "studentId"),

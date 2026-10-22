@@ -20,7 +20,7 @@ const validateFeeType = async (body: any, req: Request) => {
   if(!name) throw ApiError.badRequest("Fee type name is required"); if(name.length>120) throw ApiError.badRequest("Fee type name is too long");
   if(category&&!["tuition","transport","hostel","misc"].includes(category)) throw ApiError.badRequest("Invalid fee category");
   parseMoney(amount,"Fee amount",{allowZero:true});
-  if(!Number.isInteger(installments)||installments<1) throw ApiError.badRequest("installments must be a positive integer");
+  if(!Number.isInteger(installments)||installments<1||installments>60) throw ApiError.badRequest("installments must be a whole number between 1 and 60");
   if(!["term","monthly","yearly","one-time"].includes(billingCycle)) throw ApiError.badRequest("Invalid billingCycle");
   const duplicate=await FeeType.findOne({where:{[Op.and]:[sequelize.where(sequelize.fn("lower",sequelize.col("name")),name.toLowerCase()),{branchId,...(existing?.id?{id:{[Op.ne]:existing.id}}:{})}]}}); if(duplicate) throw ApiError.badRequest("Fee type already exists in this branch");
   body.name=name; body.category=category; body.amount=amount; body.installments=installments; body.billingCycle=billingCycle; body.branchId=branchId; return body;
@@ -30,16 +30,21 @@ const validateExpense = async (body: any, req: Request) => {
   const existing = await getExisting(Expense, req);
   const title = String(body.title ?? existing?.title ?? "").trim();
   const amount = parseMoney(body.amount ?? existing?.amount, "Expense amount");
-  const expensedOn = body.expensedOn !== undefined
-    ? (body.expensedOn ? new Date(body.expensedOn) : null)
-    : (existing?.expensedOn ? new Date(existing.expensedOn) : null);
+  // A new expense without a date is dated today (undated expenses would vanish from monthly totals).
+  const expensedOn = body.expensedOn !== undefined && body.expensedOn !== null && body.expensedOn !== ""
+    ? new Date(body.expensedOn)
+    : (existing?.expensedOn ? new Date(existing.expensedOn) : new Date());
   const status = String(body.status ?? existing?.status ?? "draft").toLowerCase();
   const branchId = Number(req.user?.branchId);
 
   if (!Number.isInteger(branchId) || branchId <= 0) throw ApiError.badRequest("User is not assigned to a branch");
   if (!title) throw ApiError.badRequest("Expense title is required");
   if (title.length > 180) throw ApiError.badRequest("Expense title is too long");
-  if (expensedOn && !Number.isFinite(expensedOn.getTime())) throw ApiError.badRequest("Invalid expensedOn");
+  if (expensedOn && !Number.isFinite(expensedOn.getTime())) throw ApiError.badRequest("The expense date is not valid");
+  if (expensedOn.getUTCFullYear() < 2000) throw ApiError.badRequest("The expense date is too far in the past");
+  const category = body.category !== undefined ? String(body.category ?? "").trim() : undefined;
+  if (category !== undefined && category.length > 60) throw ApiError.badRequest("Category is too long (max 60 characters)");
+  if (body.notes !== undefined && String(body.notes ?? "").length > 1000) throw ApiError.badRequest("Notes are too long (max 1000 characters)");
   if (expensedOn && expensedOn.getTime() > Date.now() + 86400000) throw ApiError.badRequest("An expense cannot be dated in the future");
   if (!["draft", "approved", "rejected", "paid", "cancelled"].includes(status)) {
     throw ApiError.badRequest("Invalid expense status");
@@ -111,6 +116,7 @@ const validateExpense = async (body: any, req: Request) => {
     if (!approver) throw ApiError.badRequest("approvedBy user does not belong to your branch");
   }
 
+  if (category !== undefined) body.category = category || null;
   body.title = title;
   body.amount = amount;
   body.expensedOn = expensedOn;

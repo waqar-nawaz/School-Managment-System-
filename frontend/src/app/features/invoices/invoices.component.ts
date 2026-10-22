@@ -29,6 +29,7 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
     .fee-list { border:1px solid rgba(127,127,127,.3); border-radius:8px; }
     .fee-row { display:flex; gap:.6rem; align-items:center; padding:.5rem .75rem; border-bottom:1px solid rgba(127,127,127,.15); cursor:pointer; }
     .fee-row:last-child { border-bottom:0; } .fee-amt { margin-left:auto; font-variant-numeric:tabular-nums; } .fee-note { font-size:.8rem; opacity:.7; margin-left:.4rem; }
+    .row-acts { display:flex; gap:.35rem; justify-content:flex-end; flex-wrap:wrap; }
     .gen-total { display:flex; gap:1rem; flex-wrap:wrap; align-items:center; justify-content:flex-end; padding:.6rem .75rem; margin:.5rem 0; border-radius:8px; background:rgba(127,127,127,.1); }
   `],
   imports: [FormsModule, CommonModule, IconComponent, ConfirmDialogComponent],
@@ -49,7 +50,7 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
     <div class="card">
       <div class="card-toolbar">
         <div class="search-box">
-          <input class="form-control" placeholder="Search invoice no…" [(ngModel)]="search" (ngModelChange)="debouncedLoad()" />
+          <input class="form-control" placeholder="Search invoice no or student…" [(ngModel)]="search" (ngModelChange)="debouncedLoad()" />
           @if (search) {
             <button type="button" class="search-clear" (click)="clearSearch()" aria-label="Clear search">
               <app-icon name="x" [size]="14" />
@@ -64,35 +65,31 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
       <div class="table-responsive">
         <table class="table table-cards">
           <thead>
-            <tr><th>No</th><th>Student</th><th>Amount</th><th>Discount</th><th>Due</th><th>Paid</th><th>Due Date</th><th>Status</th><th style="width:90px;text-align:right">Actions</th></tr>
+            <tr><th>No</th><th>Student</th><th style="text-align:right">Total</th><th style="text-align:right">Paid</th><th style="text-align:right">Balance</th><th>Due date</th><th>Status</th><th style="width:200px;text-align:right">Actions</th></tr>
           </thead>
           <tbody>
             @for (inv of invoices; track inv.id) {
               <tr>
                 <td class="cell-first" data-label="Invoice">{{ inv.invoiceNo }}</td>
                 <td data-label="Student">{{ studentNameOf(inv) }}</td>
-                <td data-label="Amount">{{ money(inv.amount) }}</td>
-                <td data-label="Discount">{{ money(inv.discount ?? 0) }}</td>
-                <td data-label="Due">{{ money(inv.totalDue) }}</td>
-                <td data-label="Paid">{{ money(inv.amountPaid ?? 0) }}</td>
+                <td data-label="Total" style="text-align:right">{{ money(inv.totalDue) }}</td>
+                <td data-label="Paid" style="text-align:right">{{ money(inv.amountPaid ?? 0) }}</td>
+                <td data-label="Balance" style="text-align:right"><strong>{{ money(inv.status === 'cancelled' ? 0 : balanceOf(inv)) }}</strong></td>
                 <td data-label="Due date">{{ inv.dueDate | date: 'MMM d, y' }}</td>
                 <td data-label="Status">
                   <span class="badge badge-{{ badgeOf(inv.status) }}">{{ inv.status }}</span>
-                  @if (canChangeStatus && nextStatuses(inv).length) {
-                    <select class="form-control form-control-sm" style="display:inline-block;width:auto;margin-left:6px" (change)="transition(inv, $event)">
-                      <option value="">Change…</option>
-                      @for (s of nextStatuses(inv); track s) { <option [value]="s">{{ s }}</option> }
-                    </select>
-                  }
                 </td>
                 <td class="cell-actions" style="text-align:right">
-                  @if (canPay && inv.status !== 'paid' && inv.status !== 'cancelled') {
-                    <button class="btn btn-sm btn-primary" (click)="openPay(inv)"><app-icon name="credit-card" [size]="14" /> Pay</button>
-                  }
+                  <div class="row-acts">
+                    <button class="btn btn-sm btn-ghost" (click)="openView(inv)" aria-label="View invoice"><app-icon name="file-text" [size]="14" /> View</button>
+                    @if (canPay && inv.status !== 'paid' && inv.status !== 'cancelled' && balanceOf(inv) > 0) {
+                      <button class="btn btn-sm btn-primary" (click)="openPay(inv)"><app-icon name="credit-card" [size]="14" /> Pay</button>
+                    }
+                  </div>
                 </td>
               </tr>
             } @empty {
-              <tr><td colspan="9" class="empty-cell">{{ loading ? 'Loading…' : 'No invoices found.' }}</td></tr>
+              <tr><td colspan="8" class="empty-cell">{{ loading ? 'Loading…' : 'No invoices found.' }}</td></tr>
             }
           </tbody>
         </table>
@@ -201,7 +198,7 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
 
             <div class="modal-actions">
               <button type="button" class="btn btn-ghost" (click)="showGenerate = false"><app-icon name="x" [size]="14" /> Cancel</button>
-              <button type="submit" class="btn btn-primary" [disabled]="busy || !genStudent || genGross() <= 0">
+              <button type="submit" class="btn btn-primary" [disabled]="busy || !genStudent || genGross() <= 0 || genTotal() <= 0">
                 <app-icon name="check" [size]="14" /> {{ busy ? 'Generating…' : 'Generate invoice' }}
               </button>
             </div>
@@ -235,6 +232,63 @@ const INVOICE_TRANSITIONS: Record<string, string[]> = {
             </div>
             <div class="modal-actions"><button class="btn btn-primary" (click)="hostelDialog = false; hostelResult = null">Done</button></div>
           }
+        </div>
+      </div>
+    }
+
+    @if (viewInv) {
+      <div class="modal-backdrop" (click)="viewInv = null">
+        <div class="modal modal-lg" (click)="$event.stopPropagation()">
+          <div class="modal-head">
+            <div class="modal-title">Invoice {{ viewInv.invoiceNo }} <span class="badge badge-{{ badgeOf(viewInv.status) }}">{{ viewInv.status }}</span></div>
+            <button type="button" class="modal-close" (click)="viewInv = null" aria-label="Close"><app-icon name="x" [size]="16" /></button>
+          </div>
+          <p class="page-subtitle" style="margin:0 0 .75rem">{{ studentNameOf(viewInv) }}@if (viewInv.student?.admissionNo) { · {{ viewInv.student.admissionNo }} } · issued {{ viewInv.issueDate | date: 'mediumDate' }}</p>
+          <div class="fee-list">
+            @for (li of viewInv.lineItems ?? []; track $index) {
+              <div class="fee-row" style="cursor:default"><span>{{ li.name }}</span><span class="fee-amt">{{ money(li.amount) }}</span></div>
+            } @empty { <div class="form-hint" style="padding:.5rem .75rem">No line items recorded.</div> }
+          </div>
+          <div class="gen-total">
+            <span>Subtotal {{ money(viewInv.amount) }}</span>
+            <span>Discount −{{ money(viewInv.discount ?? 0) }}</span>
+            <span>Tax +{{ money(viewInv.tax ?? 0) }}</span>
+            <strong>Total {{ money(viewInv.totalDue) }}</strong>
+            <span>Paid {{ money(viewInv.amountPaid ?? 0) }}</span>
+            <strong>Balance {{ money(viewInv.status === 'cancelled' ? 0 : balanceOf(viewInv)) }}</strong>
+          </div>
+          @if (viewInv.payments?.length) {
+            <label>Payments</label>
+            <div class="fee-list">
+              @for (p of viewInv.payments; track p.id) {
+                <div class="fee-row" style="cursor:default">
+                  <span>{{ p.receiptNo }} <small>{{ p.method }} · {{ p.paidOn | date: 'mediumDate' }}</small></span>
+                  <span class="fee-amt">{{ money(p.amount) }} <small>{{ p.status !== 'successful' ? p.status : '' }}</small></span>
+                </div>
+              }
+            </div>
+          }
+          @if (canEditMeta && viewInv.status !== 'cancelled') {
+            <div class="form-grid" style="margin-top:.75rem">
+              <div class="form-group"><label>Due date</label><input type="date" class="form-control" [(ngModel)]="metaForm.dueDate" name="mdue" /></div>
+              <div class="form-group"><label>Notes</label><input class="form-control" [(ngModel)]="metaForm.notes" name="mnotes" maxlength="1000" /></div>
+            </div>
+          } @else {
+            <p class="form-hint">Due {{ viewInv.dueDate | date: 'mediumDate' }}@if (viewInv.notes) { · {{ viewInv.notes }} }</p>
+          }
+          @if (viewError) { <div class="field-error">{{ viewError }}</div> }
+          <div class="modal-actions">
+            @if (canChangeStatus && nextStatuses(viewInv).length) {
+              <select class="form-control" style="width:auto;margin-right:auto" (change)="viewTransition($event)" aria-label="Change status">
+                <option value="">Change status…</option>
+                @for (s of nextStatuses(viewInv); track s) { <option [value]="s">{{ s === 'cancelled' ? 'cancel invoice' : 'mark ' + s }}</option> }
+              </select>
+            }
+            <button type="button" class="btn btn-ghost" (click)="viewInv = null">Close</button>
+            @if (canEditMeta && viewInv.status !== 'cancelled') {
+              <button type="button" class="btn btn-primary" [disabled]="busy" (click)="saveMeta()">{{ busy ? 'Saving…' : 'Save due date & notes' }}</button>
+            }
+          </div>
         </div>
       </div>
     }
@@ -331,6 +385,9 @@ export class InvoicesComponent implements OnInit {
   hostelDue = 14;
   hostelResult: any = null;
   payForm: any = { amount: 0, method: 'cash', reference: '', paidOn: '', currency: 'PKR', notes: '' };
+  viewInv: any = null;
+  viewError = '';
+  metaForm: { dueDate: string; notes: string } = { dueDate: '', notes: '' };
   confirmDialog: { title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void } | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -343,6 +400,7 @@ export class InvoicesComponent implements OnInit {
   // Buttons follow the user's real permissions (a parent can view invoices but not record payments).
   get canGenerate(): boolean { return this.perms.hasPermission('invoices:create'); }
   get canPay(): boolean { return this.perms.hasPermission('payments:create'); }
+  get canEditMeta(): boolean { return this.perms.hasPermission('invoices:update'); }
   get canChangeStatus(): boolean { return this.perms.hasPermission('invoices:update'); }
 
   ngOnInit(): void {
@@ -486,6 +544,7 @@ export class InvoicesComponent implements OnInit {
   generate(): void {
     if (!this.genStudent) return;
     if (Number(this.genForm.discount || 0) > this.genGross()) { this.genError = 'The discount cannot be more than the subtotal.'; return; }
+    if (this.genTotal() <= 0) { this.genError = 'The invoice total must be more than zero.'; return; }
     this.busy = true; this.genError = '';
     const customItems = (this.genForm.customItems as any[])
       .filter((ci) => ci.name && Number(ci.amount) > 0)
@@ -512,6 +571,26 @@ export class InvoicesComponent implements OnInit {
     this.api.post<any>('/invoices/generate-hostel', { month: this.hostelMonth, dueInDays: Number(this.hostelDue ?? 14) }).subscribe({
       next: (r) => { this.busy = false; this.hostelResult = r?.data; if (r?.data?.created) this.load(); },
       error: (err) => { this.busy = false; this.genError = err?.error?.message || 'Could not create hostel invoices'; },
+    });
+  }
+
+  openView(inv: any): void {
+    this.viewError = '';
+    this.viewInv = inv;
+    this.metaForm = { dueDate: String(inv.dueDate ?? '').slice(0, 10), notes: inv.notes ?? '' };
+    this.api.get<any>(`/invoices/${inv.id}`).subscribe({
+      next: (r) => { if (this.viewInv?.id === inv.id && r?.data) { this.viewInv = r.data; this.metaForm = { dueDate: String(r.data.dueDate ?? '').slice(0, 10), notes: r.data.notes ?? '' }; } },
+      error: () => {},
+    });
+  }
+
+  saveMeta(): void {
+    if (!this.viewInv) return;
+    if (!this.metaForm.dueDate) { this.viewError = 'Choose a due date.'; return; }
+    this.busy = true; this.viewError = '';
+    this.api.put(`/invoices/${this.viewInv.id}`, { dueDate: this.metaForm.dueDate, notes: this.metaForm.notes }).subscribe({
+      next: () => { this.busy = false; this.viewInv = null; this.toasts.success('Invoice updated'); this.load(); },
+      error: (err) => { this.busy = false; this.viewError = err?.error?.message || 'Could not update the invoice'; },
     });
   }
 
@@ -547,9 +626,16 @@ export class InvoicesComponent implements OnInit {
     });
   }
 
-  transition(inv: any, event: Event): void {
-    const next = (event.target as HTMLSelectElement).value;
-    (event.target as HTMLSelectElement).value = '';
+  viewTransition(event: Event): void {
+    const el = event.target as HTMLSelectElement;
+    const next = el.value; el.value = '';
+    const inv = this.viewInv;
+    if (!next || !inv) return;
+    this.viewInv = null;
+    this.transitionTo(inv, next);
+  }
+
+  transitionTo(inv: any, next: string): void {
     if (!next || next === inv.status) return;
     // Confirm before terminal/irreversible transitions (cancelled).
     if (next === 'cancelled') {

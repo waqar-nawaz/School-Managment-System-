@@ -105,4 +105,18 @@ const dash=await call('GET','/reports/comparison',A); ok(dash.s===200,'compariso
 console.log('# access');
 const TL=(await call('POST','/employees',A,{firstName:'Tea',lastName:'Cher',role:'teacher',email:'tea@s.test'})).j.data.credentials[0]; const TT=(await login(TL.username,TL.password)).accessToken;
 r=await call('GET','/invoices?limit=5',TT); ok(r.s===403,'teacher cannot read invoices '+r.s); r=await call('GET','/expenses?limit=5',TT); ok(r.s===403,'teacher cannot read expenses '+r.s); r=await call('GET','/reports/fees',TT); ok(r.s===403,'teacher cannot read the fee report '+r.s);
+console.log('# search + input checks');
+r=await call('GET','/invoices?q=Faisal',A); ok(r.s===200&&r.j.data.length>=1,'invoice search finds a student by name '+r.s+' '+msg(r));
+r=await call('GET','/invoices?q=INV-',A); ok(r.s===200,'invoice search by number works (no enum error) '+r.s);
+r=await call('GET','/payments?q=cash',A); ok(r.s===200,'payment search works '+r.s+' '+msg(r));
+r=await call('POST','/invoices/generate',A,{studentId:s1.id,customItems:[{name:'Free',amount:100}],discount:100}); ok(r.s===400,'invoice with a zero total is rejected: '+r.s+' '+msg(r));
+r=await call('POST','/invoices/generate',A,{customItems:[{name:'x',amount:5}]}); ok(r.s===400&&/student/i.test(msg(r)),'missing student gives a clear message: '+msg(r));
+r=await call('POST','/invoices/generate',A,{studentId:'abc',customItems:[{name:'x',amount:5}]}); ok(r.s===400&&!/syntax/i.test(msg(r)),'bad student id gives no database error: '+msg(r));
+r=await call('POST','/invoices/generate',A,{studentId:s2.id,customItems:[{name:'Due test',amount:100}],dueInDays:0}); const dinv=r.j?.data;
+r=await call('PUT','/invoices/'+dinv.id,A,{dueDate:'garbage'}); ok(r.s===400&&!/syntax/i.test(msg(r)),'garbage due date rejected cleanly: '+msg(r));
+r=await call('PUT','/invoices/'+dinv.id,A,{dueDate:'2001-01-01'}); ok(r.s===400,'due date before issue rejected: '+r.s);
+await call('PATCH','/invoices/'+dinv.id+'/status',A,{status:'overdue'}); r=await call('PUT','/invoices/'+dinv.id,A,{dueDate:new Date(Date.now()+20*864e5).toISOString().slice(0,10)}); const back=await get('/invoices/'+dinv.id,A); ok(r.s===200&&back.status==='pending','moving an overdue invoice\'s due date forward clears overdue: '+back.status);
+r=await call('POST','/expenses',A,{title:'Undated',amount:10}); ok(r.s===201&&!!r.j.data.expensedOn,'an expense without a date is dated today');
+r=await call('POST','/expenses',A,{title:'Ancient',amount:10,expensedOn:'1900-01-01'}); ok(r.s===400,'a 1900 expense date is rejected');
+r=await call('POST','/expenses',A,{title:'Long cat',amount:10,category:'x'.repeat(100)}); ok(r.s===400&&!/varying/i.test(msg(r)),'a too long category gives a clean message: '+msg(r));
 console.log(`\n${pass} passed, ${fail} failed`); if(fail) console.log('FAILED:\n - '+fails.join('\n - '));

@@ -290,7 +290,9 @@ export const RESOURCE_CONFIGS: Record<string, ResourceConfig> = {
   },
   payslips: {
     key: 'payslips', label: 'Payslips', api: '/payslips',
-    columns: [nameCol('payslipNo', 'Payslip No'), { key: 'payrollItemId', label: 'Payroll Item', type: 'number' }, { key: 'gross', label: 'Gross', type: 'money' }, { key: 'net', label: 'Net', type: 'money' }],
+    subtitle: 'Salary slips for approved and paid payroll. Create them for the whole month from the Payroll page.',
+    canCreate: false,
+    columns: [nameCol('payslipNo', 'Payslip No'), { key: 'payeeName', label: 'Employee', type: 'text' }, { key: 'month', label: 'Month', type: 'text' }, { key: 'gross', label: 'Gross', type: 'money' }, { key: 'net', label: 'Net', type: 'money' }, { key: 'payrollStatus', label: 'Payroll', type: 'badge', badgeMap: { approved: 'info', paid: 'success', draft: '' } }],
     fields: fields([{ key: 'payslipNo', label: 'Payslip number', required: true }, refField('payrollItemId', 'Payroll item', '/payroll', 'month', undefined, true), { key: 'notes', label: 'Notes', type: 'textarea' }]),
   },
   leaves: {

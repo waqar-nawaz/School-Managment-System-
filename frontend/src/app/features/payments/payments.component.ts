@@ -32,7 +32,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
 
     @if (tab === 'all') {
       <div class="filters">
-        <input class="form-control" placeholder="Search receipt, reference…" [(ngModel)]="search" (ngModelChange)="page = 1; load()" />
+        <input class="form-control" placeholder="Search receipt, student, reference…" [(ngModel)]="search" (ngModelChange)="page = 1; load()" />
         <select class="form-control" [(ngModel)]="method" (ngModelChange)="page = 1; load()">
           <option value="">All methods</option>
           @for (m of METHODS; track m) { <option [value]="m">{{ m }}</option> }
@@ -104,14 +104,14 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     @if (refundTarget) {
       <div class="modal-backdrop" (click)="refundTarget = null">
         <div class="modal" (click)="$event.stopPropagation()">
-          <div class="modal-header">
+          <div class="modal-head">
             <div class="modal-title">Request refund — {{ refundTarget.receiptNo }}</div>
             <button type="button" class="modal-close" (click)="refundTarget = null" aria-label="Close"><app-icon name="x" [size]="16" /></button>
           </div>
           <form (ngSubmit)="submitRefund()">
             <div class="form-group">
-              <label>Amount (paid {{ money(refundTarget.amount) }})</label>
-              <input type="number" min="0.01" step="0.01" [max]="refundTarget.amount" class="form-control" [(ngModel)]="refundForm.amount" name="amount" required />
+              <label>Amount (you can refund up to {{ money(refundable()) }}@if (refundedSoFar > 0) { — {{ money(refundedSoFar) }} already refunded or waiting })</label>
+              <input type="number" min="0.01" step="0.01" [max]="refundable()" class="form-control" [(ngModel)]="refundForm.amount" name="amount" required />
             </div>
             <div class="form-group">
               <label>Refund method</label>
@@ -123,6 +123,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
               <label>Reason (required)</label>
               <textarea class="form-control" rows="2" [(ngModel)]="refundForm.reason" name="reason" required minlength="3"></textarea>
             </div>
+            @if (refundError) { <div class="field-error">{{ refundError }}</div> }
             <div class="modal-actions">
               <button type="button" class="btn btn-ghost" (click)="refundTarget = null">Cancel</button>
               <button type="submit" class="btn btn-primary" [disabled]="busy || !valid()">{{ busy ? 'Sending…' : 'Send for approval' }}</button>
@@ -165,7 +166,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
   `],
 })
 export class PaymentsComponent implements OnInit {
-  readonly METHODS = ['cash', 'bank', 'card', 'cheque', 'online'];
+  readonly METHODS = ['cash', 'bank', 'bank_transfer', 'card', 'cheque', 'mobile', 'online'];
   tab: 'all' | 'refunds' = 'all';
   rows: any[] = [];
   pending: any[] = [];
@@ -173,6 +174,8 @@ export class PaymentsComponent implements OnInit {
   search = ''; method = '';
   refundTarget: any = null;
   refundForm: any = { amount: 0, method: 'cash', reason: '' };
+  refundedSoFar = 0;
+  refundError = '';
 
   constructor(
     private readonly api: ApiService,
@@ -193,7 +196,7 @@ export class PaymentsComponent implements OnInit {
   load(): void {
     this.loading = true;
     const q: any = { page: this.page, limit: this.limit };
-    if (this.search.trim()) q.search = this.search.trim();
+    if (this.search.trim()) q.q = this.search.trim();
     if (this.method) q['filter[method]'] = this.method;
     this.api.get<any[]>('/payments', q).subscribe({
       next: (r) => { this.rows = r?.data ?? []; this.total = r?.meta?.total ?? this.rows.length; this.loading = false; },
@@ -265,20 +268,28 @@ export class PaymentsComponent implements OnInit {
     w.document.close();
   }
 
+  refundable(): number { return Math.max(0, Math.round((Number(this.refundTarget?.amount ?? 0) - this.refundedSoFar) * 100) / 100); }
   openRefund(p: any): void {
-    this.refundTarget = p;
+    this.refundTarget = p; this.refundedSoFar = 0; this.refundError = '';
     this.refundForm = { amount: Number(p.amount), method: p.method || 'cash', reason: '' };
+    this.api.get<any[]>(`/payments/${p.id}/refunds`).subscribe({
+      next: (r) => {
+        this.refundedSoFar = (r?.data ?? []).filter((x: any) => x.status === 'pending' || x.status === 'processed').reduce((a: number, x: any) => a + Number(x.amount), 0);
+        if (this.refundTarget?.id === p.id) this.refundForm.amount = this.refundable();
+      },
+      error: () => {},
+    });
   }
   valid(): boolean {
     const a = Number(this.refundForm.amount);
-    return a > 0 && a <= Number(this.refundTarget?.amount) && String(this.refundForm.reason).trim().length >= 3;
+    return a > 0 && a <= this.refundable() && String(this.refundForm.reason).trim().length >= 3;
   }
   submitRefund(): void {
     if (!this.valid()) return;
-    this.busy = true;
+    this.busy = true; this.refundError = '';
     this.api.post(`/payments/${this.refundTarget.id}/refund`, { ...this.refundForm, reason: this.refundForm.reason.trim() }).subscribe({
       next: () => { this.busy = false; this.refundTarget = null; this.toasts.success('Refund sent for approval'); this.loadRefunds(); },
-      error: (err) => { this.busy = false; this.toasts.error(err?.error?.message || 'Could not request refund'); },
+      error: (err) => { this.busy = false; this.refundError = err?.error?.message || 'Could not request refund'; },
     });
   }
   decide(r: any, action: 'approve' | 'reject'): void {

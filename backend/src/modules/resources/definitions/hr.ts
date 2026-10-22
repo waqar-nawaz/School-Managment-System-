@@ -154,6 +154,23 @@ export const HR_RESOURCES: ResourceDefinition[] = [
   },
   {
     path: "payslips", model: Payslip, searchable: ["payslipNo"], permission: "payroll",
+    includes: [{
+      association: "payrollItem", attributes: ["id", "month", "status", "paidOn"],
+      include: [
+        { association: "staff", attributes: ["id", "staffNo", "firstName", "lastName", "designation"] },
+        { association: "teacher", attributes: ["id", "staffNo", "firstName", "lastName"] },
+      ],
+    }],
+    decorate: (row: any) => {
+      const p = typeof row.toJSON === "function" ? row.toJSON() : { ...row };
+      const item = p.payrollItem;
+      const who = item?.staff ?? item?.teacher;
+      p.payeeName = who ? `${who.firstName ?? ""} ${who.lastName ?? ""}`.trim() : "";
+      p.staffNo = who?.staffNo ?? "";
+      p.month = item?.month ?? "";
+      p.payrollStatus = item?.status ?? "";
+      return p;
+    },
     beforeCreate: async (body, req) => {
       const branchId = req.user?.branchId;
       const payrollItemId = Number(body.payrollItemId);

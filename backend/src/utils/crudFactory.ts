@@ -1,4 +1,4 @@
-import { Model, ModelCtor, WhereOptions, Op, Order, FindOptions } from "sequelize";
+import { Model, ModelCtor, WhereOptions, Op, Order, FindOptions, fn, col, where as sqlWhere, cast } from "sequelize";
 import { Request, Response } from "express";
 import { ApiError } from "./ApiError";
 import { ApiResponse, PaginationMeta } from "./ApiResponse";
@@ -122,8 +122,16 @@ export function createCrudController<M extends Model = Model>(
       const base = q ? opts.toSearchWhere(q) : undefined;
       if (base) and.push(base);
     } else if (f.q && searchable.length) {
+      const pattern = `%${String(f.q)}%`;
+      // ILIKE does not work on ENUM columns (Postgres error), so those are compared as text.
       and.push({
-        [Op.or]: searchable.map((col) => ({ [col]: { [likeOp]: `%${String(f.q)}%` } })),
+        [Op.or]: searchable.map((name) => {
+          const attr: any = modelAttrs()[name];
+          if (attr && String(attr.type?.key) === "ENUM") {
+            return sqlWhere(cast(col(`${model.name}.${attr.field ?? name}`), "text"), { [likeOp]: pattern });
+          }
+          return { [name]: { [likeOp]: pattern } };
+        }),
       } as any);
     }
 
