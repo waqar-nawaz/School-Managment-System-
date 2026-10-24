@@ -53,7 +53,32 @@ function seedAdminPassword(): { password: string; generated: boolean } {
 
 export async function runSeeders(): Promise<void> {
   const isSeeded = await Settings.findOne({ where: { scope: "system", key: "seeded" } });
+  const resetPassword = process.env.RESET_SUPERADMIN_PASSWORD;
   if (isSeeded?.value === "true") {
+    if (resetPassword) {
+      const resetMarker = await Settings.findOne({
+        where: { scope: "system", key: "superadmin-password-reset-once" },
+      });
+      if (resetMarker?.value !== "true") {
+        const admin = await User.findOne({
+          where: { username: "superadmin" },
+        });
+        if (!admin) {
+          throw new Error("Super admin username 'superadmin' was not found; password reset aborted.");
+        }
+        await admin.update({
+          passwordHash: await hashPassword(resetPassword),
+          passwordChangedAt: new Date(),
+        });
+        await Settings.upsert({
+          scope: "system",
+          key: "superadmin-password-reset-once",
+          value: "true",
+          description: "one-time superadmin password reset completed",
+        });
+        logger.info("Super admin password reset completed once.");
+      }
+    }
     logger.info("Seeders: already seeded, skipping");
     return;
   }
